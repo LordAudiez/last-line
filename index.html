@@ -10408,12 +10408,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   TEX.road = mkTex(256, (x, y) => { const r = ridge(x / 40 + 9, y / 40 + 2); let v = .5 + (nz(x / 1.3, y / 1.3) - .5) * .13 + (fbm(x / 70, y / 70, 2) - .5) * .12; if (r > .9) v += (r - .9) * 1.6; if (nz(x / 25, y / 5 + 90) > .78) v -= .06; return gray(clamp(v, 0, 1)); });
   TEX.dirt = mkTex(256, (x, y) => { const c = fbm(x / 14, y / 14, 3), f = nz(x / 2.2, y / 2.2); let v = .42 + (c - .5) * .5 + (f - .5) * .18; if (f > .9) v -= .16; return [v * 1.04, v * .96, v * .88]; });
   // foliage: overlapping leaf clusters — bright lit lobes, dark shadowed gaps and a fine vein grain — used on every crown, cone tier and bush
-  TEX.leaf = mkTex(128, (x, y) => { const c = fbm(x / 7, y / 7, 3), d = fbm(x / 3.5 + 50, y / 3.5, 2), g = nz(x / 1.3, y / 1.3); let v = .5 + (c - .5) * .55 + (d - .5) * .28 + (g - .5) * .12; if (c < .36) v -= .14; if (d > .74) v += .1; return [v * .94, v * 1.06, v * .86]; }, null, { gain: 1.9 });
+  TEX.leaf = mkTex(128, (x, y) => { const c = fbm(x / 7, y / 7, 3), d = fbm(x / 3.5 + 50, y / 3.5, 2), g = nz(x / 1.3, y / 1.3); let v = .5 + (c - .5) * .36 + (d - .5) * .18 + (g - .5) * .1; if (c < .34) v -= .08; if (d > .76) v += .06; return [v * .94, v * 1.06, v * .86]; }, null, { gain: 1.9 });
   TEX.bump = mkTex(256, (x, y) => gray(fbm(x / 6, y / 6, 4) * .7 + nz(x / 1.5, y / 1.5) * .3));
   TEX.camo = mkTex(128, (x, y) => { const a = fbm(x / 16, y / 16, 3), b = fbm(x / 7 + 40, y / 7 + 40, 2); let v = a < .42 ? .74 : a > .6 ? 1.16 : .95; if (b > .74) v *= .86; v *= 1 + (nz(x / 1.5, y / 1.5) - .5) * .12; return gray(v * .5); }, null, { gain: 1.85 });
   TEX.cloth = mkTex(128, (x, y) => gray(.5 + (nz(x / 1.2, y / 1.2) - .5) * .12 + (Math.sin(x * 1.8) * Math.sin(y * 1.8)) * .03 + (fbm(x / 30, y / 30, 2) - .5) * .12), null, { gain: 1.85 });
   TEX.panel = mkTex(256, (x, y) => { let v = .5 + (fbm(x / 60, y / 60, 3) - .5) * .18 + (nz(x / 2, y / 2) - .5) * .06; const gx = (x + Math.floor(y / 64) * 37) % 64, gy = y % 64; if (gx < 2 || gy < 2) v -= .22; if (gx > 4 && gx < 8 && gy > 4 && gy < 8 && (Math.floor(x / 64) + Math.floor(y / 64)) % 2 === 0) v -= .12; if (nz(x / 4, y / 40) > .9) v += .12; return gray(clamp(v, 0, 1)); },
     (g, s) => { g.strokeStyle = 'rgba(0,0,0,.28)'; for (let i = 0; i < 90; i++) { const x = Math.random() * s, y = Math.random() * s, l = 2 + Math.random() * 14, a = Math.random() * 6.3; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); } g.fillStyle = 'rgba(0,0,0,.35)'; for (let i = 0; i < 400; i++) { g.fillRect((i * 37) % s, Math.floor(i / 8) * 8 % s, 1, 1); } }, { gain: 1.85 });
+  TEX.birch = mkTex(64, (x, y) => { let v = .78 + (nz(x / 3, y / 3) - .5) * .08; const band = fbm(x / 6 + 9, y / 1.5, 2); if (band > .72 && (y % 16) < 5) v = .22 + (band - .72) * .6; if (nz(x / 1.2, y / 9 + 40) > .9) v -= .3; return [v, v * .98, v * .93]; }, null, { gain: 1.2 });
   TEX.wood = mkTex(128, (x, y) => { const v = .5 + (fbm(x / 3, y / 40, 3) - .5) * .28 + (Math.sin(x * .9 + fbm(x / 20, y / 20, 2) * 6) * .08); return [v * 1.05, v * .95, v * .82]; }, null, { gain: 1.85 });
   TEX.concrete = mkTex(256, (x, y) => { let v = .52 + (fbm(x / 20, y / 20, 3) - .5) * .16 + (nz(x / 1.6, y / 1.6) - .5) * .1; if (y % 64 < 2 || (x + Math.floor(y / 64) * 32) % 128 < 2) v -= .18; if (nz(x / 3, y / 30 + 7) > .92) v -= .1; return gray(clamp(v, 0, 1)); }, null, { gain: 1.85 });
   TEX.brick = mkTex(128, (x, y) => { const row = Math.floor(y / 12), bx = (x + (row % 2) * 16) % 32, by = y % 12; let v = .5 + (nz(x / 2, y / 2) - .5) * .12 + (fbm(x / 30 + row, y / 30, 2) - .5) * .2; if (bx < 2 || by < 2) v = .32; return [v * 1.05, v * .97, v * .9]; }, null, { gain: 1.85 });
@@ -10499,7 +10500,18 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     bright: fxMat('uniform sampler2D tex; uniform float thr; varying vec2 vUv; void main(){ vec3 c = texture2D(tex, vUv).rgb; float l = dot(c, vec3(.2126,.7152,.0722)); float k = smoothstep(thr, thr + .35, l); gl_FragColor = vec4(c * k, 1.0); }', { tex: { value: null }, thr: { value: .8 } }),
     blur: fxMat('uniform sampler2D tex; uniform vec2 dir; varying vec2 vUv; void main(){ vec3 s = texture2D(tex, vUv).rgb * .227; s += (texture2D(tex, vUv + dir * 1.385).rgb + texture2D(tex, vUv - dir * 1.385).rgb) * .316; s += (texture2D(tex, vUv + dir * 3.23).rgb + texture2D(tex, vUv - dir * 3.23).rgb) * .07; gl_FragColor = vec4(s, 1.0); }', { tex: { value: null }, dir: { value: new THREE.Vector2(0, 0) } }),
     rays: fxMat('uniform sampler2D tex; uniform vec2 sun; uniform float k; varying vec2 vUv; void main(){ vec2 d = (vUv - sun) / 40.0; vec2 p = vUv; float w = 1.0; vec3 s = vec3(0.0); for (int i = 0; i < 40; i++) { p -= d; s += texture2D(tex, p).rgb * w; w *= .955; } gl_FragColor = vec4(s * k / 40.0, 1.0); }', { tex: { value: null }, sun: { value: FX.sun }, k: { value: 1.0 } }),
-    comp: fxMat('uniform sampler2D tex, bloom, rays; uniform float kb, kr; varying vec2 vUv; void main(){ vec3 c = texture2D(tex, vUv).rgb; vec3 b = texture2D(bloom, vUv).rgb; vec3 r = texture2D(rays, vUv).rgb; c += b * kb + r * kr * vec3(1.0, .93, .78); c = c / (1.0 + max(vec3(0.0), c - 1.0) * .35); gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }', { tex: { value: null }, bloom: { value: null }, rays: { value: null }, kb: { value: .85 }, kr: { value: .55 } })
+    comp: fxMat(['uniform sampler2D tex, bloom, rays; uniform float kb, kr, uT; varying vec2 vUv;',
+      'float hsh(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }',
+      'void main(){ vec3 c = texture2D(tex, vUv).rgb; vec3 b = texture2D(bloom, vUv).rgb; vec3 r = texture2D(rays, vUv).rgb;',
+      ' c += b * kb + r * kr * vec3(1.0, .93, .78);',
+      ' c = c / (1.0 + max(vec3(0.0), c - 1.0) * .35);',
+      // cinematic grade: a touch more contrast and saturation, warm highlights against cool shadows, soft vignette, fine film grain
+      ' float l = dot(c, vec3(.2126, .7152, .0722)); c = mix(vec3(l), c, 1.12); c = (c - .5) * 1.06 + .5;',
+      ' c += (l - .45) * vec3(.05, .015, -.05); c = max(c, 0.0);',
+      ' float vg = smoothstep(.45, 1.25, length((vUv - .5) * vec2(1.25, 1.0)) * 1.55); c *= 1.0 - vg * .28;',
+      ' c += (hsh(vUv * 1731.0 + fract(uT) * 7.0) - .5) * .022;',
+      ' gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }'].join('\n'),
+      { tex: { value: null }, bloom: { value: null }, rays: { value: null }, kb: { value: .85 }, kr: { value: .55 }, uT: { value: 0 } })
   };
   FX.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), FXM.comp); FX.quad.frustumCulled = false;
   const FX_SCENE = new THREE.Scene(); FX_SCENE.add(FX.quad);
@@ -10530,7 +10542,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const dayK = Math.max(0, Math.min(1, (day - .08) * 1.6));                       // shafts only while the sun is up
     FXM.rays.uniforms.tex.value = FX.rtA.texture; FXM.rays.uniforms.k.value = 1.0; fxPass(FXM.rays, FX.rtR);
     FXM.comp.uniforms.tex.value = rt.texture; FXM.comp.uniforms.bloom.value = FX.rtA.texture; FXM.comp.uniforms.rays.value = FX.rtR.texture;
-    FXM.comp.uniforms.kb.value = .6 * FX.bloom; FXM.comp.uniforms.kr.value = (.12 + .32 * dayK) * FX.rays;
+    FXM.comp.uniforms.uT.value = G.t || 0; FXM.comp.uniforms.kb.value = .6 * FX.bloom; FXM.comp.uniforms.kr.value = (.12 + .32 * dayK) * FX.rays;
     fxPass(FXM.comp, null);
     renderer.setRenderTarget(null);
   }
@@ -10578,14 +10590,18 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   terrMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, { tGrass: { value: TEX.grass }, tSand: { value: TEX.sand }, tRock: { value: TEX.rock }, tRoad: { value: TEX.road }, tDirt: { value: TEX.dirt }, uWet: { value: 0 } });
     terrMat.userData.sh = sh;   // kept so the rain system can drive uWet every frame
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat; attribute vec2 ex; varying vec4 vSplat; varying vec2 vEx;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat; vEx = ex;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; varying vec4 vSplat; varying vec2 vEx;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat; attribute vec2 ex; varying vec4 vSplat; varying vec2 vEx; varying float vWy; varying vec2 vWxz;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat; vEx = ex; vWy = (modelMatrix * vec4(transformed, 1.0)).y; vWxz = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; varying float vWy; varying vec2 vWxz; varying vec4 vSplat; varying vec2 vEx;')
       .replace('#include <map_fragment>', [
         'vec4 w = vSplat; float dw = vEx.x; float ws = max(1e-3, w.x + w.y + w.z + w.w + dw); w /= ws; dw /= ws;',
         'vec3 tg = texture2D(tGrass, vUv).rgb, ts = texture2D(tSand, vUv * 1.5).rgb, tr = texture2D(tRock, vUv * .8).rgb, tp = texture2D(tRoad, vUv * 1.2).rgb, td = texture2D(tDirt, vUv * 1.4).rgb;',
         'vec3 t = tg * w.x + ts * w.y + tr * w.z + tp * w.w + td * dw;',
-        't = mix(t, td * .62, clamp(vEx.y, 0., 1.));',                   // crater floor: churned earth
+        't = mix(t, td * .62, clamp(vEx.y, 0., 1.));',
+        // shoreline: the ground darkens where the water laps it, and a wandering line of foam breaks along the waterline
+        '{ float wet = 1.0 - smoothstep(-0.06, 0.05, vWy); t *= 1.0 - wet * 0.42;',
+        '  float wl = -0.045 + sin(vWxz.x * 2.6 + uTime * 1.3) * 0.012 + sin(vWxz.y * 3.1 - uTime * 0.9) * 0.010 + sin((vWxz.x + vWxz.y) * 7.0 + uTime * 2.4) * 0.004;',
+        '  float foam = 1.0 - smoothstep(0.0, 0.016, abs(vWy - wl)); foam *= 0.55 + 0.45 * sin(vWxz.x * 11.0 + vWxz.y * 9.0 + uTime * 3.0); t += foam * 0.45; }',                   // crater floor: churned earth
         'diffuseColor.rgb *= t * 2.0 * (1.0 - uWet * 0.38);'].join('\n'))   // rain-soaked ground darkens
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= (1.0 - uWet * 0.7);');   // ...and turns glossy
     cloudHook(sh);
@@ -10777,8 +10793,18 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .92, side: THREE.DoubleSide, vertexColors: true, envMapIntensity: .25 }), 40000, false);
   P.grass.receiveShadow = true; GRASS_POOL = P.grass; P.grass.castShadow = !!(QUAL_DEF[QUAL.level] || {}).shadow && QUAL.gs >= 5;                                     // tufts sit in tree and building shadow; on High they also throw their own
   const GRASSC = [lin('#5f8a3a'), lin('#4c7430'), lin('#6b9440')];
-  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass].concat(P.splat);
-  const PROPS = [P.trunk, P.rock, P.barrel, P.wreck], foliage = [];
+  /* ground clutter: wildflower heads in the meadows, pebbles on dirt and sand, cattail reeds in the swamp and along the shore,
+     fallen leaves under the forest canopy — all cheap instanced pools laid out by the same per-tile hashes as the grass */
+  P.flower = pool(new THREE.IcosahedronGeometry(.045, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .7, emissive: 0x111111 }), 6000, false);
+  P.pebble = pool(DODG, new THREE.MeshStandardMaterial({ color: lin('#cfc8bc'), map: TEX.rock, roughness: .95, flatShading: true }), 6000, false);
+  P.reed = pool((() => { const g = new THREE.CylinderGeometry(.008, .014, 1, 4); g.translate(0, .5, 0); return g; })(), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .9 }), 5000, false);
+  P.leafLit = pool(new THREE.BoxGeometry(.07, .008, .05), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .95 }), 6000, false);
+  P.birch = pool(new THREE.CylinderGeometry(.06, .1, .6, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.birch, roughness: .85 }), 1200, true);
+  P.branch = pool(new THREE.CylinderGeometry(.012, .03, 1, 5), new THREE.MeshStandardMaterial({ color: lin('#4a3826'), map: TEX.wood, roughness: 1 }), 2500, true);
+  const FLOWERC = [lin('#ffd84a'), lin('#ff7a7a'), lin('#e8e6ff'), lin('#ff9fd0'), lin('#7ab8ff')], REEDC = [lin('#6a7a3a'), lin('#4f5f2c'), lin('#8a8a4a')], LITC = [lin('#b8862e'), lin('#8a5a24'), lin('#c9a04a'), lin('#6a4a24')];
+  const CATTAIL = lin('#4a2e1a');
+  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch].concat(P.splat);
+  const PROPS = [P.trunk, P.birch, P.rock, P.barrel, P.wreck], foliage = [];
   /* pools grow on demand: when a frame asks for more instances than a pool holds (900-zombie hordes, forests of casings),
      the pool is rebuilt 60% larger after the frame — otherwise the overflow simply vanishes, which reads as figures
      with missing limbs / see-through props once the field gets crowded */
@@ -11645,6 +11671,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     // golden-hour key light: warmer and a little stronger than a flat noon sun, with a warm-green bounce from the ground
     sunC.setRGB(1, .88 - (1 - el) * .22, .70 - (1 - el) * .42).convertSRGBToLinear();
     sun.color.copy(day > .05 ? sunC : MOON); sun.intensity = (day > .05 ? .3 + day * 1.35 : .1) * (1 - wx * .5);
+    if (typeof WX !== 'undefined' && WX.flash > 0) { sun.intensity += WX.flash * 2.2; sun.color.lerp(new THREE.Color(.85, .9, 1), WX.flash * .8); }   // lightning: the whole scene strobes cold white
     hemi.intensity = .22 + day * .42; hemi.color.setRGB(c[0] / 255 * .95, c[1] / 255 * .93, c[2] / 255 * .8).convertSRGBToLinear(); hemi.groundColor.setRGB(.36, .34, .18).convertSRGBToLinear();
     sun.position.set(cxw * K - 40, 70, cyw * K + 30); sun.target.position.set(cxw * K, 0, cyw * K);
     scene3.fog.near = 60 + day * 40; scene3.fog.far = 200 + day * 80 - wx * 60;
@@ -11660,9 +11687,67 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     return day;
   }
 
+  /* ======================= atmosphere: mist, sun motes, drifting leaves, birds ======================= */
+  const BIRDS = { t: 0, next: 30, on: false, x: 0, y: 0, dir: 0, n: 7, life: 0 };
+  const _birdC = col3('#15161a');
+  function atmosphereFX(day) {
+    if (QUAL.gd < 5) return;                                                                // off on 'mobile'
+    const cx = CAM.x + CAM.vw / 2, cy = CAM.y + CAM.vh / 2, ext = Math.max(CAM.vw, CAM.vh) * .75, t = G.t;
+    const wx = (typeof WX !== 'undefined') ? WX.k : 0, wm = Math.hypot(G.wind.x, G.wind.y);
+    // ground mist: low, slow wisps — thickest at dawn/dusk/night and in storms, always over swamp and water
+    const mistK = Math.max(0, 1 - Math.abs(day - .5) * 3.2) * .25 + (day < .35 || day > .7 ? .5 : 0) + wx * .5;
+    for (let i = 0; i < 48; i++) {
+      const h1 = hash2(i, 3), h2 = hash2(i, 5), h3 = hash2(i, 9);
+      const ox = ((h1 * 2 - 1) * ext + t * (4 + h3 * 6) + G.wind.x * t * .15), oy = (h2 * 2 - 1) * ext * .8 + Math.sin(t * .2 + i) * 30;
+      const px = cx + ((ox + ext) % (2 * ext) + 2 * ext) % (2 * ext) - ext, py = cy + oy;
+      if (px < 0 || py < 0 || px >= WW || py >= WH) continue;
+      const tl = MAP.t[tileIdx((px / TS) | 0, (py / TS) | 0)]; const wet = (tl === T_SWAMP || WATER(tl)) ? .7 : 0;
+      const a = (mistK + wet) * (.05 + h3 * .05) * (.7 + .3 * Math.sin(t * .5 + i * 1.7)); if (a < .012) continue;
+      bb(partsAlpha, px * K, groundY(px, py) + .18 + h3 * .25, py * K, 3 + h2 * 4, .78, .82, .88, a);
+    }
+    // sun motes: pollen and dust hanging in the light on a clear day
+    if (day > .35 && wx < .4) {
+      const mk = (day - .35) * (1 - wx * 2);
+      for (let i = 0; i < 70; i++) {
+        const h1 = hash2(i, 21), h2 = hash2(i, 23), h3 = hash2(i, 27);
+        const px = cx + (h1 * 2 - 1) * ext * .6 + Math.sin(t * (.3 + h3 * .4) + i) * 12 + G.wind.x * t * .05, py = cy + (h2 * 2 - 1) * ext * .5 + Math.cos(t * (.25 + h2 * .4) + i * 2) * 10;
+        if (px < 0 || py < 0 || px >= WW || py >= WH) continue;
+        const hgt = .25 + h3 * 1.4 + Math.sin(t * .6 + i) * .15, a = mk * (.18 + .22 * Math.sin(t * 1.3 + i * .9));
+        if (a > .02) bb(partsAdd, px * K, groundY(px, py) + hgt, py * K, .045 + h2 * .05, 1, .95, .75, a);
+      }
+    }
+    // falling leaves: once the wind gets up, leaves tumble out of the forest canopy and drift downwind
+    if (wm > 18) {
+      const n = Math.min(60, ((wm - 18) * 1.6) | 0), wl = wm + 1e-3, wdx = G.wind.x / wl, wdy = G.wind.y / wl;
+      for (let i = 0; i < n; i++) {
+        const h1 = hash2(i, 31), h2 = hash2(i, 33), h3 = hash2(i, 37), cyc = 5 + h3 * 4, ph = ((t * (1 / cyc) + h1) % 1);
+        const sx = cx + (h1 * 2 - 1) * ext * .7, sy = cy + (h2 * 2 - 1) * ext * .6;
+        const tx = (sx / TS) | 0, ty = (sy / TS) | 0; if (tx < 0 || ty < 0 || tx >= MW || ty >= MH || MAP.t[tileIdx(tx, ty)] !== T_FOREST) continue;
+        const px = sx + wdx * ph * wm * 2.2 + Math.sin(t * 2 + i) * 6, py = sy + wdy * ph * wm * 2.2 + Math.cos(t * 1.7 + i) * 5, hgt = 1.7 * (1 - ph) + Math.abs(Math.sin(t * 3 + i)) * .08;
+        if (px < 0 || py < 0 || px >= WW || py >= WH) continue;
+        put(P.leafLit, px * K, groundY(px, py) + hgt, py * K, t * 3 + i, t * 2, t * 4 + i, 1.2, 1, 1.2, LITC[i & 3]);
+      }
+    }
+    // birds: every half-minute or so a small flock crosses the view in a loose V, flapping, with soft shadows sliding over the ground
+    BIRDS.t += G.dt || .016;
+    if (!BIRDS.on && BIRDS.t > BIRDS.next && day > .2) { BIRDS.on = true; BIRDS.life = 0; BIRDS.dir = Math.random() * TAU; BIRDS.x = cx - Math.cos(BIRDS.dir) * ext * 1.1; BIRDS.y = cy - Math.sin(BIRDS.dir) * ext * 1.1; BIRDS.n = 5 + (Math.random() * 5 | 0); BIRDS.t = 0; BIRDS.next = 35 + Math.random() * 40; }
+    if (BIRDS.on) {
+      BIRDS.life += G.dt || .016; const spd = 95, dx = Math.cos(BIRDS.dir), dy = Math.sin(BIRDS.dir), px = -dy, py = dx;
+      const hx = BIRDS.x + dx * spd * BIRDS.life, hy = BIRDS.y + dy * spd * BIRDS.life;
+      for (let i = 0; i < BIRDS.n; i++) {
+        const row = (i + 1) >> 1, side = i & 1 ? 1 : -1, bx = hx - dx * row * 11 + px * side * row * 9 * (i ? 1 : 0), by = hy - dy * row * 11 + py * side * row * 9 * (i ? 1 : 0);
+        if (bx < 0 || by < 0 || bx >= WW || by >= WH) continue;
+        const flap = Math.sin(BIRDS.life * 11 + i * 1.3), y = 6.5 + Math.sin(BIRDS.life * .7 + i) * .3;
+        put(P.box, bx * K, y, by * K, 0, -BIRDS.dir, 0, .09, .02, .03, _birdC);                                         // body
+        for (const sd of [-1, 1]) put(P.box, bx * K + px * sd * .07, y + flap * .04, by * K + py * sd * .07, flap * sd * .9, -BIRDS.dir, 0, .05, .008, .13, _birdC);   // wings
+        bb(partsAlpha, bx * K, groundY(bx, by) + .02, by * K, .45, 0, 0, 0, .18 * day);                                     // shadow on the ground
+      }
+      if (BIRDS.life * spd > ext * 2.4) BIRDS.on = false;
+    }
+  }
   /* ======================= the frame ======================= */
   let lastPX = 1e9, lastPY = 1e9, lastNB = -1, dayNow = 1;
-  const CONIF = ['#1f4a26', '#2a5c2e', '#356a34', '#4a7c3a'].map(col3);
+  const CONIF = ['#1f4a26', '#2a5c2e', '#356a34', '#4a7c3a'].map(col3), BIRCHC = ['#8fb84a', '#a9c95a', '#7aa63e'].map(col3), UNDERC = col3('#1e3a1c'), DEADC = col3('#5a4a3c'), ROOTC = col3('#5a4028'), BIRCHROOT = col3('#c8c4b8');
   const LEAF = ['#3f7a2e', '#2c5a22', '#5c7d40', '#2f4a30', '#6b8a3a'].map(col3), BUSHC = [col3('#35582a'), col3('#4a6a30')], CRATE = col3('#8a7a4a'), SCRAP = col3('#b8b0a0'), AIRSHADOW = col3('#101010'), FLAG = { player: col3('#3f7bd6'), invader: col3('#b23030'), neutral: col3('#c9b45a') };
   const SIREN_RED = col3('#ff2a1a'), SIREN_BASE = col3('#2a2a2e');
   const CHUTE = col3('#e8e4d6'), CHUTE2 = col3('#c96a3a'), CORD = col3('#3a352c');
@@ -11697,7 +11782,14 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         if (a < 0 || b < 0 || a * CH >= WW || b * CH >= WH) continue;
         const ps = chunkProps(a, b);
         for (let i = 0; i < ps.length; i++) { const q = ps[i]; if (G.deadProps.has(q.id) || underBuild(q.x, q.y)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
-          if (q.s === 'tree') { const con = hash2(q.id, 13) < .62; put(P.trunk, x, y + (con ? .42 : .34) * sc, z, 0, q.a, 0, sc * (con ? .9 : 1.15), sc * (con ? 1.4 : 1.15), sc * (con ? .9 : 1.15)); foliage.push(q); }
+          if (q.s === 'tree') {
+            const sp = hash2(q.id, 13), con = sp < .55, birch = sp >= .62 && sp < .72, dead = sp >= .72 && sp < .77;
+            if (birch) put(P.birch, x, y + .5 * sc, z, 0, q.a, 0, sc * .8, sc * 1.7, sc * .8, WHITE);
+            else if (dead) { put(P.trunk, x, y + .48 * sc, z, .06, q.a, -.05, sc * .95, sc * 1.6, sc * .95, DEADC);                                     // a bare snag with three broken limbs
+              for (let k = 0; k < 3; k++) { const an = q.a + k * 2.1 + hash2(q.id, 40 + k) * .8, hh = .55 + k * .18, L = (.5 + hash2(q.id, 50 + k) * .3) * sc, tilt = .9 + hash2(q.id, 60 + k) * .5; put(P.branch, x + Math.cos(an) * Math.sin(tilt) * L * .5, y + hh * sc + Math.cos(tilt) * L * .5, z + Math.sin(an) * Math.sin(tilt) * L * .5, 0, -an, -tilt, 1, L, 1, DEADC); } }
+            else put(P.trunk, x, y + (con ? .42 : .34) * sc, z, 0, q.a, 0, sc * (con ? .9 : 1.15), sc * (con ? 1.4 : 1.15), sc * (con ? .9 : 1.15));
+            for (let k = 0; k < 3; k++) { const an = q.a + k * 2.09; put(P.branch, x + Math.cos(an) * .09 * sc, y + .02, z + Math.sin(an) * .09 * sc, 0, -an, -1.35, 2.2 * sc, .2 * sc, 2.2 * sc, birch ? BIRCHROOT : ROOTC); }   // root flare
+            if (!dead) foliage.push(q); }
           else if (q.s === 'bush') foliage.push(q);
           else if (q.s === 'rock') put(P.rock, x, y + .12 * sc, z, q.a, q.a * .7, 0, sc * .26, sc * .18, sc * .24);
           else if (q.s === 'barrel') put(P.barrel, x, y + .21, z, 0, 0, 0, 1, 1, 1);
@@ -11713,12 +11805,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         const ph = tt * 1.7 + q.x * .013 + q.y * .011, gust = (Math.sin(ph) * .55 + Math.sin(ph * 2.7 + 1.3) * .25 + Math.sin(ph * .37) * .2);
         if (q.s === 'tree') {
           const lean = wm * (.07 + gust * .05), lx = wdx * lean, lz = wdz * lean, rx = wdz * lean * 1.3, rz = -wdx * lean * 1.3, v = (hash2(q.id, 7) * 5) | 0;
-          if (hash2(q.id, 13) < .62) {
+          const spv = hash2(q.id, 13);
+          if (spv >= .62 && spv < .72) {
+            // birch: a slender, airy crown in lighter yellow-greens, higher on the trunk, with a darker inner layer
+            for (let k = 0; k < 3; k++) { const f = k / 2, r = (.62 - f * .16) * sc, an = k * 2.3 + q.a, hgt = (1.25 + f * .5) * sc, kk = 1.2 + f * .8, off = (k ? .22 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk, an * .3, rz * kk, r, r * .9, r, BIRCHC[(v + k) % 3]); }
+          } else if (spv < .55) {
             // conifer / cypress: four stacked tiers, each narrower and brighter toward the tip; top tiers sway most in the wind
             const H = 2.35 * sc, w0 = .78 * sc;
             for (let k = 0; k < 4; k++) { const f = k / 4, hb = y + .55 * sc + H * f * .78, th = H * (.42 - f * .07), w = w0 * (1 - f * .62), kk = .6 + f * 1.2; put(P.cone, x + lx * kk * sc * 1.2, hb, z + lz * kk * sc * 1.2, rx * kk, q.a + k * .7, rz * kk, w, th, w, CONIF[(v + k) % 4]); }
           } else {
-            // broadleaf: a rounded, layered crown built from overlapping smooth spheres (darker inside, lighter sunward top)
+            // broadleaf: a rounded, layered crown built from overlapping smooth spheres (darker inside, lighter sunward top) over a shaded under-canopy
+            put(P.crown, x + lx * .9, y + .78 * sc, z + lz * .9, rx, q.a, rz, .8 * sc, .5 * sc, .8 * sc, UNDERC);
             for (let k = 0; k < 4; k++) { const f = k / 3, r = (.92 - f * .28) * sc, an = k * 2.1 + q.a, hgt = (.95 + f * .55) * sc, kk = 1 + f * .7, off = (k ? .3 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .2, an * .7, rz * kk, r, r * .8, r, LEAF[(v + k) % 5]); }
           }
         } else { const lean = wm * (.04 + gust * .03); put(P.bush, x + wdx * lean * .3, y + .16 * sc, z + wdz * lean * .3, wdz * lean * 2, q.a, -wdx * lean * 2, sc, sc * .8, sc, BUSHC[q.id & 1]); }
@@ -11729,7 +11826,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         const k = Math.min(1, f.t / f.dur), fall = k * k * (3 - 2 * k) * k;          // slow start, accelerating over
         let th = fall * 1.42; if (f.hit) { const b = f.t - f.dur; th = 1.42 + Math.max(0, .12 * Math.sin(b * 9) * Math.exp(-b * 4)) - .04; }   // settles a hair short of flat, with a bounce
         const x = f.x * K, z = f.y * K, y = groundY(f.x, f.y), sc = f.sc, ux = Math.cos(f.dir) * Math.sin(th), uy = Math.cos(th), uz = Math.sin(f.dir) * Math.sin(th);
-        const ry = -f.dir, rz = -th, con = hash2(f.id, 13) < .62, v = (hash2(f.id, 7) * 5) | 0;
+        const ry = -f.dir, rz = -th, con = hash2(f.id, 13) < .55, v = (hash2(f.id, 7) * 5) | 0;
         const at = (h) => [x + ux * h, y + uy * h + .02, z + uz * h];
         let p = at((con ? .42 : .34) * sc); put(P.trunk, p[0], p[1], p[2], 0, ry, rz, sc * (con ? .9 : 1.15), sc * (con ? 1.4 : 1.15), sc * (con ? .9 : 1.15));
         if (con) { const H = 2.35 * sc, w0 = .78 * sc; for (let t = 0; t < 4; t++) { const fr = t / 4, w = w0 * (1 - fr * .62); p = at(.55 * sc + H * fr * .78); put(P.cone, p[0], p[1], p[2], 0, ry, rz, w, H * (.42 - fr * .07), w, CONIF[(v + t) % 4]); } }
@@ -11739,8 +11836,28 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const gtx0 = Math.max(0, (vx0 / TS) | 0), gtx1 = Math.min(MW - 1, (vx1 / TS) | 0), gty0 = Math.max(0, (vy0 / TS) | 0), gty1 = Math.min(MH - 1, (vy1 / TS) | 0);
       const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 2600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
       const per = dense ? QUAL.gd : QUAL.gs;
+      const clutter = dense && QUAL.gd >= 5;                                                   // clutter only up close and above 'mobile'
       outer: for (let ty = gty0; ty <= gty1; ty++) for (let tx = gtx0; tx <= gtx1; tx++) {
-        const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue; if (G.gridB[ti]) continue;
+        const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
+        if (clutter) {
+          const hA = hash2(tx * 5 + 1, ty * 3 + 7), hB = hash2(tx * 9 + 3, ty * 5 + 1), hC = hash2(tx * 7 + 5, ty * 11 + 9);
+          if (t === T_DIRT || t === T_SAND || t === T_RUBBLE) {                                   // pebbles
+            if (hA < .5) for (let k = 0; k < 2; k++) { const wx = (tx + .15 + hash2(tx + k, ty * 2) * .7) * TS, wy = (ty + .15 + hash2(tx * 2, ty + k) * .7) * TS, r = .04 + hash2(tx * 3 + k, ty) * .05; put(P.pebble, wx * K, groundY(wx, wy) + r * .5, wy * K, hB * 3, hC * 6, 0, r * 1.4, r, r * 1.2); }
+          } else if (t === T_SWAMP || (t === T_SAND && hA < .35 && elevAtW((tx + .5) * TS, (ty + .5) * TS) < .09)) {   // cattail reeds in the swamp and along the shore
+            const n = t === T_SWAMP ? 3 : 2;
+            for (let k = 0; k < n; k++) { const wx = (tx + .1 + hash2(tx * 4 + k, ty) * .8) * TS, wy = (ty + .1 + hash2(tx, ty * 4 + k) * .8) * TS, hgt = .42 + hash2(tx + k * 7, ty + k) * .3, y0 = groundY(wx, wy), ph = tt * 1.8 + wx * .01, sway = wm * (.12 + Math.sin(ph) * .08);
+              put(P.reed, wx * K, y0, wy * K, wdz * sway, 0, -wdx * sway, 1, hgt, 1, REEDC[(tx + k) % 3]);
+              if (k === 0 && hB < .6) put(P.cyl, wx * K + wdz * sway * hgt * .9, y0 + hgt * .92, wy * K - wdx * sway * hgt * .9, 0, 0, 0, .022, .09, .022, CATTAIL); }   // the brown cattail head
+          } else if (t === T_FOREST) {                                                           // fallen leaves under the canopy
+            for (let k = 0; k < 3; k++) { const wx = (tx + hash2(tx * 6 + k, ty * 2 + k) ) * TS, wy = (ty + hash2(tx * 2 + k, ty * 6 + k)) * TS; put(P.leafLit, wx * K, groundY(wx, wy) + .006, wy * K, 0, hash2(tx + k, ty) * TAU, 0, 1, 1, 1, LITC[(tx + ty + k) & 3]); }
+          }
+          if ((t === T_GRASS || t === T_FOREST) && hA < .16) {                                   // a wildflower head or two on a grass stem
+            const wx = (tx + .2 + hB * .6) * TS, wy = (ty + .2 + hC * .6) * TS, y0 = groundY(wx, wy), fl = grassFlat(wx, wy), hgt = .3 * (1 - fl * .8), ph = tt * 2.4 + wx * .02 + wy * .017, sway = wm * (.14 + Math.sin(ph) * .11);
+            put(P.reed, wx * K, y0, wy * K, wdz * sway, 0, -wdx * sway, .8, hgt, .8, REEDC[1]);
+            put(P.flower, wx * K + wdz * sway * hgt, y0 + hgt, wy * K - wdx * sway * hgt, 0, 0, 0, 1, .8, 1, FLOWERC[(tx * 3 + ty) % 5]);
+          }
+        }
+        if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;
         for (let k = 0; k < per; k++) {
           if (P.grass.count >= 39000) break outer;
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
@@ -12005,6 +12122,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     ghostEnd();
     if (G._r3d && G._r3d.skip) for (const im of PER_FRAME.concat(PROPS)) if (G._r3d.skip.has(im)) im.count = 0;
     for (const im of PER_FRAME) flush(im);
+    atmosphereFX(dayNow);
     bbFlush(partsAdd); bbFlush(partsAlpha);
     if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; }
     renderFrame(dayNow);
