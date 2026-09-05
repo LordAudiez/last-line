@@ -680,6 +680,47 @@ html,body{font-family:var(--sans)}
 .mtitle{letter-spacing:.18em}
 kbd{border-radius:8px;font-family:var(--sans)}
 @media (pointer:coarse){.pan,#tip,#bpop,#intel,.alert,#hint,.mbtn,.mcard,.mapcard,#settings,#over{-webkit-backdrop-filter:blur(12px) saturate(150%);backdrop-filter:blur(12px) saturate(150%)}}
+/* =====================================================================================
+   PORTRAIT phones / tablets: the HUD re-flows for a tall, narrow screen — capsule top bar that wraps,
+   full-width command card at the bottom, minimap and selection stacked above it, controls up the right edge.
+   ===================================================================================== */
+@media (pointer:coarse) and (orientation:portrait){
+  :root{--ui:1}
+  html.touch #topbar{left:6px;right:6px;top:6px;width:auto;transform:none;height:auto;flex-wrap:wrap;justify-content:space-between;padding:4px 4px;border-radius:18px;font-size:11px;animation:none}
+  html.touch #topbar .cell{padding:4px 8px;gap:6px;flex:1 1 auto;justify-content:center}
+  html.touch #topbar .cell+.cell::before{display:none}
+  .res{font-size:15px}.lbl{font-size:9px;letter-spacing:.08em}#clock{font-size:12px}#rPop{font-size:12px}
+  #wavebox{min-width:0}#wavebar{width:70px}
+  #hordeAlert{display:block;margin:2px 0 0;font-size:10px}
+  html.touch #speed{top:auto;bottom:calc(var(--cmdh,196px) + 8px);right:6px;left:auto;transform:scale(.78);transform-origin:right bottom;padding:4px;animation:none}
+  html.touch #speed .sbtn{min-width:38px;height:36px}
+  html.touch #setbtn{top:96px;right:6px;transform:scale(.9);transform-origin:top right}
+  html.touch #fsbtn{top:96px;left:6px;transform:scale(.9);transform-origin:top left}
+  html.touch #hudtog{right:6px;top:146px;bottom:auto}
+  #alerts{top:100px;width:94vw}
+  .alert{font-size:11px;padding:6px 12px;text-align:center}
+  html.touch #hint{bottom:calc(var(--cmdh,196px) + 60px);font-size:11px;max-width:92vw;text-align:center}
+  html.touch #confirm{bottom:calc(var(--cmdh,196px) + 60px);max-width:94vw;flex-wrap:wrap;justify-content:center}
+  html.touch #placebar{top:auto;bottom:calc(var(--cmdh,196px) + 60px)}
+  html.touch #cmd{left:6px;right:6px;bottom:6px;width:auto;transform:none;padding:8px;gap:6px;grid-template-columns:repeat(5,1fr);max-height:42vh;overflow-y:auto}
+  html.touch #cmd.collapsed{transform:translateY(calc(100% - 25px))}
+  html.touch #cmd .btn{height:56px;padding:5px 2px 12px}
+  .btn .n{font-size:7.5px}.btn .g{font-size:18px}.btn .g .uico{width:24px;height:24px}
+  .btn .k{font-size:8px}.btn .c{font-size:8px}
+  html.touch #miniwrap{left:6px;bottom:calc(var(--cmdh,196px) + 8px);transform:scale(.62);transform-origin:left bottom;padding:5px}
+  html.touch #miniwrap.collapsed{transform:translateY(calc(100% - 25px)) scale(.62)}
+  html.touch #sel{left:6px;bottom:calc(var(--cmdh,196px) + 90px);width:min(300px,86vw);transform:scale(.8);transform-origin:left bottom;padding:9px 11px;max-height:34vh;overflow:hidden}
+  html.touch #mtools{right:6px;top:190px;transform:none;transform-origin:right top}
+  #bpop{width:min(92vw,320px);max-height:60vh}
+  #tip{max-width:80vw}
+  #dev{width:min(262px,92vw)}
+  #setbox{width:96vw;padding:16px 14px 18px;max-height:92vh}
+  #menu{padding:0 14px;justify-content:flex-start;padding-top:10px;overflow-y:auto}
+  .mtitle{font-size:34px;letter-spacing:.12em}.msub{font-size:11px}
+  .mbtn{width:min(320px,92vw)}
+  .lobwrap{flex-direction:column}
+  #tilt i.t,#tilt i.b{height:8%}
+}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
@@ -4416,8 +4457,13 @@ function fxExplosion(x, y, r, colA, colB, snd) {
   // 1. hot core: a white flash that swells and dies in a few frames
   part('fire', x, y, 0, 0, .12, r * .55, '#fff6e0', { grow: r * 2.2, glow: 1, z: 8, drag: 1 });
   // 2. shockwave: a fast bright ring, then a slower dusty pressure ring
-  part('ring', x, y, 0, 0, .26, r * .3, '#ffe0a8', { grow: r * 1.7 / .26, glow: 1 });
-  part('ring', x, y, 0, 0, .55, r * .5, '#d8c8a8', { grow: r * 2.6 / .55, glow: 1 });
+  part('ring', x, y, 0, 0, .22, r * .3, '#ffe0a8', { grow: r * 1.7 / .22, glow: 1 });
+  // the pressure wave is DUST, not a drawn ring: a full circle of low puffs blasted outward that thin as they spread,
+  // then hang and drift on the wind (rendered through the noisy billboard so the wave has ragged texture)
+  { const n = big ? 26 : 16; for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + rnd(-.12, .12), sp = rnd(r * 2.6, r * 4.2), tk = rnd(.9, 1.6);
+      part('dust', x + Math.cos(a) * r * .25, y + Math.sin(a) * r * .18, Math.cos(a) * sp, Math.sin(a) * sp * .75, tk, rnd(r * .22, r * .38), i % 3 ? 'rgba(172,158,132,1)' : 'rgba(205,192,168,1)',
+        { z: rnd(0, 4), vz: rnd(4, 18), g: 6, grow: r * .55, drag: .86, wind: 1 }); } }
   // 3. fireball: mushrooming tongues of flame that rise and cool through orange to red
   for (let i = 0; i < (big ? 18 : 12); i++) {
     const a = rnd(TAU), s = rnd(20, r * 4.5), k = Math.random();
@@ -7582,8 +7628,11 @@ function step(dt) {
   /* horde siren: red beacons on every building + a rising/falling wail, from the horde call until the last horde body is down */
   if (G.hordeAlert) {
     const queued = G.waveQueue && G.wave === G.hordeWave && G.waveQueue.list.length > 0;
-    let alive = false; if (!queued) for (const z of G.zeds) if (!z.dead && z.horde) { alive = true; break; }
-    if (!queued && !alive && G.wave >= (G.hordeWave || 0)) { G.hordeAlert = false; alertMsg('HORDE BROKEN — the last of wave ' + G.hordeWave + ' is down', ''); AU.ui('ok'); }
+    // the horde counts as broken once the queue is empty and what is left of it is no threat: none alive, or only a handful of
+    // stragglers, or nothing left anywhere near the base (a lone walker wandering the far side of the map must not keep the siren wailing)
+    let alive = 0, near = false;
+    if (!queued) for (const z of G.zeds) { if (z.dead || !z.horde) continue; alive++; if (!near) { for (const b of G.builds) if (!b.dead && dist2(z.x, z.y, b.x, b.y) < 1400 * 1400) { near = true; break; } } }
+    if (!queued && (alive <= 3 || !near) && G.wave >= (G.hordeWave || 0)) { G.hordeAlert = false; G.sirenT = 0; for (const z of G.zeds) z.horde = false; alertMsg('HORDE BROKEN — wave ' + G.hordeWave + ' is beaten', ''); AU.ui('ok'); }
     else { G.sirenT = (G.sirenT || 0) - dt; if (G.sirenT <= 0) { G.sirenT = 3.2; AU.siren(); } }
   }
   if (typeof updateFallen === 'function') updateFallen(dt);
@@ -7614,7 +7663,10 @@ let DPR = 1, _lastDPR = 1;
 function resize() {
   DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
   if (DPR !== _lastDPR) { CAM.zoom *= DPR / _lastDPR; _lastDPR = DPR; }
-  const w = Math.round(Math.max(640, window.innerWidth) * DPR), h = Math.round(Math.max(400, window.innerHeight) * DPR);
+  // portrait phones: honour the real (narrow) width instead of stretching a 640-wide frame into it — no more squashed picture
+  const portrait = window.innerHeight > window.innerWidth;
+  const w = Math.round(Math.max(portrait ? 300 : 640, window.innerWidth) * DPR), h = Math.round(Math.max(portrait ? 480 : 400, window.innerHeight) * DPR);
+  if (portrait !== resize._portrait) { resize._portrait = portrait; if (portrait && CAM.zoom > .8 * DPR) CAM.zoom = .72 * DPR; }   // a tall view starts zoomed out a touch so the base fits the narrow frame
   cv.width = w; cv.height = h;
   scene.width = Math.ceil(w / PIX); scene.height = Math.ceil(h / PIX);
   // light is low-frequency, so render it at half res and upscale — 4x cheaper fill
@@ -10411,7 +10463,22 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   TEX.road = mkTex(256, (x, y) => { const r = ridge(x / 40 + 9, y / 40 + 2); let v = .5 + (nz(x / 1.3, y / 1.3) - .5) * .13 + (fbm(x / 70, y / 70, 2) - .5) * .12; if (r > .9) v += (r - .9) * 1.6; if (nz(x / 25, y / 5 + 90) > .78) v -= .06; return gray(clamp(v, 0, 1)); });
   TEX.dirt = mkTex(256, (x, y) => { const c = fbm(x / 14, y / 14, 3), f = nz(x / 2.2, y / 2.2); let v = .42 + (c - .5) * .5 + (f - .5) * .18; if (f > .9) v -= .16; return [v * 1.04, v * .96, v * .88]; });
   // foliage: overlapping leaf clusters — bright lit lobes, dark shadowed gaps and a fine vein grain — used on every crown, cone tier and bush
-  TEX.leaf = mkTex(128, (x, y) => { const c = fbm(x / 7, y / 7, 3), d = fbm(x / 3.5 + 50, y / 3.5, 2), g = nz(x / 1.3, y / 1.3); let v = .5 + (c - .5) * .36 + (d - .5) * .18 + (g - .5) * .1; if (c < .34) v -= .08; if (d > .76) v += .06; return [v * .94, v * 1.06, v * .86]; }, null, { gain: 1.9 });
+  TEX.leaf = mkTex(128, (x, y) => { const c = fbm(x / 9, y / 9, 3); const v = .30 + (c - .5) * .18; return [v * .92, v * 1.05, v * .8]; }, (g, S) => {
+    // hand-drawn leaf clusters over the dark base: hundreds of overlapping leaves in a spread of greens, each with a pale vein,
+    // the top-most ones lightest so the canopy reads as lit leaves over shaded depth
+    const greens = ['#2f5d24', '#3c7030', '#4b8238', '#5f9a42', '#74ad4e', '#8ec25a', '#3a6a2a', '#6aa04a'];
+    let sd = 7; const rnd01 = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    for (let i = 0; i < 260; i++) {
+      const x = rnd01() * S, y = rnd01() * S, a = rnd01() * 6.283, L = 7 + rnd01() * 9, W = L * (.38 + rnd01() * .2), gi = Math.min(greens.length - 1, (i / 260 * greens.length + rnd01() * 2) | 0);
+      g.save(); g.translate(x, y); g.rotate(a);
+      g.fillStyle = greens[gi]; g.beginPath(); g.moveTo(-L * .5, 0); g.quadraticCurveTo(0, -W, L * .5, 0); g.quadraticCurveTo(0, W, -L * .5, 0); g.fill();
+      g.strokeStyle = 'rgba(200,230,150,.45)'; g.lineWidth = .8; g.beginPath(); g.moveTo(-L * .45, 0); g.lineTo(L * .42, 0); g.stroke();
+      g.strokeStyle = 'rgba(20,40,15,.35)'; g.lineWidth = .6; g.beginPath(); g.moveTo(-L * .5, 0); g.quadraticCurveTo(0, -W, L * .5, 0); g.stroke();
+      g.restore();
+    }
+  }, { gain: 1.7 });
+  // canopy cut-outs: an alpha mask with ragged holes so light and sky show through the crowns
+  TEX.leafA = mkTex(128, (x, y) => { const n = fbm(x / 11 + 40, y / 11, 3), m = nz(x / 4, y / 4); return gray(n < .40 || (n < .46 && m > .6) ? 0 : 1); });
   TEX.bump = mkTex(256, (x, y) => gray(fbm(x / 6, y / 6, 4) * .7 + nz(x / 1.5, y / 1.5) * .3));
   TEX.camo = mkTex(128, (x, y) => { const a = fbm(x / 16, y / 16, 3), b = fbm(x / 7 + 40, y / 7 + 40, 2); let v = a < .42 ? .74 : a > .6 ? 1.16 : .95; if (b > .74) v *= .86; v *= 1 + (nz(x / 1.5, y / 1.5) - .5) * .12; return gray(v * .5); }, null, { gain: 1.85 });
   TEX.cloth = mkTex(128, (x, y) => gray(.5 + (nz(x / 1.2, y / 1.2) - .5) * .12 + (Math.sin(x * 1.8) * Math.sin(y * 1.8)) * .03 + (fbm(x / 30, y / 30, 2) - .5) * .12), null, { gain: 1.85 });
@@ -10490,7 +10557,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   scene3.add(sun); scene3.add(sun.target);
   const LIGHTS = []; for (let i = 0; i < 12; i++) { const L = new THREE.PointLight(0xffffff, 0, 10, 2); scene3.add(L); LIGHTS.push(L); }
   G.pixLock = true;                        // the 2D adaptive-resolution swap is meaningless here
-  function size3() { const w = Math.max(640, innerWidth), h = Math.max(400, innerHeight); renderer.setSize(w, h, false); cam3.aspect = w / h; cam3.updateProjectionMatrix(); if (FX.on) fxResize(); }
+  function size3() { const portrait = innerHeight > innerWidth, w = Math.max(portrait ? 300 : 640, innerWidth), h = Math.max(portrait ? 480 : 400, innerHeight); renderer.setSize(w, h, false); cam3.aspect = w / h; cam3.updateProjectionMatrix(); if (FX.on) fxResize(); }
   /* ======================= post-processing: bloom + sunlight rays =======================
      The scene is rendered to an offscreen target; a bright-pass keeps only the hot pixels (lights, glints, muzzle flashes,
      lit windows, the reflective highlights on hulls and glass), which are blurred at quarter resolution into a bloom
@@ -10597,7 +10664,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat; vEx = ex; vWy = (modelMatrix * vec4(transformed, 1.0)).y; vWxz = (modelMatrix * vec4(transformed, 1.0)).xz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; varying float vWy; varying vec2 vWxz; varying vec4 vSplat; varying vec2 vEx;')
       .replace('#include <map_fragment>', [
-        'vec4 w = vSplat; float dw = vEx.x; float ws = max(1e-3, w.x + w.y + w.z + w.w + dw); w /= ws; dw /= ws;',
+        'vec4 w = vSplat; float dw = vEx.x;',
+        // break the blend seams up with a noise so the material boundary looks organic rather than a straight fade
+        '{ float nb = texture2D(tDirt, vUv * 3.7).g * 2.0 - 1.0; vec4 wn = w * 2.0 - 1.0 + nb * 0.9; w = clamp(wn * 0.5 + 0.5, 0.0, 1.0) * step(0.001, w); dw = clamp((dw * 2.0 - 1.0 + nb * 0.9) * 0.5 + 0.5, 0.0, 1.0) * step(0.001, dw); }',
+        'float ws = max(1e-3, w.x + w.y + w.z + w.w + dw); w /= ws; dw /= ws;',
         'vec3 tg = texture2D(tGrass, vUv).rgb, ts = texture2D(tSand, vUv * 1.5).rgb, tr = texture2D(tRock, vUv * .8).rgb, tp = texture2D(tRoad, vUv * 1.2).rgb, td = texture2D(tDirt, vUv * 1.4).rgb;',
         'vec3 t = tg * w.x + ts * w.y + tr * w.z + tp * w.w + td * dw;',
         't = mix(t, td * .62, clamp(vEx.y, 0., 1.));',
@@ -10628,9 +10698,12 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const vx = cx * SEG + Math.round(lx * RES), vy = cy * SEG + Math.round(lz * RES);
       pos.setY(i, elevV(vx, vy)); uv.setXY(i, vx / RES * .25, vy / RES * .25);
       _cc.set(0, 0, 0);
-      const tx0 = Math.floor((vx - .5) / RES), tx1 = Math.floor((vx + .5) / RES), ty0 = Math.floor((vy - .5) / RES), ty1 = Math.floor((vy + .5) / RES);   // tiles touching this vertex
-      for (const ttx of [tx0, tx1]) for (const tty of [ty0, ty1]) { _cc.add(tileCol(ttx, tty, _tc)); const t = inMap(ttx, tty) ? MAP.t[tileIdx(ttx, tty)] : T_DEEP, sp = SPLAT_OF(t); if (sp === 4) ex[i * 2] += .25; else spl[i * 4 + sp] += .25; }
-      _cc.multiplyScalar(.25 * (.9 + vnoise(vx / 14, vy / 14) * .2));
+      // smooth ground-type transitions: colour and splat weights are bilinearly blended between the four nearest TILE CENTRES,
+      // so grass fades into sand / dirt / rock over a full tile instead of snapping at the tile edge (the shader adds noise to the seam)
+      const fu = vx / RES - .5, fv = vy / RES - .5, tx0 = Math.floor(fu), ty0 = Math.floor(fv), au = fu - tx0, av = fv - ty0;
+      for (let k = 0; k < 4; k++) { const ttx = tx0 + (k & 1), tty = ty0 + (k >> 1), w = ((k & 1) ? au : 1 - au) * ((k >> 1) ? av : 1 - av); if (w <= 0) continue;
+        _cc.add(tileCol(ttx, tty, _tc).multiplyScalar(w)); const t = inMap(ttx, tty) ? MAP.t[tileIdx(ttx, tty)] : T_DEEP, sp = SPLAT_OF(t); if (sp === 4) ex[i * 2] += w; else spl[i * 4 + sp] += w; }
+      _cc.multiplyScalar(.9 + vnoise(vx / 14, vy / 14) * .2);
       const cw = (CRW && vx < VW && vy < VH) ? CRW[vIdx(vx, vy)] : 0; if (cw > 0) { _cc.multiplyScalar(1 - cw * .5); ex[i * 2 + 1] = cw; }
       col[i * 3] = _cc.r; col[i * 3 + 1] = _cc.g; col[i * 3 + 2] = _cc.b;
       const dx = elevV(vx + 1, vy) - elevV(vx - 1, vy), dz = elevV(vx, vy + 1) - elevV(vx, vy - 1), il = 1 / Math.hypot(dx * RES, 2, dz * RES);
@@ -10731,7 +10804,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const flush = im => { const n = Math.max(1, im.count); im.instanceMatrix.updateRange.offset = 0; im.instanceMatrix.updateRange.count = n * 16; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) { im.instanceColor.updateRange.offset = 0; im.instanceColor.updateRange.count = n * 3; im.instanceColor.needsUpdate = true; } };   // upload only the instances in use
   const BOXG = new THREE.BoxGeometry(1, 1, 1), SPHG = new THREE.SphereGeometry(1, 9, 7), HELMG = new THREE.SphereGeometry(1, 10, 6, 0, TAU, 0, HPI * 1.15), CYLG = new THREE.CylinderGeometry(1, 1, 1, 8), DODG = new THREE.DodecahedronGeometry(1, 0);
   const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .85, flatShading: true });
-  const leafM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.leaf, roughness: .78, metalness: 0, envMapIntensity: .35, flatShading: true });   // HD foliage: textured, shadow-casting and shadow-receiving
+  const leafM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.leaf, alphaMap: TEX.leafA, alphaTest: .5, side: THREE.DoubleSide, roughness: .8, metalness: 0, envMapIntensity: .35, flatShading: true });   // HD foliage: textured, shadow-casting and shadow-receiving
   const P = {
     box: pool(BOXG, white, 16000, true),                                                                             // plain matte: gear, boots, packs, guns, stumps
     cam: pool(BOXG, new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.camo, roughness: .95, envMapIntensity: .35 }), 9000, true),  // uniform cloth with camo blotches
@@ -10886,10 +10959,19 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + idLean;   // tactical stance while engaged: leaning into the gun, knees bent; crouch/idle add more
     const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) + idHip;
     const spread = torsoW * .24;
-    // legs + boots
+    // legs: thigh + shin with a knee that folds on the trailing leg, a knee pad at the joint and a chunky boot — reads as a real leg in motion
     for (let s = -1; s <= 1; s += 2) {
       const bit = s < 0 ? L_LL : L_RL, swing = (zed ? .45 : .5) * sw * s;
-      if (lm & bit) { limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, legL, legW, ry, swing, trou); const bs = Math.sin(swing), bc = Math.cos(swing); put(P.box, X(bs * legL + legW * .25, s * spread), hipY - bc * legL + legW * .35, Z(bs * legL + legW * .25, s * spread), 0, ry, swing, legW * 1.5, legW * .7, legW * 1.1, BOOT); }
+      if (lm & bit) {
+        const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = swing < 0 ? swing - bend : swing * .72;
+        limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, tL, legW, ry, swing, trou, legW * 1.08);
+        const kf = Math.sin(swing) * tL, ky = hipY - Math.cos(swing) * tL;
+        if (!zed) put(P.head, X(kf + legW * .18, s * spread), ky, Z(kf + legW * .18, s * spread), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
+        limb(bodyPool, X(kf, s * spread), ky, Z(kf, s * spread), cx, cz, sL, legW * .9, ry, sw2, trou);
+        const bs = Math.sin(sw2), bc = Math.cos(sw2), ff = kf + bs * sL, fy = ky - bc * sL;
+        put(P.box, X(ff + legW * .3, s * spread), fy + legW * .38, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.65, legW * .8, legW * 1.05, zed ? col3k(S.trouser || '#3a3a3a', .7) : BOOT);   // boot
+        if (!zed) put(P.box, X(ff, s * spread), fy + legW * .85, Z(ff, s * spread), 0, ry, sw2 * .3, legW * 1.0, legW * .6, legW * 1.02, BOOT);                                                        // boot shaft
+      }
       else STUMP(P.gore, X(0, s * spread), hipY - legW * .3, Z(0, s * spread), 0, ry, 0, legW * .75, legW * .6, legW * .75, blood);
     }
     // torso (leaning), belt, plate carrier / surcoat, shoulder pads, pack
@@ -10976,7 +11058,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         limb(bodyPool, sxp, shoY2, szp, ddx / hl, ddz / hl, L, armW, -Math.atan2(ddz, ddx), Math.atan2(hl, -ddy), sleeve);
         put(P.box, sxp + ddx / dl * L, shoY2 + ddy / dl * L, szp + ddz / dl * L, 0, ry, 0, armW * .9, armW * .9, armW * .9, skin);
       }
-      for (const [s2, t, rt] of pts) { const bit = s2 < 0 ? L_LA : L_RA; const hf = bf + cd0 * t, hy = by + sd0 * t - ww * .45 - (s2 < 0 ? relK * 4.5 * sc : 0); if (s2 < 0 && relK > .35 && (lm & bit)) put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); if (lm & bit) { const df = hf - shoF, dy = shoY2 - hy, L = Math.hypot(df, dy), rz = Math.atan2(df, dy); limb(bodyPool, X(shoF, rt), shoY2, Z(shoF, rt), cx, cz, L, armW, ry, rz, sleeve); put(P.box, X(hf, rt * .6 + gr * .4), hy, Z(hf, rt * .6 + gr * .4), 0, ry, rz, armW * .9, armW * .9, armW * .9, skin); hand[s2] = { f: hf, r: rt * .6 + gr * .4, y: hy }; } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
+      for (const [s2, t, rt] of pts) { const bit = s2 < 0 ? L_LA : L_RA; const hf = bf + cd0 * t, hy = by + sd0 * t - ww * .45 - (s2 < 0 ? relK * 4.5 * sc : 0); if (s2 < 0 && relK > .35 && (lm & bit)) put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); if (lm & bit) { const df = hf - shoF, dy = shoY2 - hy, L = Math.hypot(df, dy), rz = Math.atan2(df, dy); limb(bodyPool, X(shoF, rt), shoY2, Z(shoF, rt), cx, cz, L, armW, ry, rz, sleeve); put(P.box, X(hf, rt * .6 + gr * .4), hy, Z(hf, rt * .6 + gr * .4), 0, ry, rz, armW * .95, armW * .95, armW * .95, zed || med ? skin : GLOVE); hand[s2] = { f: hf, r: rt * .6 + gr * .4, y: hy }; } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
       hand.base = { f: bf, r: gr, y: by };
     } else for (let s2 = -1; s2 <= 1; s2 += 2) {
       const bit = s2 < 0 ? L_LA : L_RA, sw2 = s2 < 0 ? la : ra, rt = s2 < 0 ? lrt : rrt;
@@ -11005,8 +11087,34 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       } else if (launcher) {                                                    // rocket launcher tube resting on the right shoulder
         put(P.cyl, X(shoF + 1 * sc, aR * .9), shoY + 2.5 * sc, Z(shoF + 1 * sc, aR * .9), 0, ry, HPI - .3, W.wid * sc * .45, wl, W.wid * sc * .45, wc);
         put(P.box, X(shoF - 2 * sc, aR * .9), shoY + 5.5 * sc, Z(shoF - 2 * sc, aR * .9), 0, ry, -.3, 5 * sc, 3 * sc, 2.5 * sc, col3('#2a2a2a'));
+      } else if (hand.base && !med && o.ut && GUNKIT[o.ut]) {
+        // role-specific weapon kits, laid along the bore from the stock at the shoulder (hands already sit at .28 / .6 of the bore)
+        const B = hand.base, gr = B.r, cd = cd0, sd = sd0, kit = GUNKIT[o.ut];
+        const at = t => [B.f + cd * t, B.y + sd * t];
+        const bx = (t, dy, L, h, w, col, dr) => { const q = at(t); put(P.box, X(q[0], gr + (dr || 0)), q[1] + dy, Z(q[0], gr + (dr || 0)), 0, ry, dip, L, h, w, col); };
+        const cy = (t, dy, L, r, col, dr) => { const q = at(t); put(P.cyl, X(q[0], gr + (dr || 0)), q[1] + dy, Z(q[0], gr + (dr || 0)), 0, ry, HPI + dip, r, L, r, col); };
+        const u = sc;
+        bx(-1.8 * u, -.2 * u, 6 * u, ww * 1.05, ww * .75, kit.stock === 'tube' ? GUNDK : kit.furn);                 // stock / buffer tube
+        if (kit.stock === 'tube') bx(-4.6 * u, -.3 * u, 2.2 * u, ww * 1.25, ww * .95, GUNDK);                      // collapsible butt-pad
+        if (kit.stock === 'cheek') bx(-3 * u, ww * .55, 4.5 * u, ww * .5, ww * .7, kit.furn);                       // cheek riser
+        bx(wl * .32, 0, wl * .38, ww * 1.05, ww * .85, GUNMETAL);                                                   // upper + lower receiver
+        bx(wl * .2, -ww * .95, 2.2 * u, ww * 1.1, ww * .6, GUNDK);                                                  // pistol grip
+        bx(wl * .58, ww * .2, wl * .3, ww * .78, ww * .78, kit.furn);                                               // handguard / fore-end
+        bx(wl * .58, ww * .62, wl * .28, ww * .18, ww * .4, RAIL);                                                   // top rail
+        cy(wl * .86, ww * .12, wl * (kit.barrel || .36), ww * .2, GUNDK);                                           // barrel
+        if (kit.mag && relK < .35) { const q = at(wl * .33); put(P.box, X(q[0], gr), q[1] - ww * .5 - kit.mag * u * .5, Z(q[0], gr), 0, ry, dip - .25, ww * .85, kit.mag * u * 1.3, ww * .62, GUNDK); }   // curved magazine
+        if (kit.drum) bx(wl * .34, -ww * 1.3, 4.6 * u, 3.2 * u, ww * 1.5, col3('#3a4a30'));                          // belt box
+        if (kit.grip) bx(wl * .62, -ww * .95, ww * .55, 2.4 * u, ww * .5, GUNDK);                                    // vertical foregrip
+        if (kit.optic === 'dot') { bx(wl * .42, ww * 1.05, 2.2 * u, ww * .7, ww * .55, SCOPE); bx(wl * .55, ww * 1.15, .4 * u, ww * .8, ww * .6, LENS); }
+        if (kit.optic === 'holo') { bx(wl * .42, ww * 1.05, 2.8 * u, ww * .9, ww * .8, SCOPE); bx(wl * .56, ww * 1.15, .3 * u, ww * 1.0, ww * .7, LENS); }
+        if (kit.optic === 'scope') { cy(wl * .42, ww * 1.25, 6.5 * u, ww * .42, SCOPE); bx(wl * .42, ww * .8, 1.2 * u, ww * .5, ww * .3, RAIL); cy(wl * .58, ww * 1.25, .5 * u, ww * .47, LENS); }
+        if (kit.optic === 'bigscope') { cy(wl * .4, ww * 1.35, 9 * u, ww * .55, SCOPE); bx(wl * .36, ww * .85, 1.4 * u, ww * .6, ww * .3, RAIL); bx(wl * .5, ww * .85, 1.4 * u, ww * .6, ww * .3, RAIL); cy(wl * .62, ww * 1.35, .5 * u, ww * .62, LENS); }
+        if (kit.supp) cy(wl * 1.02, ww * .12, 6.5 * u, ww * .42, GUNDK); else if (kit.brake) cy(wl * 1.02, ww * .12, 2.2 * u, ww * .3, GUNDK);   // suppressor / muzzle brake
+        if (kit.bipod) for (const sd2 of [-1, 1]) { const q = at(wl * .9); put(P.box, X(q[0], gr + sd2 * ww * .5), q[1] - 1.6 * u, Z(q[0], gr + sd2 * ww * .5), 0, ry, dip, .5 * u, 3.4 * u, .4 * u, GUNDK); }   // folded bipod
+        if (kit.pump) { bx(wl * .6, -ww * .55, wl * .2, ww * .55, ww * .8, kit.furn); cy(wl * .72, -ww * .45, wl * .5, ww * .22, GUNDK); }   // pump + tube magazine
+        if (kit.laser) { bx(wl * .62, ww * .95, 1.4 * u, ww * .5, ww * .4, GUNDK); }                                  // PEQ box (the green beam is drawn by the flashlight code)
       } else if (hand.base) {
-        // the gun is laid along the bore line from the stock at the shoulder: stock → receiver → fore-end → barrel
+        // generic: the gun is laid along the bore line from the stock at the shoulder: stock → receiver → fore-end → barrel
         const B = hand.base, gr = B.r, cd = cd0, sd = sd0;
         const at = t => [B.f + cd * t, B.y + sd * t];                            // point t along the bore from the stock base
         let q = at(wl * .33); put(P.box, X(q[0], gr), q[1], Z(q[0], gr), 0, ry, dip, wl * .5, ww, ww * .8, wc);                                   // receiver
@@ -11022,7 +11130,19 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   /* battering ram hauled by the siege crew */
   function drawRam(x, y, z, ang, r) { const u = FS, ry = -ang, cx = Math.cos(ang), cz = Math.sin(ang); put(P.cloth, x - cx * .2 * u, y + .58 * u, z - cz * .2 * u, 0, ry, 0, 1.7 * u, .18 * u, .18 * u, WOOD); for (const f of [-.5, .5]) for (const sd of [-.3, .3]) put(P.cyl, x + (cx * f - cz * sd) * u, y + .28 * u, z + (cz * f + cx * sd) * u, 0, ry, 0, .04 * u, .56 * u, .04 * u, WOOD); for (const f of [-.5, .5]) put(P.cloth, x + cx * f * u, y + .1 * u, z + cz * f * u, 0, ry, 0, .12 * u, .1 * u, .8 * u, WOOD); put(P.metal, x + cx * .95 * u, y + .58 * u, z + cz * .95 * u, 0, ry, 0, .3 * u, .22 * u, .22 * u, DKSTEEL); put(P.cloth, x, y + .95 * u, z, 0, ry, 0, 1.2 * u, .06 * u, .7 * u, col3('#6a3a2a')); }
   /* warhorse with barding and saddle; the rider sits at HORSE_SEAT */
-  const LASER = col3('#30ff50');
+  /* per-role weapon kits: what the rig draws in the soldier's hands */
+  const GUNKIT = {
+    rifleman: { furn: col3('#2a2d31'), stock: 'tube', mag: 4, optic: 'dot', grip: 1, brake: 1, barrel: .34 },                 // M4 carbine, red dot, foregrip
+    medic:    { furn: col3('#2a2d31'), stock: 'tube', mag: 4, optic: 'dot', barrel: .28 },                                     // short carbine
+    engineer: { furn: col3('#5a4a34'), stock: 'fixed', pump: 1, barrel: .3 },                                                 // pump shotgun, wood furniture
+    mortar:   { furn: col3('#2a2d31'), stock: 'tube', mag: 4, barrel: .26 },                                                   // compact carbine
+    support:  { furn: col3('#2f3236'), stock: 'fixed', drum: 1, bipod: 1, brake: 1, barrel: .42, optic: 'dot' },              // M249 belt-fed, bipod
+    gunner:   { furn: col3('#1c1e22'), stock: 'tube', mag: 4, optic: 'holo', grip: 1, supp: 1, laser: 1, barrel: .3 },        // suppressed carbine, holo, PEQ laser
+    marksman: { furn: col3('#8a7a56'), stock: 'cheek', mag: 5, optic: 'scope', bipod: 1, brake: 1, barrel: .5 },              // DMR, tan furniture, scope
+    sniper:   { furn: col3('#4a5a3a'), stock: 'cheek', mag: 3, optic: 'bigscope', bipod: 1, brake: 1, barrel: .6 }            // bolt-action, big scope
+  };
+  const TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35);
+  const LASER = col3('#30ff50'), KNEE = col3('#2a2c28'), GLOVE = col3('#2c2a26'), GUNMETAL = col3('#24272b'), GUNDK = col3('#15171a'), TANF = col3('#8a7a56'), SCOPE = col3('#1a1c1e'), LENS = col3('#7fc8ff'), RAIL = col3('#3a3d42');
   const HORSE = col3('#4a3a2a'), HDARK = col3('#2c2118'), HORSE_SEAT = .72 * FS;
   function drawHorse(x, y, z, ang, walk, bard) {
     const u = FS, ry = -ang, cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, sw = Math.sin(walk * 1.3), X = (f, r) => x + (cx * f + px * r) * u, Z = (f, r) => z + (cz * f + pz * r) * u, Y = h => y + h * u;
@@ -11706,7 +11826,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (px < 0 || py < 0 || px >= WW || py >= WH) continue;
       const tl = MAP.t[tileIdx((px / TS) | 0, (py / TS) | 0)]; const wet = (tl === T_SWAMP || WATER(tl)) ? .7 : 0;
       const a = (mistK + wet) * (.05 + h3 * .05) * (.7 + .3 * Math.sin(t * .5 + i * 1.7)); if (a < .012) continue;
-      bb(partsAlpha, px * K, groundY(px, py) + .18 + h3 * .25, py * K, 3 + h2 * 4, .78, .82, .88, a);
+      bb(partsNoise, px * K, groundY(px, py) + .18 + h3 * .25, py * K, 3.5 + h2 * 4.5, .8, .84, .9, a * 1.6, h1);
     }
     // sun motes: pollen and dust hanging in the light on a clear day
     if (day > .35 && wx < .4) {
@@ -11720,15 +11840,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       }
     }
     // falling leaves: once the wind gets up, leaves tumble out of the forest canopy and drift downwind
-    if (wm > 18) {
-      const n = Math.min(60, ((wm - 18) * 1.6) | 0), wl = wm + 1e-3, wdx = G.wind.x / wl, wdy = G.wind.y / wl;
+    if (wm > 6) {
+      const n = Math.min(90, (12 + (wm - 6) * 2.2) | 0), wl = wm + 1e-3, wdx = G.wind.x / wl, wdy = G.wind.y / wl;
       for (let i = 0; i < n; i++) {
         const h1 = hash2(i, 31), h2 = hash2(i, 33), h3 = hash2(i, 37), cyc = 5 + h3 * 4, ph = ((t * (1 / cyc) + h1) % 1);
         const sx = cx + (h1 * 2 - 1) * ext * .7, sy = cy + (h2 * 2 - 1) * ext * .6;
         const tx = (sx / TS) | 0, ty = (sy / TS) | 0; if (tx < 0 || ty < 0 || tx >= MW || ty >= MH || MAP.t[tileIdx(tx, ty)] !== T_FOREST) continue;
-        const px = sx + wdx * ph * wm * 2.2 + Math.sin(t * 2 + i) * 6, py = sy + wdy * ph * wm * 2.2 + Math.cos(t * 1.7 + i) * 5, hgt = 1.7 * (1 - ph) + Math.abs(Math.sin(t * 3 + i)) * .08;
+        // a leaf zig-zags as it falls: it sideslips on the wind, rocks side to side and spins, and falls slower the harder it blows
+        const fall = 1 - ph, drift = ph * wm * (2.6 + h2), zig = Math.sin(t * (2.2 + h3) + i) * (5 + wm * .12), px = sx + wdx * drift - wdy * zig, py = sy + wdy * drift + wdx * zig;
+        const hgt = 1.8 * fall + Math.abs(Math.sin(t * 2.5 + i)) * .1;
         if (px < 0 || py < 0 || px >= WW || py >= WH) continue;
-        put(P.leafLit, px * K, groundY(px, py) + hgt, py * K, t * 3 + i, t * 2, t * 4 + i, 1.2, 1, 1.2, LITC[i & 3]);
+        put(P.leafLit, px * K, groundY(px, py) + hgt, py * K, Math.sin(t * 3 + i) * 1.2, t * 1.5 + i, Math.cos(t * 2.3 + i) * .9, 1.3, 1, 1.3, LITC[i & 3]);
       }
     }
     // birds: every half-minute or so a small flock crosses the view in a loose V, flapping, with soft shadows sliding over the ground
@@ -12085,10 +12207,14 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const hs = Math.hypot(b.vx, b.vy) || 1, pit = (b.drop || b.fly) ? Math.atan2((b.zSlope || 0) * hs, hs) : 0;
       if (b.kind === 'arrow') put(P.cyl, x, y, z, 0, -a, HPI + pit, .012, .55, .012, WOOD);
       else {
-        put(P.tracer, x, y, z, 0, -a, pit, len, .035, .035);
-        // a small glowing head on every tracer — bright in the dark, so fire reads as flashes streaking out (pew pew)
-        const dk = .45 + (1 - dayNow) * 1.0;
-        bb(partsAdd, x, y, z, (.10 + len * .12) * dk, 1, .88, .55, .85 * dk);
+        // a real tracer: a white-hot head, a thin bright core, and a longer orange tail that fades away behind the round, capped by a soft glow
+        const cp = Math.cos(pit), ca = Math.cos(a), sa = Math.sin(a), tl2 = len * 2.6, sh = b.kind === 'shell' ? 1.6 : b.kind === 'rocket' ? 1.3 : 1;
+        put(P.tracer, x - ca * cp * tl2 * .5, y - Math.sin(pit) * tl2 * .5, z - sa * cp * tl2 * .5, 0, -a, pit, tl2, .018 * sh, .018 * sh, TRACE_TAIL);
+        put(P.tracer, x - ca * cp * len * .3, y, z - sa * cp * len * .3, 0, -a, pit, len * 1.1, .03 * sh, .03 * sh, TRACE_CORE);
+        put(P.tracer, x, y, z, 0, -a, pit, len * .35, .045 * sh, .045 * sh, WHITE);
+        const dk = .4 + (1 - dayNow) * .9;
+        bb(partsAdd, x, y, z, (.09 + len * .1) * dk * sh, 1, .82, .5, .8 * dk);
+        if (b.kind === 'shell') bb(partsAdd, x - ca * cp * .3, y, z - sa * cp * .3, .5, 1, .6, .3, .35);
       }
       if (b.kind === 'rocket') bb(partsAdd, x, y, z, .35, 1, .75, .4, .9);
       if (b.kind === 'acid') bb(partsAdd, x, y, z, .28, .6, .95, .25, .9);
@@ -12103,8 +12229,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
       else if (k === 'flare') { const fl = .75 + .25 * Math.sin(G.t * 40 + p.x); bb(partsAdd, x, y, z, r * 7 * fl, 1, .55, .22, a * .55); bb(partsAdd, x, y, z, r * 3 * fl, 1, .85, .5, a * .9); bb(partsAdd, x, y, z, r * 1.3, 1, 1, .95, a); }   // orange halo, hot amber body, white core
       else if (k === 'ring') put(P.ring, x, gy + .06, z, -HPI, 0, 0, r, r, 1);
-      else if (k === 'smoke') bb(partsAlpha, x, y + .08, z, r * 1.9, c[0], c[1], c[2], a * (p.white ? .6 : .36));
-      else if (k === 'dust' || k === 'fog') bb(partsAlpha, x, y + .02, z, r * 1.7, c[0], c[1], c[2], a * .15);
+      else if (k === 'smoke') bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], a * (p.white ? .8 : .5), p._sd === undefined ? (p._sd = Math.random()) : p._sd);
+      else if (k === 'dust' || k === 'fog') bb(partsNoise, x, y + .02, z, r * 2.1, c[0], c[1], c[2], a * .22, p._sd === undefined ? (p._sd = Math.random()) : p._sd);
       else if (k === 'blood') { bb(partsAlpha, x, y, z, Math.max(.06, r * 1.7), c[0] * .55, c[1] * .3, c[2] * .3, Math.min(1, a * 1.5)); if (p.z > 1) bb(partsAlpha, x, y - r * .6, z, Math.max(.04, r * .9), c[0] * .5, c[1] * .25, c[2] * .25, Math.min(1, a)); }
       else if (k === 'gib') drawGib(p, x, gy + (p.z || 0) * K, z);
       else if (k === 'chunk') { if (p.col && MEAT(p.col)) { const v = rgbOf(p.col); if (v[1] > v[0] * 1.6) continue; put(P.gore, x, y, z, p.rot * 1.3, p.rot, p.rot * .7, r * .9, r * .7, r * .8, col3(p.col)); } else put(P.box, x, y, z, p.rot * 1.1, p.rot, p.rot * .6, r * 1.2, r * .6, r * .9, col3(p.col || '#5a4028')); }
@@ -12126,8 +12252,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     if (G._r3d && G._r3d.skip) for (const im of PER_FRAME.concat(PROPS)) if (G._r3d.skip.has(im)) im.count = 0;
     for (const im of PER_FRAME) flush(im);
     atmosphereFX(dayNow);
-    bbFlush(partsAdd); bbFlush(partsAlpha);
-    if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; }
+    bbFlush(partsAdd); bbFlush(partsAlpha); bbFlush(partsNoise);
+    if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; partsNoise.geo.instanceCount = 0; }
     renderFrame(dayNow);
     for (const im of PER_FRAME) im.count = 0;
     growPools();                                                     // any pool that ran dry this frame (huge waves) gets a bigger buffer for the next one
@@ -12158,18 +12284,23 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     if (G.cutscene) drawCutscene(ctx);
   };
   /* billboard particle pools (instanced quads: gl_Points are size-capped) */
-  function mkBillboards(blend, soft) {
+  function mkBillboards(blend, soft, noisy) {
     const N = 8000, geo = new THREE.InstancedBufferGeometry(), quad = new THREE.PlaneGeometry(1, 1);
     geo.index = quad.index; geo.setAttribute('position', quad.attributes.position); geo.setAttribute('uv', quad.attributes.uv);
     geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3)); geo.setAttribute('iCol', new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4)); geo.setAttribute('iSz', new THREE.InstancedBufferAttribute(new Float32Array(N), 1));
-    const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: blend, uniforms: { soft: { value: soft } },
-      vertexShader: 'attribute vec3 iPos; attribute vec4 iCol; attribute float iSz; varying vec4 vc; varying vec2 vu; void main(){ vc=iCol; vu=uv; vec4 mv=modelViewMatrix*vec4(iPos,1.); mv.xy += position.xy * iSz; gl_Position=projectionMatrix*mv; }',
-      fragmentShader: 'varying vec4 vc; varying vec2 vu; uniform float soft; void main(){ vec2 d=vu-.5; float r=length(d)*2.; if(r>1.) discard; float a=pow(1.-r, soft); gl_FragColor=vec4(vc.rgb, vc.a*a); }' });
-    const pts = new THREE.Mesh(geo, m); pts.frustumCulled = false; scene3.add(pts); geo.instanceCount = 0; return { geo, n: 0, N };
+    geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(new Float32Array(N), 1));
+    for (const k of ['iPos', 'iCol', 'iSz', 'iSeed']) geo.attributes[k].setUsage(THREE.DynamicDrawUsage);
+    // noisy billboards (smoke, dust, mist): a cloud texture, rotated and offset per particle by its seed, carves ragged wisps out of the soft disc
+    const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: blend, uniforms: { soft: { value: soft }, tN: { value: TEX.cloud }, uT: { value: 0 } },
+      vertexShader: 'attribute vec3 iPos; attribute vec4 iCol; attribute float iSz; attribute float iSeed; varying vec4 vc; varying vec2 vu; varying float vs; void main(){ vc=iCol; vu=uv; vs=iSeed; vec4 mv=modelViewMatrix*vec4(iPos,1.); mv.xy += position.xy * iSz; gl_Position=projectionMatrix*mv; }',
+      fragmentShader: noisy
+        ? 'varying vec4 vc; varying vec2 vu; varying float vs; uniform float soft, uT; uniform sampler2D tN; void main(){ vec2 d=vu-.5; float r=length(d)*2.; if(r>1.) discard; float an = vs * 6.2831; vec2 q = vec2(d.x*cos(an)-d.y*sin(an), d.x*sin(an)+d.y*cos(an)); float n = texture2D(tN, q * 0.7 + vec2(vs * 3.1, vs * 1.7) + uT * 0.004).r; n = n * 0.6 + texture2D(tN, q * 1.9 + vec2(vs * 5.3, vs * 2.9) - uT * 0.006).r * 0.4; float edge = pow(1.-r, soft); float a = edge * smoothstep(0.30 - edge * 0.25, 0.72, n) * 1.6; gl_FragColor=vec4(vc.rgb * (0.85 + n * 0.3), vc.a*min(1.0, a)); }'
+        : 'varying vec4 vc; varying vec2 vu; varying float vs; uniform float soft; void main(){ vec2 d=vu-.5; float r=length(d)*2.; if(r>1.) discard; float a=pow(1.-r, soft); gl_FragColor=vec4(vc.rgb, vc.a*a); }' });
+    const pts = new THREE.Mesh(geo, m); pts.frustumCulled = false; scene3.add(pts); geo.instanceCount = 0; return { geo, n: 0, N, mat: m };
   }
-  const partsAdd = mkBillboards(THREE.AdditiveBlending, 1.6), partsAlpha = mkBillboards(THREE.NormalBlending, 1.0);
-  const bb = (sys, x, y, z, sz, r, g, b, a) => { if (sys.n >= sys.N) return; const Pp = sys.geo.attributes.iPos.array, C = sys.geo.attributes.iCol.array, S = sys.geo.attributes.iSz.array, i = sys.n++; Pp[i * 3] = x; Pp[i * 3 + 1] = y; Pp[i * 3 + 2] = z; C[i * 4] = r; C[i * 4 + 1] = g; C[i * 4 + 2] = b; C[i * 4 + 3] = a; S[i] = sz; };
-  const bbFlush = sys => { const n = Math.max(1, sys.n), A = sys.geo.attributes; sys.geo.instanceCount = sys.n; A.iPos.updateRange.count = n * 3; A.iCol.updateRange.count = n * 4; A.iSz.updateRange.count = n; A.iPos.needsUpdate = true; A.iCol.needsUpdate = true; A.iSz.needsUpdate = true; sys.n = 0; };
+  const partsAdd = mkBillboards(THREE.AdditiveBlending, 1.6), partsAlpha = mkBillboards(THREE.NormalBlending, 1.0), partsNoise = mkBillboards(THREE.NormalBlending, .7, true);
+  const bb = (sys, x, y, z, sz, r, g, b, a, seed) => { if (sys.n >= sys.N) return; const Pp = sys.geo.attributes.iPos.array, C = sys.geo.attributes.iCol.array, S = sys.geo.attributes.iSz.array, i = sys.n++; Pp[i * 3] = x; Pp[i * 3 + 1] = y; Pp[i * 3 + 2] = z; C[i * 4] = r; C[i * 4 + 1] = g; C[i * 4 + 2] = b; C[i * 4 + 3] = a; S[i] = sz; sys.geo.attributes.iSeed.array[i] = seed === undefined ? ((i * 7919) % 1000) / 1000 : seed; };
+  const bbFlush = sys => { const n = Math.max(1, sys.n), A = sys.geo.attributes; sys.geo.instanceCount = sys.n; A.iPos.updateRange.count = n * 3; A.iCol.updateRange.count = n * 4; A.iSz.updateRange.count = n; A.iSeed.updateRange.count = n; A.iPos.needsUpdate = true; A.iCol.needsUpdate = true; A.iSz.needsUpdate = true; A.iSeed.needsUpdate = true; if (sys.mat.uniforms.uT) sys.mat.uniforms.uT.value = G.t || 0; sys.n = 0; };
   /* ghost footprint for placement / relocation */
   /* placement ghosts: a pool of translucent boxes so a whole shift-placed / dragged blueprint row shows at once, each with an edge outline and a footprint plate on the ground so the exact tiles read clearly */
   const GHOST_MAT = { ok: new THREE.MeshStandardMaterial({ color: lin(0x8dffbe), transparent: true, opacity: .38, depthWrite: false }), bad: new THREE.MeshStandardMaterial({ color: lin(0xff6a5a), transparent: true, opacity: .38, depthWrite: false }), q: new THREE.MeshStandardMaterial({ color: lin(0x7fc8ff), transparent: true, opacity: .34, depthWrite: false }) };
@@ -12281,7 +12412,7 @@ function setupShowcase() {
   for (const [t, dx, dy] of line) { const u = spawnUnit(t, cx + dx + rnd(-12, 12), cy + dy + rnd(-12, 12), true); u.ang = 0; u.tang = 0; u.home = { x: u.x, y: u.y }; }
   spawnUnit('apache', cx + 30, cy - 50, true);   // gunship circling overhead
   showcaseHorde(22);
-  CAM.zoom = .92 * ((typeof DPR !== 'undefined') ? DPR : 1);
+  CAM.zoom = (innerHeight > innerWidth ? .72 : .92) * ((typeof DPR !== 'undefined') ? DPR : 1);   // portrait phones start zoomed out a touch
   CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
   centerOn(cx - CAM.vw * .10, cy);
 }
@@ -12598,6 +12729,8 @@ function loadFromLocal() { try { const s = localStorage.getItem(SAVE_KEY); if (!
   const collGrps = grps.filter(g => !g.classList.contains('pinned'));
   collGrps.forEach((g, i) => { if (i) g.classList.add('closed'); const h = g.querySelector('h3'); if (h) h.addEventListener('click', () => { const open = !g.classList.contains('closed'); collGrps.forEach(o => o.classList.add('closed')); if (!open) g.classList.remove('closed'); AU.ui && AU.ui('ok'); }); });
   // graphics quality buttons
+  // portrait HUD: the panels above the command card stack on its live height (it grows with the number of buttons)
+  try { const cmdEl = $('cmd'); const upd = () => { const h = cmdEl.classList.contains('collapsed') ? 30 : cmdEl.getBoundingClientRect().height; document.documentElement.style.setProperty('--cmdh', Math.round(h) + 'px'); }; new ResizeObserver(upd).observe(cmdEl); new MutationObserver(upd).observe(cmdEl, { attributes: true, attributeFilter: ['class'] }); upd(); } catch (e) {}
   document.querySelectorAll('#gfxRow button').forEach(b => b.addEventListener('click', () => { if (typeof setQuality === 'function') setQuality(b.dataset.q, true); alertMsg('Graphics: ' + b.dataset.q, 'info'); AU.ui && AU.ui('ok'); }));
   function saveAudioPrefs() { try { localStorage.setItem('zrts_audio', JSON.stringify({ m: vM.value / 100, s: vS.value / 100, a: vA.value / 100 })); } catch (e) {} }
   try {
