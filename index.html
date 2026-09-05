@@ -125,6 +125,14 @@ html,body{width:100%;height:100%;height:100dvh;position:relative;overflow:hidden
 .uico .ico-pulse{animation:ico-pulse 1.8s ease-in-out infinite}
 .uico .ico-scan{animation:ico-scan 2.2s ease-in-out infinite alternate;transform-origin:16px 15px}
 .uico .ico-lift{animation:ico-lift 2.6s ease-in-out infinite}
+@keyframes ico-smoke{0%{transform:translateY(0);opacity:.8}100%{transform:translateY(-4px);opacity:0}}
+@keyframes ico-belt{0%{transform:translateX(-7px)}100%{transform:translateX(0)}}
+@keyframes ico-fork{0%,100%{transform:translateX(0)}50%{transform:translateX(-9px)}}
+@keyframes ico-badge{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+.uico .ico-smoke{animation:ico-smoke 1.6s linear infinite}
+.uico .ico-belt{animation:ico-belt 1.4s linear infinite}
+.uico .ico-fork{animation:ico-fork 3s ease-in-out infinite}
+.uico .ico-badge{animation:ico-badge 2.4s ease-in-out infinite;transform-origin:24px 8px}
 .btn.dis .uico{filter:grayscale(.7) brightness(.7)}
 .btn .n{font-size:8.6px;line-height:1.12;letter-spacing:.3px;color:#c3ddd0;text-transform:uppercase;
   text-align:center;font-weight:700}
@@ -543,6 +551,133 @@ html.touch.placing #placebar{display:flex}
 #tilt i.t{top:0;height:17%;backdrop-filter:blur(2.2px);-webkit-backdrop-filter:blur(2.2px);mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,0) 100%);-webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,0) 100%)}
 #tilt i.b{bottom:0;height:15%;backdrop-filter:blur(1.8px);-webkit-backdrop-filter:blur(1.8px);mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,0) 100%);-webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,0) 100%)}
 @media (pointer:coarse){ #tilt i{backdrop-filter:none;-webkit-backdrop-filter:none} }   /* skip the blur on phones (expensive) */
+/* =====================================================================================
+   visionOS-style HUD skin: frosted glass panels, soft rounded pills, hairline highlights,
+   spring transitions on everything that moves.  Overrides the base skin above.
+   ===================================================================================== */
+:root{--gl:rgba(20,26,30,.52);--gl2:rgba(255,255,255,.07);--gl3:rgba(255,255,255,.14);--hl:rgba(255,255,255,.18);--ln:rgba(255,255,255,.12);
+  --ac:#8dffbe;--ac2:#ffbe63;--ease:cubic-bezier(.2,.8,.2,1);--r:22px;--rs:14px;--sans:-apple-system,"SF Pro Display","SF Pro Text",BlinkMacSystemFont,"Inter","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+html,body{font-family:var(--sans)}
+.pan{background:var(--gl);border:1px solid var(--ln);border-radius:var(--r);
+  -webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%);
+  box-shadow:0 24px 60px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.25),inset 0 1px 0 var(--hl);
+  transition:transform .5s var(--ease),opacity .35s ease,box-shadow .35s ease}
+.pan:hover{box-shadow:0 30px 70px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.25),inset 0 1px 0 var(--hl)}
+/* top bar becomes a floating capsule */
+#topbar{height:56px;border-radius:999px;padding:0 6px;gap:0;font-family:var(--sans)}
+#topbar .cell{border-right:0;padding:0 18px;position:relative}
+#topbar .cell+.cell::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:1px;background:var(--ln)}
+.res{font-family:var(--sans);font-weight:700;letter-spacing:-.02em}
+.lbl{font-family:var(--sans);letter-spacing:.14em;font-weight:600;color:rgba(230,240,235,.55)}
+#clock,#rPop{font-family:var(--sans);font-weight:600}
+.ico{border-radius:6px}
+#wavebar{border-radius:999px;border:0;background:rgba(255,255,255,.1);height:6px}
+#wavefill{border-radius:999px}
+#wavebox.horde{border-radius:999px}
+/* pills */
+.sbtn,#selall button,#mzoom button,.cbtn,.segb button,.numb button,#setbox button.sx,#setbox .mini,#setbox label.upl,#setbox .closex,#placebar button,#setbtn,#hudtog,#fsbtn,.dvbtn,.mback,.mbtn{
+  font-family:var(--sans);border-radius:999px;border:1px solid var(--ln);background:var(--gl2);color:#e9f3ee;
+  box-shadow:inset 0 1px 0 var(--hl);transition:transform .3s var(--ease),background .25s ease,border-color .25s ease,color .25s ease,box-shadow .3s ease;letter-spacing:.02em}
+.sbtn:hover,#selall button:hover,#mzoom button:hover,.cbtn:hover,.segb button:hover,.numb button:hover,#setbox button.sx:hover,#setbox .mini:hover,#setbox label.upl:hover,#placebar button:hover,#setbtn:hover,.dvbtn:hover,.mback:hover{
+  background:var(--gl3);border-color:rgba(255,255,255,.28);color:#fff;transform:translateY(-1px) scale(1.03);box-shadow:inset 0 1px 0 var(--hl),0 8px 22px rgba(0,0,0,.35)}
+.sbtn:active,#selall button:active,#mzoom button:active,.cbtn:active,.segb button:active{transform:scale(.94)}
+.sbtn.on,.segb button.on,#setbox #gfxRow button.sx.on{background:linear-gradient(180deg,#a5ffcf,#4fd88c);border-color:transparent;color:#06120c;box-shadow:0 6px 20px rgba(120,255,190,.35),inset 0 1px 0 rgba(255,255,255,.5)}
+.sbtn.pz.on{background:linear-gradient(180deg,#ffd89a,#f0a63a);color:#1a1004}
+#speed{padding:6px;border-radius:999px;gap:5px}
+#speedbtns{gap:5px}
+.sbtn{min-width:44px;height:40px;font-weight:600;font-size:13px}
+#setbtn{width:44px;height:40px;border-radius:999px}
+/* command card */
+#cmd{padding:12px;gap:8px;border-radius:var(--r)}
+#cmdtitle{font-family:var(--sans);letter-spacing:.16em;color:rgba(230,240,235,.6);font-weight:600;padding:2px 4px 0}
+.btn{border-radius:var(--rs);border:1px solid var(--ln);background:var(--gl2);box-shadow:inset 0 1px 0 var(--hl);height:72px;
+  transition:transform .32s var(--ease),background .25s ease,border-color .25s ease,box-shadow .32s ease}
+.btn:hover{background:var(--gl3);border-color:rgba(255,255,255,.3);transform:translateY(-3px) scale(1.04);box-shadow:inset 0 1px 0 var(--hl),0 12px 26px rgba(0,0,0,.4)}
+.btn:active{transform:scale(.95)}
+.btn.act{border-color:rgba(255,190,99,.8);background:rgba(255,190,99,.14);box-shadow:0 0 22px rgba(255,190,99,.3),inset 0 1px 0 var(--hl)}
+.btn.dis{opacity:.32;border-color:var(--ln)}
+.btn .n{font-family:var(--sans);font-size:9px;letter-spacing:.04em;font-weight:600;color:#e6f0ea;text-transform:none}
+.btn .k{color:var(--ac2);font-family:var(--sans);font-weight:700;background:rgba(0,0,0,.35);border-radius:6px;padding:1px 4px;top:4px;left:4px}
+.btn .c{font-family:var(--sans);font-weight:600}
+.btn .fill{border-radius:0 0 var(--rs) var(--rs);background:linear-gradient(90deg,#4aa8ff,#8ad4ff)}
+/* selection panel */
+#sel{padding:14px 16px;border-radius:var(--r)}
+#selname{font-family:var(--sans);letter-spacing:.02em;text-transform:none;font-size:18px;font-weight:700}
+#selsub{font-family:var(--sans);color:rgba(230,240,235,.55)}
+.bar{border-radius:999px;border:0;background:rgba(255,255,255,.1);height:8px}
+.bar>i{border-radius:999px}
+.stats{font-family:var(--sans);color:rgba(230,240,235,.65)}
+.port{border-radius:10px;border:1px solid var(--ln);background:var(--gl2);transition:transform .3s var(--ease),background .25s ease}
+.port:hover{background:var(--gl3);transform:translateY(-2px) scale(1.06);border-color:rgba(255,255,255,.3)}
+.port i{border-radius:999px}
+/* minimap */
+#miniwrap{padding:8px;border-radius:var(--r)}
+#mini{border-radius:14px}
+#selall .lab{font-family:var(--sans);letter-spacing:.14em;color:rgba(230,240,235,.5)}
+#selall button{font:600 9.5px/1 var(--sans);letter-spacing:.06em;padding:6px 4px}
+#mzoom button{width:24px;height:22px;font:700 12px/1 var(--sans)}
+.phead{font-family:var(--sans);letter-spacing:.16em;color:rgba(230,240,235,.6);font-weight:600}
+/* tooltips, alerts, hints, confirm */
+#tip{background:rgba(18,24,28,.78);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--ln);border-radius:16px;
+  box-shadow:0 20px 50px rgba(0,0,0,.5),inset 0 1px 0 var(--hl);font-family:var(--sans);color:#e6f0ea;padding:12px 14px}
+#tip b{font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:14px;color:#fff}
+#tip .cst{color:var(--ac2)}
+.alert{font-family:var(--sans);text-transform:none;letter-spacing:.01em;border-radius:999px;padding:8px 18px;border:1px solid rgba(255,107,107,.45);border-left-width:1px;
+  background:rgba(40,16,16,.6);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);box-shadow:0 12px 30px rgba(0,0,0,.4),inset 0 1px 0 var(--hl)}
+.alert.good{border-color:rgba(77,224,140,.45);background:rgba(14,40,26,.6)}
+.alert.info{border-color:rgba(62,160,255,.45);background:rgba(14,28,48,.6)}
+#hint{font-family:var(--sans);letter-spacing:.01em;font-weight:500;border-radius:999px;border:1px solid var(--ln);background:rgba(18,24,28,.7);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);box-shadow:0 12px 30px rgba(0,0,0,.4),inset 0 1px 0 var(--hl);padding:10px 20px}
+#confirm{border-radius:999px;padding:8px 10px}
+#confirm .txt{font-family:var(--sans);font-weight:600;letter-spacing:0}
+.cbtn{padding:10px 22px;font-weight:600;letter-spacing:.02em}
+.cbtn.go{background:linear-gradient(180deg,#a5ffcf,#4fd88c);color:#06120c;border-color:transparent}
+.cbtn.no{background:var(--gl2);color:#e6f0ea}
+#placebar{gap:8px}#placebar button{font-family:var(--sans);border-radius:999px;font-weight:600;letter-spacing:.02em}
+#placebar button.go{background:linear-gradient(180deg,#a5ffcf,#4fd88c);color:#06120c;border-color:transparent}
+/* building popup + intel */
+#bpop,#intel{background:var(--gl);-webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%);border:1px solid var(--ln);border-radius:18px;
+  box-shadow:0 24px 60px rgba(0,0,0,.45),inset 0 1px 0 var(--hl);font-family:var(--sans)}
+#bpop .rows span{border-radius:999px;background:var(--gl2);border-color:var(--ln)}
+#bpop .hpw{border-radius:999px;background:rgba(255,255,255,.1)}
+#bpop .st,#intel .ist{font-family:var(--sans)}
+/* settings sheet */
+#settings{background:rgba(6,10,12,.45);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);transition:opacity .3s ease}
+#setbox{border-radius:26px;font-family:var(--sans);padding:24px 26px 26px;animation:sheetIn .45s var(--ease)}
+@keyframes sheetIn{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+#setbox h2{font-family:var(--sans);text-transform:none;letter-spacing:-.01em;font-size:22px;font-weight:700}
+#setbox .sc{font-family:var(--sans)}
+#setbox .grp{border-radius:18px;border:1px solid var(--ln);background:var(--gl2)!important;box-shadow:inset 0 1px 0 var(--hl)}
+#setbox .grp h3{font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:13px;color:#fff}
+#setbox .slid,#setbox .sfxrow{font-family:var(--sans)}
+#setbox .slid input[type=range]{accent-color:var(--ac)}
+#setbox button.sx{border-radius:999px;background:var(--gl2);color:#e9f3ee}
+#setbox button.sx.go{background:linear-gradient(180deg,#a5ffcf,#4fd88c);color:#06120c;border-color:transparent}
+.numb input{font:600 12px var(--sans);border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--ln)}
+.dvtog{border-radius:999px;font-family:var(--sans);background:var(--gl2);border-color:var(--ln)}
+.dvtog i{border-radius:999px}
+#dev{border-radius:var(--r);border-color:var(--ln)!important}
+#dev .dvhead,.dvlbl{font-family:var(--sans);letter-spacing:.06em}
+#playdev,#devtoggle{font-family:var(--sans);border-radius:999px}
+#hudtog{border-radius:999px;font-family:var(--sans)}
+#fsbtn{border-radius:999px}
+#mtools button{font-family:var(--sans);border-radius:999px}
+/* entrance / exit motion for the HUD panels */
+#sel,#cmd,#miniwrap,#speed,#topbar{animation:panIn .55s var(--ease)}
+@keyframes panIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+#topbar{animation-name:barIn}
+@keyframes barIn{from{opacity:0;transform:translateX(-50%) translateY(-14px) scale(.98)}to{opacity:1;transform:translateX(-50%)}}
+#miniwrap.collapsed,#cmd.collapsed{transition:transform .5s var(--ease)}
+/* game over + main menu glass */
+#over{-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+.mbtn{border-radius:18px;font-family:var(--sans);letter-spacing:.06em;text-transform:none;font-weight:600;background:var(--gl2);border-color:var(--ln);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%)}
+.mbtn.primary{background:linear-gradient(180deg,#a5ffcf,#4fd88c)}
+.mcard,.mapcard{border-radius:20px;background:var(--gl2);border-color:var(--ln);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);font-family:var(--sans)}
+.mtitle,.msub,.mhd,.mdim,.mcredits,#menu p,.keys{font-family:var(--sans)}
+.mtitle{letter-spacing:.18em}
+kbd{border-radius:8px;font-family:var(--sans)}
+@media (pointer:coarse){.pan,#tip,#bpop,#intel,.alert,#hint,.mbtn,.mcard,.mapcard,#settings,#over{-webkit-backdrop-filter:blur(12px) saturate(150%);backdrop-filter:blur(12px) saturate(150%)}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
@@ -2512,33 +2647,43 @@ const BDEF = {
     desc: 'Your last standing structure. Trains Engineers and calls in emergency supply drops.'
   },
   barracks: {
-    name: 'Barracks', key: 'B', g: '🏚️', w: 7, h: 7, mw: 3, mh: 3, hgt: 64, hp: 950, armor: 2, cost: { s: 150, c: 0 }, time: 16,
+    name: 'Barracks', key: 'B', g: '🏚️', cat: 'unit', w: 7, h: 7, mw: 3, mh: 3, hgt: 64, hp: 950, armor: 2, cost: { s: 150, c: 0 }, time: 16,
     col: ['#45503c', '#333c2c'], roof: '#57634a', light: 150, produces: ['rifleman', 'support', 'medic', 'gunner', 'marksman', 'sniper', 'rocketeer', 'mortar'],
     desc: 'Trains infantry, supply Support teams, combat Medics, marksmen, snipers and mortar crews. Right-click the map to set a rally point.'
   },
   armory: {
-    name: 'Armory', key: 'Y', g: '⚙️', w: 7, h: 7, mw: 3, mh: 3, hgt: 62, hp: 850, armor: 2, cost: { s: 180, c: 80 }, time: 18,
+    name: 'Research Lab', key: 'Y', g: '🔬', cat: 'unit', w: 7, h: 7, mw: 3, mh: 3, hgt: 62, hp: 850, armor: 2, cost: { s: 180, c: 80 }, time: 18,
     col: ['#3f4a50', '#2c343a'], roof: '#4f5d64', light: 140, research: true,
-    desc: 'Unlocks permanent upgrades for weapons, armour, optics and traps.'
+    desc: 'Research lab with a live test range: unlocks permanent upgrades for weapons, armour, optics and traps.'
   },
   vbay: {
-    name: 'Vehicle Bay', key: 'V', g: '🏭', w: 7, h: 5, mw: 4, mh: 3, hgt: 70, hp: 1250, armor: 3, cost: { s: 260, c: 160 }, time: 24,
+    name: 'Vehicle Bay', key: 'V', g: '🏭', cat: 'unit', w: 7, h: 5, mw: 4, mh: 3, hgt: 70, hp: 1250, armor: 3, cost: { s: 260, c: 160 }, time: 24,
     col: ['#4a4740', '#35332e'], roof: '#5b5850', light: 165, produces: ['humvee', 'stryker', 'abrams'], needs: 'barracks',
     desc: 'Assembles the Humvee, Stryker and M1 Abrams. Requires a Barracks.'
   },
   refinery: {
-    name: 'Scrap Refinery', key: 'R', g: '♻️', w: 5, h: 5, mw: 3, mh: 3, hgt: 56, hp: 900, armor: 2, cost: { s: 200, c: 40 }, time: 20,
+    name: 'Scrap Refinery', key: 'R', g: '♻️', cat: 'infra', w: 5, h: 5, mw: 3, mh: 3, hgt: 56, hp: 900, armor: 2, cost: { s: 200, c: 40 }, time: 20,
     col: ['#4a4238', '#332e28'], roof: '#5b5245', light: 120, scrapGen: 3,
     desc: 'Smelts salvage into scrap around the clock — a steady ◆ income with no walking over drops. Reinforce it (Mk 2 / Mk 3) to raise the yield; every refinery stacks.'
   },
+  factory: {
+    name: 'Scrap Factory', key: 'N', g: '🏭', w: 7, h: 5, mw: 4, mh: 3, hgt: 66, hp: 1300, armor: 3, cost: { s: 320, c: 140 }, time: 26, needs: 'refinery',
+    col: ['#5a5650', '#3d3a36'], roof: '#6a6660', light: 150, scrapGen: 6, cat: 'infra',
+    desc: 'Industrial plant: a sawtooth-roofed hall, twin stacks and a conveyor that turns salvage into ◆ scrap at twice a refinery\'s rate. Requires a Scrap Refinery; every factory stacks.'
+  },
+  warehouse: {
+    name: 'Supply Warehouse', key: 'H', g: '📦', w: 7, h: 5, mw: 4, mh: 3, hgt: 58, hp: 1100, armor: 2, cost: { s: 260, c: 60 }, time: 22,
+    col: ['#556058', '#3a423c'], roof: '#66706a', light: 140, supGen: 1.6, cat: 'infra',
+    desc: 'Steel-framed depot with pallet racks of supply cages and a forklift shuttling them to the loading dock — a steady ▮ supply income on top of the Command Post\'s. Every warehouse stacks.'
+  },
   turret: {
-    name: 'MG Nest', key: 'G', g: '🎯', w: 3, h: 3, mw: 2, mh: 2, hgt: 34, hp: 540, armor: 3, cost: { s: 120, c: 60 }, time: 12,
+    name: 'MG Nest', key: 'G', g: '🎯', cat: 'def', w: 3, h: 3, mw: 2, mh: 2, hgt: 34, hp: 540, armor: 3, cost: { s: 120, c: 60 }, time: 12,
     col: ['#3d4438', '#2b3128'], roof: '#4b5443', light: 90,
     wep: { dmg: 14, rng: 285, cd: .12, spread: .055, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, sustain: true, mag: 100, reload: 3.4 },   // tripod MG: slower than the Humvee's gun, heavier hit
     desc: 'Browning M2 .50 on a tripod. Slow, heavy, and it goes through Brutes.'
   },
   mortarpit: {
-    name: 'Mortar Battery', key: 'O', g: '💥', w: 5, h: 5, mw: 3, mh: 3, hgt: 34, hp: 780, armor: 3, cost: { s: 220, c: 160 }, time: 20, needs: 'armory',
+    name: 'Mortar Battery', key: 'O', g: '💥', cat: 'def', w: 5, h: 5, mw: 3, mh: 3, hgt: 34, hp: 780, armor: 3, cost: { s: 220, c: 160 }, time: 20, needs: 'armory',
     col: ['#4a4636', '#332f26'], roof: '#5b5643', light: 80,
     wep: {
       dmg: 95, rng: 1860, minRng: 220, cd: 5.6, spread: 30, kind: 'mortar', splash: 101,
@@ -2547,44 +2692,44 @@ const BDEF = {
     desc: 'Fixed 120mm battery reaching almost 60 tiles. A tighter blast than the old pattern, but the concussion still leaves everything caught in it crawling for several seconds.'
   },
   tower: {
-    name: 'Watchtower', key: 'W', g: '🗼', w: 3, h: 3, mw: 2, mh: 2, hgt: 96, hp: 620, armor: 2, cost: { s: 130, c: 40 }, time: 14,
+    name: 'Watchtower', key: 'W', g: '🗼', cat: 'def', w: 3, h: 3, mw: 2, mh: 2, hgt: 96, hp: 620, armor: 2, cost: { s: 130, c: 40 }, time: 14,
     col: ['#4a4a3f', '#33332c'], roof: '#5d5d4e', light: 150, vision: 520, searchlight: true, nightSight: true,
     wep: { dmg: 48, rng: 32 * 32, cd: .8, spread: .02, spd: 2200, kind: 'bullet', sfx: 'dmr', casings: 1, pierce: 1, mag: 20, reload: 3.2, dual: 2 },
     desc: 'Two marksmen on a sweeping-searchlight platform, each with a scoped 7.62 DMR — the tower engages TWO separate targets at once, at extreme range, day or night. Also lets every friendly unit and emplacement within its radius see and shoot as far as it does.'
   },
   airbase: {
-    name: 'Airbase', key: 'P', g: '✈️', w: 11, h: 9, mw: 5, mh: 4, hgt: 40, hp: 1600, armor: 3, cost: { s: 400, c: 260 }, time: 30, needs: 'vbay',
+    name: 'Airbase', key: 'P', g: '✈️', cat: 'unit', w: 11, h: 9, mw: 5, mh: 4, hgt: 40, hp: 1600, armor: 3, cost: { s: 400, c: 260 }, time: 30, needs: 'vbay',
     col: ['#44483f', '#30332b'], roof: '#565b4c', light: 130, pad: 1,
     produces: ['littlebird1', 'littlebird2', 'blackhawk', 'apache', 'ac130', 'f16'],
     desc: 'Rotary and fixed-wing airpower: Little Birds, the Blackhawk transport, the Apache, the AC-130 gunship and the F-16 strike fighter. Requires a Vehicle Bay.'
   },
   flood: {
-    name: 'Floodlight', key: 'L', g: '💡', w: 1, h: 1, hgt: 10, hp: 220, armor: 0, cost: { s: 40, c: 0 }, time: 6,
+    name: 'Floodlight', key: 'L', g: '💡', cat: 'infra', w: 1, h: 1, hgt: 10, hp: 220, armor: 0, cost: { s: 40, c: 0 }, time: 6,
     col: ['#4a4a3c', '#33332a'], roof: '#5c5c48', light: 330, lamp: true,
     desc: 'Pushes back the night. Units fight noticeably better inside the light.'
   },
   wall: {
-    name: 'Concrete Wall', key: 'C', g: '🧱', w: 1, h: 1, hgt: 30, hp: 620, armor: 6, cost: { s: 20, c: 0 }, time: 3,
+    name: 'Concrete Wall', key: 'C', g: '🧱', cat: 'def', w: 1, h: 1, hgt: 30, hp: 620, armor: 6, cost: { s: 20, c: 0 }, time: 3,
     col: ['#5a5a54', '#3f3f3a'], roof: '#6b6b63', solid: true, wall: true,
     desc: 'Cheap, tough, blocks everything. Hold Shift and drag to lay a whole row, then Confirm.'
   },
   fence: {
-    name: 'Razor Fence', key: 'F', g: '⛓️', w: 1, h: 1, hgt: 22, hp: 210, armor: 1, cost: { s: 8, c: 0 }, time: 1.6,
+    name: 'Razor Fence', key: 'F', g: '⛓️', cat: 'def', w: 1, h: 1, hgt: 22, hp: 210, armor: 1, cost: { s: 8, c: 0 }, time: 1.6,
     col: ['#3c4148', '#2b2f34'], roof: '#4d545c', solid: true, wall: true, thorns: 5,
     desc: 'Flimsy but hurts what claws through it. Perfect throwaway outer ring.'
   },
   gate: {
-    name: 'Blast Gate', key: 'A', g: '🚪', w: 1, h: 1, hgt: 30, hp: 470, armor: 4, cost: { s: 35, c: 0 }, time: 4,
+    name: 'Blast Gate', key: 'A', g: '🚪', cat: 'def', w: 1, h: 1, hgt: 30, hp: 470, armor: 4, cost: { s: 35, c: 0 }, time: 4,
     col: ['#4d5348', '#363b33'], roof: '#616a5b', solid: true, wall: true, gate: true,
     desc: 'Wall segment your own units walk straight through. The dead cannot.'
   },
   trap: {
-    name: 'Spike Trap', key: 'X', g: '⚡', w: 1, h: 1, hgt: 0, hp: 90, armor: 0, cost: { s: 30, c: 0 }, time: 3,
+    name: 'Spike Trap', key: 'X', g: '⚡', cat: 'def', w: 1, h: 1, hgt: 0, hp: 90, armor: 0, cost: { s: 30, c: 0 }, time: 3,
     col: ['#3a3228', '#2a241c'], roof: '#4a4032', trap: true, flat: true,
     desc: 'Buried spikes. Triggers on contact, then re-arms. Incendiary research sets them alight.'
   },
   culvert: {
-    name: 'Culvert', key: 'U', g: '🕳️', w: 5, h: 3, mw: 3, mh: 2, hgt: 20, hp: 900, armor: 5, cost: { s: 140, c: 0 }, time: 12,
+    name: 'Culvert', key: 'U', g: '🕳️', cat: 'def', w: 5, h: 3, mw: 3, mh: 2, hgt: 20, hp: 900, armor: 5, cost: { s: 140, c: 0 }, time: 12,
     col: ['#3a3d3a', '#282b28'], roof: '#4a4e4a', garrison: 6, light: 70,
     desc: 'Storm drain bunker. Right-click to move units inside — they fire out with +40% range and take almost nothing.'
   }
@@ -2704,7 +2849,32 @@ function buildIcon(t) {
   else if (t === 'trap') b = S(sh + '<ellipse cx="16" cy="24" rx="12" ry="4" fill="' + dark + '"/><g class="ico-pulse">' + [8, 12, 16, 20, 24].map(x => '<path d="M' + x + ' 24 L' + (x + 1.6) + ' 15 L' + (x + 3.2) + ' 24 Z" fill="#c0c4c8"/>').join('') + '</g>');
   else if (t === 'culvert') b = S(sh + '<path d="M3 26 L11 14 H21 L29 26 Z" fill="' + dark + '"/><path d="M7 26 L13 17 H19 L25 26 Z" fill="#20241c"/><ellipse cx="16" cy="26" rx="5" ry="2.4" fill="#1a2a3a"/><rect x="4" y="12" width="24" height="2.4" rx="1" fill="' + col + '"/>');
   else if (t === 'flood') b = S(sh + '<rect x="14.6" y="12" width="2.8" height="16" fill="#5a5a48"/><g class="ico-turret" style="transform-origin:16px 11px"><rect x="10" y="7" width="10" height="7" rx="1.5" fill="' + col + '"/><ellipse cx="20" cy="10.5" rx="2" ry="3" fill="#fff3b0"/></g><g class="ico-pulse"><path d="M21 8 L29 5 L29 16 L21 13 Z" fill="#ffe08a" opacity=".45"/></g>');
-  return BICON_CACHE[t] = (b || d.g || '');
+  else if (t === 'factory') b = S(sh + '<rect x="4" y="15" width="24" height="13" rx="1.5" fill="' + col + '"/><path d="M4 15 L10 10 V15 L16 10 V15 L22 10 V15 L28 10 V15 Z" fill="' + roof + '"/><rect x="7" y="4" width="3" height="11" fill="' + dark + '"/><rect x="12" y="6" width="3" height="9" fill="' + dark + '"/><g class="ico-smoke"><circle cx="8.5" cy="3" r="1.6" fill="#b8b4ac" opacity=".8"/><circle cx="13.5" cy="4.5" r="1.3" fill="#b8b4ac" opacity=".7"/></g><rect x="6" y="19" width="20" height="2" fill="#2a2a26"/><g class="ico-belt"><rect x="8" y="17.6" width="3" height="2.2" fill="#c9a33d"/><rect x="15" y="17.6" width="3" height="2.2" fill="#c9a33d"/><rect x="22" y="17.6" width="3" height="2.2" fill="#c9a33d"/></g><rect x="13" y="22" width="6" height="6" fill="' + dark + '"/>');
+  else if (t === 'warehouse') b = S(sh + '<rect x="4" y="13" width="24" height="15" rx="1.5" fill="' + col + '"/><path d="M3 14 L16 6 L29 14 Z" fill="' + roof + '"/><rect x="6" y="16" width="20" height="12" fill="' + dark + '"/>' + [7.5, 12, 16.5, 21].map(x => '<rect x="' + x + '" y="18" width="3.6" height="3.2" fill="#3f8a4a" stroke="#8de0a0" stroke-width=".5"/><rect x="' + x + '" y="22.5" width="3.6" height="3.2" fill="#3f8a4a" stroke="#8de0a0" stroke-width=".5"/>').join('') + '<g class="ico-fork"><rect x="20" y="22" width="6" height="5" rx="1" fill="#e2b32a"/><rect x="18" y="20" width="1.2" height="8" fill="#2a2a26"/><rect x="15" y="27" width="4" height="1" fill="#2a2a26"/><circle cx="21.5" cy="28" r="1.2" fill="#1a1a18"/><circle cx="25" cy="28" r="1.2" fill="#1a1a18"/></g>');
+  b = b || d.g || '';
+  // producers carry a badge of WHAT they make — a soldier, a tank, a helicopter, a flask, a scrap gear, a supply crate — so the menu reads at a glance
+  const BADGE = { barracks: ['unit', 'rifleman'], vbay: ['unit', 'abrams'], airbase: ['unit', 'blackhawk'], armory: ['svg', '<path d="M12 4 H20 M14 4 V12 L8 24 Q7 27 10 27 H22 Q25 27 24 24 L18 12 V4" fill="#dff4ff" stroke="#4aa8d8" stroke-width="1.4"/><path d="M11 20 H21 L23 25 H9 Z" fill="#4ad0ff"/><circle class="ico-pulse" cx="14" cy="22" r="1.2" fill="#fff"/>'], refinery: ['svg', '<circle cx="16" cy="16" r="6" fill="#ffbe63"/><circle cx="16" cy="16" r="2.5" fill="#3a2a10"/>' + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="14.5" y="6" width="3" height="4" fill="#ffbe63" transform="rotate(' + a + ' 16 16)"/>').join('')], factory: ['svg', '<circle cx="16" cy="16" r="6" fill="#ffbe63"/><circle cx="16" cy="16" r="2.5" fill="#3a2a10"/>' + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="14.5" y="6" width="3" height="4" fill="#ffbe63" transform="rotate(' + a + ' 16 16)"/>').join('')], warehouse: ['svg', '<rect x="6" y="9" width="20" height="16" rx="2" fill="#3ddc84"/><rect x="14" y="9" width="4" height="16" fill="#0d3a22" opacity=".5"/><rect x="6" y="15" width="20" height="4" fill="#0d3a22" opacity=".5"/>'] };
+  const bd = BADGE[t];
+  if (b && b.startsWith('<svg') && bd) {
+    const inner = (m) => m.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+    let badge = '';
+    if (bd[0] === 'unit') { const u = typeof unitIcon === 'function' ? unitIcon(bd[1]) : ''; if (u && u.startsWith('<svg')) badge = inner(u); }
+    else badge = bd[1];
+    if (badge) b = '<svg class="uico" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><g transform="translate(0 6) scale(.82)">' + inner(b) + '</g><g class="ico-badge"><circle cx="24" cy="8" r="7.4" fill="rgba(10,16,14,.92)" stroke="rgba(141,255,190,.55)" stroke-width=".8"/><g transform="translate(17.5 1.5) scale(.41)">' + badge + '</g></g></svg>';
+  }
+  return BICON_CACHE[t] = b;
+}
+/* construction category icons: what kind of thing the category builds */
+const CICON_CACHE = {};
+function catIcon(id) {
+  if (CICON_CACHE[id]) return CICON_CACHE[id];
+  const S = (o) => '<svg class="uico" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">' + o + '</svg>';
+  const inner = (m) => m && m.startsWith('<svg') ? m.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '') : '';
+  let b = '';
+  if (id === 'unit') b = S('<g transform="translate(-1 9) scale(.5)">' + inner(unitIcon('rifleman')) + '</g><g transform="translate(10 12) scale(.62)">' + inner(unitIcon('abrams')) + '</g><g transform="translate(13 -2) scale(.55)">' + inner(unitIcon('blackhawk')) + '</g>');
+  else if (id === 'infra') b = S('<ellipse cx="16" cy="29" rx="12" ry="1.6" fill="#000" opacity=".28"/><rect x="3" y="16" width="26" height="12" rx="1.5" fill="#5a5650"/><path d="M3 16 L9 11 V16 L15 11 V16 L21 11 V16 L27 11 V16 Z" fill="#6a6660"/><rect x="6" y="5" width="3" height="11" fill="#3d3a36"/><g class="ico-smoke"><circle cx="7.5" cy="4" r="1.7" fill="#b8b4ac" opacity=".8"/></g><g class="ico-prop" style="transform-origin:22px 21px"><circle cx="22" cy="21" r="4.2" fill="#ffbe63"/><circle cx="22" cy="21" r="1.6" fill="#3a2a10"/>' + [0, 60, 120, 180, 240, 300].map(a => '<rect x="21" y="14.5" width="2" height="3" fill="#ffbe63" transform="rotate(' + a + ' 22 21)"/>').join('') + '</g>');
+  else if (id === 'def') b = S('<ellipse cx="16" cy="29" rx="12" ry="1.6" fill="#000" opacity=".28"/><path d="M16 3 L27 7 V15 Q27 24 16 29 Q5 24 5 15 V7 Z" fill="#2f4a40" stroke="#8dffbe" stroke-width="1.2"/><path d="M16 7 L23 9.5 V15 Q23 21 16 24.5 Q9 21 9 15 V9.5 Z" fill="#1a2a24"/><g class="ico-turret" style="transform-origin:16px 16px"><rect x="15" y="9" width="2" height="8" fill="#c9cf8a"/><circle cx="16" cy="16" r="2.6" fill="#8dffbe"/></g>');
+  return CICON_CACHE[id] = b;
 }
 
 /* ============================ WORLD / TERRAIN ============================
@@ -3876,6 +4046,37 @@ function fxSpark(x, y, ang, n, col) {
    starts at the muzzle. The two effects blend into one cloud after the shot.
    Particles render through the VY y-squash, so anything meant to travel along
    the sprite's (un-squashed) barrel angle gets its world y divided by VY. */
+/* one concussion "bump" of dust around a firing vehicle: a ring of low puffs blown outward from under the hull like a
+   helicopter setting down — a single pulse per shot (k scales it: 1 Bradley/Humvee, 3 Abrams). The puffs ride the
+   wind and thin out over ~5 seconds. */
+function fxGunBump(vx, vy, r, k) {
+  if (G.parts.length > PMAX * .9) return;
+  const n = Math.round(10 * k), R = r * (.7 + k * .12);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + rnd(-.25, .25), sp = rnd(60, 150) * (.6 + k * .35), sw = rnd(-1, 1) * 40;
+    part('dust', vx + Math.cos(a) * R, vy + Math.sin(a) * R * .8, Math.cos(a) * sp - Math.sin(a) * sw + G.wind.x * .6, Math.sin(a) * sp * .8 + Math.cos(a) * sw + G.wind.y * .6,
+      rnd(4.2, 5.4), rnd(6, 10) * (.8 + k * .25), 'rgba(176,164,140,1)', { z: rnd(0, 4), vz: rnd(3, 14), g: 4, grow: 14 + k * 6, drag: .93, wind: 1 });
+  }
+  part('ring', vx, vy, 0, 0, .45, R * .8, 'rgba(190,178,150,.45)', { grow: R * 5 * (.7 + k * .3) });
+}
+/* 120mm HE hitting the ground: a tall column of thrown earth, a wide rolling dust wave that lingers on the wind for
+   ~5 s, heavy clods that arc out and bounce, and a scorch — the tank shell's impact reads as a real physical event */
+function fxShellImpact(x, y, r) {
+  fxMortar(x, y, r * .9, true);
+  if (G.parts.length > PMAX * .9) return;
+  for (let i = 0; i < 26; i++) {                                                     // rolling dust wave
+    const a = rnd(TAU), sp = rnd(50, 190);
+    part('dust', x + Math.cos(a) * 10, y + Math.sin(a) * 8, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .7 + G.wind.y * .5, rnd(3.8, 5.2), rnd(8, 14), 'rgba(160,146,118,1)', { z: rnd(0, 6), vz: rnd(4, 18), g: 4, grow: 26, drag: .92, wind: 1 });
+  }
+  for (let i = 0; i < 18; i++) {                                                     // the earth column
+    const a = rnd(TAU), sp = rnd(6, 60);
+    part('dust', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(2.4, 4), rnd(7, 12), 'rgba(120,104,80,1)', { z: rnd(4, 30), vz: rnd(160, 420), g: 180, grow: 22, drag: .95, wind: 1 });
+  }
+  for (let i = 0; i < 22; i++) {                                                     // heavy clods
+    const a = rnd(TAU), sp = rnd(30, 200);
+    part('debris', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(1.2, 2.4), rnd(2, 5), i % 3 ? '#4a3f33' : '#2e2820', { z: 4, vz: rnd(200, 520), vr: rnd(-14, 14), drag: .98, g: 560, bounce: 1 });
+  }
+}
 function fxMuzzleDust(vx, vy, ang, ground, jet, muzLen, muzZ) {
   if (G.parts.length > PMAX * .86) return;
   // low dust rolling out around the vehicle, drifting off on the wind
@@ -3916,6 +4117,55 @@ function fxMuzzleDust(vx, vy, ang, ground, jet, muzLen, muzZ) {
     part('ring', mx, my, 0, 0, .34, 7 * jet, 'rgba(216,206,182,.6)', { grow: 150 * jet, z: Z });
   }
 }
+/* A vehicle driving into a tree knocks it over: the trunk is taken out of the standing forest at once and handed to
+   G.fallen, where it tips over in the vehicle's direction of travel (rendered tilting about its base), slams into
+   the ground in a burst of leaves and dust, lies there a moment, then breaks apart into trunk sections and is gone.
+   Bushes are simply flattened. The stump regrows later like any crushed prop. */
+function fellTrees(x, y, r, dirAng, heavy) {
+  if (!G.fallen) G.fallen = [];
+  const r2 = r * r;
+  for (let a = ((x - r) / CH) | 0; a <= ((x + r) / CH) | 0; a++)
+    for (let b = ((y - r) / CH) | 0; b <= ((y + r) / CH) | 0; b++) {
+      const ps = chunkProps(a, b);
+      for (let i = 0; i < ps.length; i++) {
+        const q = ps[i];
+        if (G.deadProps.has(q.id) || (q.s !== 'tree' && q.s !== 'bush')) continue;
+        if (dist2(q.x, q.y, x, y) > r2) continue;
+        G.deadProps.set(q.id, G.t + rnd(60, 120));
+        if (q.s === 'bush') { for (let k = 0; k < 5; k++) { const an = rnd(TAU), sp = rnd(30, 120); part('leaf', q.x, q.y, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.6, 1.2), rnd(1.2, 2.4), Math.random() < .5 ? '#3a5226' : '#4d6b34', { z: rnd(2, 12), vz: rnd(30, 110), vr: rnd(-10, 10), g: 260, drag: .96, wind: 1 }); } continue; }
+        // the tree goes over away from the impact, biased along the vehicle's heading
+        const away = angTo(x, y, q.x, q.y), dir = Math.atan2(Math.sin(dirAng) * 1.4 + Math.sin(away), Math.cos(dirAng) * 1.4 + Math.cos(away)) + rnd(-.25, .25);
+        G.fallen.push({ id: q.id, x: q.x, y: q.y, a: q.a, sc: q.sc, dir, t: 0, dur: heavy ? .8 : 1.15, hit: false, gone: 0 });
+        for (let k = 0; k < 6; k++) { const an = rnd(TAU), sp = rnd(20, 90); part('leaf', q.x, q.y - rnd(10, 40), Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.8, 1.6), rnd(1.4, 3), Math.random() < .5 ? '#3a5226' : '#4d6b34', { z: rnd(10, 40), vz: rnd(20, 90), vr: rnd(-10, 10), g: 200, drag: .96, wind: 1 }); }
+        fxDebris(q.x, q.y, 4, '#4a3423');                      // bark splinters at the snapped base
+        AU.splat && AU.splat(q.x, q.y); AU.blip && AU.place && AU.blip(90, .18, 'triangle', .08);   // dull crack
+        if (G.fallen.length > 40) G.fallen.shift();
+      }
+    }
+}
+/* per-frame life of the felled trees: tip, slam, lie, break apart */
+function updateFallen(dt) {
+  const F = G.fallen; if (!F || !F.length) return;
+  for (let i = F.length - 1; i >= 0; i--) {
+    const f = F[i]; f.t += dt;
+    if (!f.hit && f.t >= f.dur) {                                     // impact: the crown hits the ground
+      f.hit = true; const L = 70 * f.sc, hx = f.x + Math.cos(f.dir) * L, hy = f.y + Math.sin(f.dir) * L;
+      for (let k = 0; k < 14; k++) { const an = rnd(TAU), sp = rnd(30, 150), px = hx + rnd(-L * .4, L * .1) * Math.cos(f.dir); part('leaf', px, hy + rnd(-10, 10), Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.8, 1.8), rnd(1.4, 3), Math.random() < .5 ? '#3a5226' : '#4d6b34', { z: rnd(2, 20), vz: rnd(40, 160), vr: rnd(-10, 10), g: 260, drag: .96, wind: 1 }); }
+      for (let k = 0; k < 8; k++) { const an = rnd(TAU), sp = rnd(10, 40); part('dust', hx + Math.cos(an) * 8, hy + Math.sin(an) * 8, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(1.2, 2.2), rnd(5, 9), 'rgba(150,140,110,1)', { z: rnd(0, 3), vz: rnd(2, 8), grow: 16, drag: .96, wind: 1 }); }
+      grassStamp && grassStamp(hx, hy, 22 * f.sc);
+      AU.boom && AU.boom(hx, hy, .35);
+    }
+    if (f.hit && f.t >= f.dur + 1.6) {                                // breaks apart: trunk sections and the crown scatter
+      const L = 70 * f.sc, n = 4 + (f.sc * 3 | 0);
+      for (let k = 0; k < n; k++) { const s = (k + .5) / n, px = f.x + Math.cos(f.dir) * L * s, py = f.y + Math.sin(f.dir) * L * s, an = f.dir + (Math.random() < .5 ? 1 : -1) * rnd(.6, 1.6), sp = rnd(30, 110);
+        part('chunk', px, py, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(1.4, 2.6), rnd(2.4, 4.2) * f.sc, k % 3 ? '#5a4028' : '#3a2a1a', { z: rnd(3, 10), vz: rnd(40, 120), vr: rnd(-8, 8), g: 300, drag: .95, land: 0 });
+        for (let j = 0; j < 2; j++) { const a2 = rnd(TAU), s2 = rnd(20, 80); part('leaf', px, py, Math.cos(a2) * s2, Math.sin(a2) * s2 * .6, rnd(.6, 1.4), rnd(1.2, 2.6), Math.random() < .5 ? '#3a5226' : '#4d6b34', { z: rnd(2, 14), vz: rnd(30, 100), vr: rnd(-10, 10), g: 260, drag: .96, wind: 1 }); } }
+      fxDebris(f.x + Math.cos(f.dir) * L * .5, f.y + Math.sin(f.dir) * L * .5, 6, '#4a3423');
+      AU.splat && AU.splat(f.x, f.y);
+      F.splice(i, 1);
+    }
+  }
+}
 /* A heavy tracked vehicle snaps and scatters any tree/bush it drives over —
    trunk splinters and leaves fly off piece by piece, and it regrows later. */
 function crushTrees(x, y, r) {
@@ -3946,8 +4196,8 @@ function crushTrees(x, y, r) {
 function fxBlood(x, y, ang, n, col) {
   col = col || '#8f1414';
   for (let i = 0; i < n; i++) {
-    const a = ang + rnd(-1.1, 1.1), s = rnd(30, 210);
-    part('blood', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.25, .6), rnd(1.1, 3), col, { drag: .90 });
+    const a = ang + rnd(-1.1, 1.1), s = rnd(20, 120);
+    part('blood', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.25, .6), rnd(1.1, 3), col, { drag: .88 });
   }
   if (Math.random() < .55) bloodDecal(x, y, 2);
 }
@@ -3959,9 +4209,9 @@ function fxGore(x, y, ang, amount, col) {
   fxBlood(x, y, a0, clamp(2 + amount, 2, 10), col);
   const n = Math.random() < .72 ? 1 + (Math.random() * clamp(amount * .6, 0, 3) | 0) : 0;
   for (let i = 0; i < n; i++) {
-    const a = a0 + rnd(-1.2, 1.2), sp = rnd(50, 200);
+    const a = a0 + rnd(-1.2, 1.2), sp = rnd(20, 80);
     part('chunk', x, y, Math.cos(a) * sp, Math.sin(a) * sp, rnd(4, 7), rnd(1.5, 3.2), col,
-      { z: rnd(6, 16), vz: rnd(120, 300), vr: rnd(-20, 20), rot: rnd(TAU), g: 500, bounce: 1, drag: .97, land: 1 });
+      { z: rnd(4, 12), vz: rnd(30, 100), vr: rnd(-10, 10), rot: rnd(TAU), g: 500, bounce: .4, drag: .96, land: 1 });
   }
 }
 
@@ -3976,9 +4226,10 @@ function severLimb(e, ang, force) {
   const b = force && (e.limbs & force) ? force : pick(avail);
   e.limbs &= ~b;
   const spr = (b & 12) ? M.leg : M.arm;
-  const a = (ang === undefined ? rnd(TAU) : ang) + rnd(-.7, .7), sp = rnd(90, 250);
+  // the limb drops beside the body — a short, low toss rather than a launch into the air
+  const a = (ang === undefined ? rnd(TAU) : ang) + rnd(-.7, .7), sp = rnd(22, 70);
   part('gib', e.x, e.y, Math.cos(a) * sp, Math.sin(a) * sp, 15, 4, null,
-    { spr, z: rnd(10, 22), vz: rnd(220, 400), vr: rnd(-18, 18) + (Math.random() < .5 ? -6 : 6),
+    { spr, z: rnd(8, 16), vz: rnd(30, 90), vr: rnd(-8, 8) + (Math.random() < .5 ? -3 : 3),
       rot: rnd(TAU), g: 440, bounce: 1, drag: .985, land: 1 });
   fxGore(e.x, e.y, a, 5, M.blood);
   bloodDecal(e.x, e.y, 3, '#5a0e0e');
@@ -4514,7 +4765,7 @@ function destroyBuilding(b) {
 function fling(c, bx, by, f, big) {
   const a = angTo(bx, by, c.x, c.y) + rnd(-.25, .25), sp = (big ? 90 : 150) + f * (big ? 160 : 300);
   c.air = 1; c.z = 2; c.vx = Math.cos(a) * sp; c.vy = Math.sin(a) * sp * .85;
-  c.vz = (big ? 140 : 210) + f * (big ? 160 : 260); c.rot = c.a; c.vr = rnd(-11, 11) * (big ? .25 : 1); c.bounced = 0;
+  c.vz = (big ? 90 : 130) + f * (big ? 110 : 170); c.rot = c.a; c.vr = rnd(-11, 11) * (big ? .25 : 1); c.bounced = 0;
 }
 function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild) {
   const r2 = r * r;
@@ -6025,7 +6276,7 @@ function updateUnits(dt) {
       // FIXED slot: the whole stick was counted before the first man went down, so every trooper owns one position in the
       // ring and keeps it. Slots fill in opposing pairs (0°, 180°, then 90°, 270°, ...) — back to back, not around the clock.
       const N = Math.max(1, u.ropeTotal || 1), i = u.ropeSlot || 0, pair = (i / 2) | 0, side = i & 1, k = pair + side * Math.ceil(N / 2);
-      const cx = h && h._ropeCX !== undefined ? h._ropeCX : u.x, cy = h && h._ropeCY !== undefined ? h._ropeCY : u.y;
+      const cx = u.ropeCX !== undefined ? u.ropeCX : (h && h._ropeCX !== undefined ? h._ropeCX : u.x), cy = u.ropeCY !== undefined ? u.ropeCY : (h && h._ropeCY !== undefined ? h._ropeCY : u.y);   // each man keeps the centre of HIS drop
       const R = 26 + N * 4, aa = (k % N) / N * TAU;
       const tx = cx + Math.cos(aa) * R, ty = cy + Math.sin(aa) * R;
       const dd = Math.hypot(tx - u.x, ty - u.y);
@@ -6227,7 +6478,7 @@ function updateUnits(dt) {
         if (!u.def.heavy) damage(u, z.def.big ? 55 : 16, 0, { trueDmg: true });   // wears the vehicle down
       }
       // the Abrams flattens trees it drives over, splintering them piece by piece
-      if (u.def.heavy) crushTrees(u.x, u.y, u.r * .85);
+      if (Math.hypot(u.vx || 0, u.vy || 0) > 4) fellTrees(u.x, u.y, u.r * .85 + 4, u.ang, !!u.def.heavy);   // any vehicle knocks the trees it drives into flat
       // tyre / track marks pressed into soft ground every few pixels of travel
       u._trk = (u._trk || 0) + Math.hypot(u.vx || 0, u.vy || 0) * dt;
       if (u._trk > 7) {
@@ -6281,7 +6532,13 @@ function updateUnits(dt) {
     if (u.def.fly && u.def.rotor && (u.landed || (u.altK !== undefined && u.altK < .22))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
       if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(u.x, u.y, u.r * 2.4);
+      else if (WATER(gt) && !u.landed) {                                       // over water the downwash blows a spreading ring of spray and ripples
+        u._wash = (u._wash || 0) - dt;
+        if (u._wash <= 0) { u._wash = .16; part('ring', u.x, u.y, 0, 0, 1.1, u.r * .6, 'rgba(210,235,245,.55)', { grow: u.r * 2.2 }); for (let k = 0; k < 4; k++) { const an = rnd(TAU), sp = rnd(40, 120); part('dust', u.x + Math.cos(an) * u.r * .5, u.y + Math.sin(an) * u.r * .5, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.5, .9), rnd(4, 7), 'rgba(220,236,244,1)', { z: rnd(0, 4), vz: rnd(8, 26), grow: 12, drag: .9, white: 1 }); } }
+      }
     }
+    // wading / driving through water: ripple rings spread from every step
+    if (!u.def.fly && Math.hypot(u.vx || 0, u.vy || 0) > 3) { const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt === T_SWAMP || WATER(gt)) { u._rip = (u._rip || 0) - dt; if (u._rip <= 0) { u._rip = u.def.veh ? .12 : .28; part('ring', u.x, u.y, 0, 0, .9, u.r * .5, 'rgba(200,228,240,.5)', { grow: u.r * 1.6 }); } } }
     // flatten grass underfoot; vehicles throw a spray of torn grass out behind them
     if (!u.def.fly && (G.mp || (u.x > CAM.x - 120 && u.x < CAM.x + CAM.vw + 120 && u.y > CAM.y - 120 && u.y < CAM.y + CAM.vh + 160))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
@@ -6376,12 +6633,12 @@ function updateAircraft(u, dt) {
     const stationary = !o || o.type === 'land';
     let wantAlt = 1;
     if (!(o && o.type === 'pickup')) u.landReqT = 0;
-    if (u.rope && !u.cargo.length) u.rope = null;
+    if (u.rope && !u.cargo.length) { u.rope = null; u._ropeCX = undefined; }
     if (o && o.type === 'land') wantAlt = 0;
     else if (o && o.type === 'pickup' && u.landReqT) wantAlt = 0;
     else if (!o && u.rope) { wantAlt = .5; u.landed = false; }
     else if (!o && (u.landed || boardReq)) wantAlt = 0;
-    if (o && o.type !== 'land' && !(o.type === 'pickup' && u.landReqT)) { u.landed = false; if (u.rope) u.rope = null; }
+    if (o && o.type !== 'land' && !(o.type === 'pickup' && u.landReqT)) { u.landed = false; if (u.rope) { u.rope = null; u._ropeCX = undefined; } }
     const prev = u.altK;
     u.altK = clamp(u.altK + clamp(wantAlt - u.altK, -dt * .55, dt * .6), 0, 1);
     if (u.altK < .75) rotorWash(u, 1 - u.altK, dt);
@@ -6389,12 +6646,13 @@ function updateAircraft(u, dt) {
     if (o && o.type === 'land') { if (u.landed) { unloadCargo(u); u.order = null; } return; }
     /* fast-rope: hover low and send the passengers down the ropes one at a time */
     if (u.rope && !o) {
+      if (u.rope.fresh) { u.rope.fresh = false; u._ropeCX = undefined; }                                                       // a NEW rope call always re-centres the ring on where the helicopter is now
       if (Math.abs(u.altK - .5) < .08 && u.cargo.length) {
         if (u._ropeCX === undefined) { u._ropeCX = u.x; u._ropeCY = u.y; u._ropeTotal = u.cargo.length; u._ropeIdx = 0; }     // lock the ring's centre + count the whole stick before anyone goes down
         u.rope.t += dt;
-        if (u.rope.t >= 1.1) { u.rope.t = 0; const t = u.cargo.shift(); t.inside = null; t.carriedBy = null; t.x = u.x + rnd(-8, 8); t.y = u.y + rnd(-6, 6); t.order = null; t.roping = u.def.alt * .5; t.ropeFrom = u; t.ropeHold = u; t._ropeDoneT = 0; t.ropeSlot = u._ropeIdx++; t.ropeTotal = u._ropeTotal || 1; AU.ui('ok'); }
+        if (u.rope.t >= 1.1) { u.rope.t = 0; const t = u.cargo.shift(); t.inside = null; t.carriedBy = null; t.x = u.x + rnd(-8, 8); t.y = u.y + rnd(-6, 6); t.order = null; t.roping = u.def.alt * .5; t.ropeFrom = u; t.ropeHold = u; t._ropeDoneT = 0; t.ropeCX = u._ropeCX; t.ropeCY = u._ropeCY; t.ropeSlot = u._ropeIdx++; t.ropeTotal = u._ropeTotal || 1; AU.ui('ok'); }
       }
-      if (!u.cargo.length) u.rope = null;
+      if (!u.cargo.length) { u.rope = null; u._ropeCX = undefined; }
       u.vx *= .9; u.vy *= .9; updateWeapons(u, dt, null); return;
     }
     if (u.altK < .75 && !(o && (o.type === 'pickup' || o.type === 'dropoff') && u.altK > .3)) {   // too low to fly anywhere: sit (or climb) in place
@@ -6750,9 +7008,9 @@ function fire(src, tgt, wep, muz) {
   // ground vehicles kick up gun dust — bigger calibre, bigger wave + barrel jet
   if (src.def && src.def.veh && !src.def.fly) {
     const muzLen = m.z !== undefined ? Math.hypot(m.x - src.x, m.y - src.y) : (wep.off || (src.r + 12)), mz = m.z || 0;
-    if (wep.sfx === 'tank') { fxMuzzleDust(src.x, src.y, base, .30, 2.0, muzLen, mz); src.recoil = 1; src.recoilA = base; }       // 120mm: ground + DOUBLE jet + steam + recoil
-    else if (wep.sfx === 'auto' || wep.sfx === 'chain40') { fxMuzzleDust(src.x, src.y, base, .05, 1.0, muzLen, mz); src.recoil = .7; src.recoilA = base; } // 25mm autocannon: a full tank-sized jet of bore steam every round
-    else if (Math.random() < .4) fxMuzzleDust(src.x, src.y, base, .06, 0, muzLen, mz);                                            // vehicle MG: small ground puff
+    if (wep.sfx === 'tank') { fxMuzzleDust(src.x, src.y, base, .30, 2.0, muzLen, mz); fxGunBump(src.x, src.y, src.r, 3); src.recoil = 1; src.recoilA = base; }       // 120mm: ground + DOUBLE jet + steam + recoil + a triple dust bump round the hull
+    else if (wep.sfx === 'auto' || wep.sfx === 'chain40') { fxMuzzleDust(src.x, src.y, base, .05, 1.0, muzLen, mz); fxGunBump(src.x, src.y, src.r, 1); src.recoil = .7; src.recoilA = base; } // 25mm autocannon: a full tank-sized jet of bore steam every round + one dust bump
+    else { if (Math.random() < .4) fxMuzzleDust(src.x, src.y, base, .06, 0, muzLen, mz); if (!(src._bumpT > G.t)) { src._bumpT = G.t + .3; fxGunBump(src.x, src.y, src.r, .7); } }                    // vehicle MG (Humvee): small ground puff + a light bump
   }
   AU.shot(m.x, m.y, wep.sfx, wep.cd);
 }
@@ -6967,7 +7225,12 @@ function updateBuildings(dt) {
       continue;
     }
     b.builders = 0;
-    if (b.def.scrapGen) G.scr += b.def.scrapGen * (b.tier || 1) * dt;   // scrap refinery income — scales with its upgrade tier
+    if (b.def.scrapGen) G.scr += b.def.scrapGen * (b.tier || 1) * dt;   // scrap refinery / factory income — scales with its upgrade tier
+    if (b.def.supGen) G.sup += b.def.supGen * (b.tier || 1) * dt;       // supply warehouse income
+    if (b.t === 'factory') {                                              // the stacks smoke while the plant runs
+      b._smk = (b._smk || 0) - dt;
+      if (b._smk <= 0 && G.parts.length < PMAX * .8) { b._smk = .32; for (const sx of [-.3, .05]) { const px = b.x + Math.cos(b.ang || 0) * 0 + sx * b.w * TS, py = b.y - b.h * TS * .32; fxSmoke(px, py, rnd(-6, 6), rnd(-4, 4), rnd(4, 7), rnd(3.5, 5.5), 'rgba(92,90,88,1)'); G.parts[G.parts.length - 1].z = (b.def.hgt || 60) * 1.9; } }
+    }
 
     // production: every upgrade tier makes the building build faster AND adds one more parallel line (tier 1 = 1 unit at a time, tier 3 = 3 at once)
     const lines = Math.min(3, Math.max(1, b.tier || 1)), spdMul = 1 + .35 * ((b.tier || 1) - 1);
@@ -7139,7 +7402,7 @@ function updateBullets(dt) {
 
     if (hit || b.life <= 0) {
       if (b.splash) {
-        if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }
+        if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }
         else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false); }
       } else if (hit) {
         damage(hit, b.dmg, b.ang, { wc: b.wc });
@@ -7320,6 +7583,7 @@ function step(dt) {
     if (!queued && !alive && G.wave >= (G.hordeWave || 0)) { G.hordeAlert = false; alertMsg('HORDE BROKEN — the last of wave ' + G.hordeWave + ' is down', ''); AU.ui('ok'); }
     else { G.sirenT = (G.sirenT || 0) - dt; if (G.sirenT <= 0) { G.sirenT = 3.2; AU.siren(); } }
   }
+  if (typeof updateFallen === 'function') updateFallen(dt);
   if (typeof npTick === 'function') npTick(dt);                    // real-time co-op sync: broadcast my state, apply allies' + host's horde
   AU.ambient(G.night, clamp(G.waveAlive / 40, 0, 1));
 }
@@ -9619,16 +9883,28 @@ function cardFor() {
   if (units.length) {
     const hasEng = units.some(u => u.def.builder);
     if (UI.tab === 'build' && hasEng) {
-      btns.title = 'construction';
+      // construction is split by purpose: pick a category first, then the structure
+      const CATS = [
+        { id: 'unit', n: 'Unit Buildings', k: '1', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Research Lab, Vehicle Bay, Airbase.' },
+        { id: 'infra', n: 'Infrastructure', k: '2', g: '🏭', tip: 'Economy and utilities: Scrap Refinery, Scrap Factory, Supply Warehouse, Floodlights.' },
+        { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, walls, fences, gates, traps and the Culvert bunker.' }];
+      if (!UI.bcat) {
+        btns.title = 'construction';
+        for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, fn: () => { UI.bcat = c.id; AU.ui('ok'); refreshCard(true); } });
+        btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.tab = null; UI.place = null; refreshCard(true); } });
+        return btns;
+      }
+      const cat = CATS.find(c => c.id === UI.bcat) || CATS[0];
+      btns.title = cat.n;
       for (const k in BDEF) {
-        const d = BDEF[k]; if (k === 'hq') continue;
+        const d = BDEF[k]; if (k === 'hq' || (d.cat || 'def') !== cat.id) continue;
         btns.push({
           g: buildIcon(k) || d.g, n: d.name, k: d.key, cost: d.cost, tip: d.desc + (d.needs ? '\nRequires: ' + BDEF[d.needs].name : ''),
           dis: !affordable(d.cost) || (d.needs && !G.builds.some(b => b.t === d.needs && b.done && !b.dead)),
           fn: () => { UI.place = k; UI.tab = 'build'; AU.ui('ok'); refreshCard(true); }
         });
       }
-      btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.tab = null; UI.place = null; refreshCard(true); } });
+      btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.bcat = null; UI.place = null; refreshCard(true); } });
       return btns;
     }
     btns.title = units.length > 1 ? units.length + ' units selected' : units[0].def.name;
@@ -9666,7 +9942,7 @@ function cardFor() {
       if (tr.length) btns.push({ g: '🪖', n: 'Unload', k: 'U', badge: aboard + '/' + tr.reduce((a, u) => a + u.def.carry, 0), dis: !aboard, tip: 'Deploy every passenger. A helicopter sets down first, then stays on the ground until you move it.', fn: () => { for (const u of tr) { if (u.def.fly) { u.order = { type: 'land' }; u.rope = null; } else unloadCargo(u); } refreshCard(true); } });
       if (heli.length) {
         const roping = heli.some(u => u.rope);
-        btns.push({ g: '🪢', n: roping ? 'Cancel Rope' : 'Fast-rope', k: 'R', act: roping, dis: !roping && !aboard, tip: 'Hover low and send the passengers down the ropes one at a time — no landing needed. Press again to cancel and keep the rest aboard.', fn: () => { for (const u of heli) { if (roping) u.rope = null; else if (u.cargo && u.cargo.length) { u.rope = { t: .6 }; u.order = null; u.landed = false; } } AU.ui('ok'); refreshCard(true); } });
+        btns.push({ g: '🪢', n: roping ? 'Cancel Rope' : 'Fast-rope', k: 'R', act: roping, dis: !roping && !aboard, tip: 'Hover low and send the passengers down the ropes one at a time — no landing needed. Press again to cancel and keep the rest aboard.', fn: () => { for (const u of heli) { if (roping) u.rope = null; else if (u.cargo && u.cargo.length) { u.rope = { t: .6, fresh: true }; u.order = null; u.landed = false; } } AU.ui('ok'); refreshCard(true); } });
         const down = heli.every(u => u.landed);
         btns.push({ g: down ? '🛫' : '🛬', n: down ? 'Take Off' : 'Land', k: 'K', act: down, tip: down ? 'Lift off and hover.' : 'Set down where it is. Infantry can board a landed helicopter.', fn: () => { for (const u of heli) { if (down) { u.landed = false; u.order = { type: 'move', x: u.x + 1, y: u.y }; } else { u.order = { type: 'land' }; u.rope = null; } } AU.ui('ok'); refreshCard(true); } });
       }
@@ -10142,6 +10418,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   TEX.concrete = mkTex(256, (x, y) => { let v = .52 + (fbm(x / 20, y / 20, 3) - .5) * .16 + (nz(x / 1.6, y / 1.6) - .5) * .1; if (y % 64 < 2 || (x + Math.floor(y / 64) * 32) % 128 < 2) v -= .18; if (nz(x / 3, y / 30 + 7) > .92) v -= .1; return gray(clamp(v, 0, 1)); }, null, { gain: 1.85 });
   TEX.brick = mkTex(128, (x, y) => { const row = Math.floor(y / 12), bx = (x + (row % 2) * 16) % 32, by = y % 12; let v = .5 + (nz(x / 2, y / 2) - .5) * .12 + (fbm(x / 30 + row, y / 30, 2) - .5) * .2; if (bx < 2 || by < 2) v = .32; return [v * 1.05, v * .97, v * .9]; }, null, { gain: 1.85 });
   TEX.roof = mkTex(128, (x, y) => { let v = .5 + Math.sin(x * .9) * .12 + (nz(x / 3, y / 3) - .5) * .08; if (y % 32 < 2) v -= .2; return gray(clamp(v, 0, 1)); }, null, { gain: 1.85 });
+  // HD structure textures: poured concrete with panel seams, bolt heads, rust streaks and base grime; ribbed corrugated steel with rust bloom; clean composite lab panels
+  TEX.concHD = mkTex(256, (x, y) => { let v = .5 + (fbm(x / 26, y / 26, 4) - .5) * .2 + (nz(x / 1.4, y / 1.4) - .5) * .09; const sy = y % 64, sx = (x + Math.floor(y / 64) * 48) % 96; if (sy < 2 || sx < 2) v -= .2; else if (sy < 5 || sx < 5) v += .05; if (((sx - 8) * (sx - 8) + (sy - 8) * (sy - 8)) < 5) v -= .16; const rust = fbm(x / 9 + 30, y / 60, 2); const strk = sy > 6 && sy < 40 && nz(x / 5 + 11, 0) > .74 ? (1 - sy / 40) * .16 : 0; v -= strk; v -= Math.max(0, (y % 128) / 128 - .72) * .5 * (fbm(x / 12, y / 12, 2)); return [v * (1 + strk * .9), v * (1 - strk * .2), v * (1 - strk * .6 - rust * .04)]; }, null, { gain: 1.85 });
+  TEX.corrHD = mkTex(128, (x, y) => { let v = .5 + Math.sin(x * 1.05) * .14 + (nz(x / 3, y / 3) - .5) * .06; if (y % 32 < 2) v -= .2; if (x % 32 < 1) v -= .08; const rust = fbm(x / 14 + 3, y / 14, 3); const r = rust > .62 ? (rust - .62) * 1.2 : 0; v -= r * .25; return [v * (1 + r * .5), v * (1 - r * .15), v * (1 - r * .5)]; }, null, { gain: 1.85 });
+  TEX.lab = mkTex(128, (x, y) => { let v = .56 + (nz(x / 3, y / 3) - .5) * .03 + (fbm(x / 40, y / 40, 2) - .5) * .04; if (y % 32 < 1 || (x + Math.floor(y / 32) * 16) % 48 < 1) v -= .12; return [v * .98, v, v * 1.03]; }, null, { gain: 1.75 });
+  TEX.floorHD = mkTex(128, (x, y) => { let v = .48 + (fbm(x / 20, y / 20, 3) - .5) * .12 + (nz(x / 1.5, y / 1.5) - .5) * .08; if (x % 64 < 2 || y % 64 < 2) v -= .14; if ((x % 64 > 28 && x % 64 < 36) && (y % 64 < 6)) v += .2; return gray(clamp(v, 0, 1)); }, null, { gain: 1.85 });
   TEX.bags = mkTex(128, (x, y) => { const bx = (x + Math.floor(y / 16) * 16) % 32, by = y % 16, e = Math.min(bx, 31 - bx, by * 2, (15 - by) * 2); let v = .5 + (nz(x / 1.5, y / 1.5) - .5) * .12; v -= Math.max(0, 3 - e) * .08; return [v * 1.04, v, v * .9]; }, null, { gain: 1.85 });
   TEX.scorch = mkTex(128, (x, y, u, v) => { const d = Math.hypot(u - .5, v - .5) * 2, n = fbm(x / 10, y / 10, 3); const a = clamp((1 - d) * 1.6 + (n - .5) * .9, 0, 1); return [.03, .025, .02, a * a]; }, null, { clamp: 1 });
   TEX.splat = []; for (let i = 0; i < 4; i++) TEX.splat.push(mkTex(96, (x, y, u, v) => { const d = Math.hypot(u - .5, v - .5) * 2; return [.5, .06, .05, d < .34 + fbm(x / 8 + i * 30, y / 8, 2) * .32 ? 1 : 0]; },
@@ -10172,7 +10453,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const mat = (c, o) => cloudy(new THREE.MeshStandardMaterial(Object.assign({ color: lin(c), roughness: .9, metalness: 0, flatShading: true }, o || {})));
   const matCache = new Map();
   const matFor = (c, o) => { const k = c + '|' + (o ? JSON.stringify(o, (kk, v) => v && v.isTexture ? v.uuid : v) : ''); let m = matCache.get(k); if (!m) { m = mat(c, o); matCache.set(k, m); } return m; };
-  const PANEL = { map: TEX.panel, roughness: .34, metalness: .55, envMapIntensity: 1.25, flatShading: false }, WOODM = { map: TEX.wood, roughness: .62, metalness: .08, envMapIntensity: .8 }, CONC = { map: TEX.concrete, roughness: .58, metalness: .12, envMapIntensity: .9 }, CLOTHM = { map: TEX.cloth, roughness: 1 };   // HD sheen: painted armour and concrete catch the sky
+  const PANEL = { map: TEX.panel, roughness: .34, metalness: .55, envMapIntensity: 1.25, flatShading: false }, WOODM = { map: TEX.wood, roughness: .62, metalness: .08, envMapIntensity: .8 }, CONC = { map: TEX.concHD, bumpMap: TEX.concHD, bumpScale: .012, roughness: .58, metalness: .12, envMapIntensity: .9 }, CLOTHM = { map: TEX.cloth, roughness: 1 };   // HD sheen: painted armour and concrete catch the sky
 
   /* ---------- canvas: WebGL behind the (now transparent) 2D overlay ---------- */
   const gl = document.createElement('canvas'); gl.id = 'gl';
@@ -10181,7 +10462,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.04;   // a touch brighter for the warm HD-2D look
+  renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;   // a touch brighter for the warm HD-2D look
   const scene3 = new THREE.Scene(); scene3.background = new THREE.Color(0xb8c8d8); scene3.fog = new THREE.Fog(0xb8c8d8, 80, 260);
   /* HD reflections: a small procedural sky (blue zenith, warm haze at the horizon, dark ground) run through PMREM and set as
      the scene environment, so every metal/glossy surface — hulls, glass, roofs, wet concrete — picks up a real reflection */
@@ -10205,16 +10486,63 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   scene3.add(sun); scene3.add(sun.target);
   const LIGHTS = []; for (let i = 0; i < 12; i++) { const L = new THREE.PointLight(0xffffff, 0, 10, 2); scene3.add(L); LIGHTS.push(L); }
   G.pixLock = true;                        // the 2D adaptive-resolution swap is meaningless here
-  function size3() { const w = Math.max(640, innerWidth), h = Math.max(400, innerHeight); renderer.setSize(w, h, false); cam3.aspect = w / h; cam3.updateProjectionMatrix(); }
+  function size3() { const w = Math.max(640, innerWidth), h = Math.max(400, innerHeight); renderer.setSize(w, h, false); cam3.aspect = w / h; cam3.updateProjectionMatrix(); if (FX.on) fxResize(); }
+  /* ======================= post-processing: bloom + sunlight rays =======================
+     The scene is rendered to an offscreen target; a bright-pass keeps only the hot pixels (lights, glints, muzzle flashes,
+     lit windows, the reflective highlights on hulls and glass), which are blurred at quarter resolution into a bloom
+     layer, and radially smeared away from the sun's screen position into light shafts.  The final pass composites
+     scene + bloom + rays and converts to sRGB.  Medium/High quality only. */
+  const FX = { on: false, rt: null, rtA: null, rtB: null, rtR: null, w: 0, h: 0, quad: null, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), sun: new THREE.Vector2(.2, 1.1), bloom: 1.0, rays: 1.0 };
+  const FX_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+  const fxMat = (frag, uni) => new THREE.ShaderMaterial({ uniforms: uni, vertexShader: FX_VS, fragmentShader: frag, depthTest: false, depthWrite: false });
+  const FXM = {
+    bright: fxMat('uniform sampler2D tex; uniform float thr; varying vec2 vUv; void main(){ vec3 c = texture2D(tex, vUv).rgb; float l = dot(c, vec3(.2126,.7152,.0722)); float k = smoothstep(thr, thr + .35, l); gl_FragColor = vec4(c * k, 1.0); }', { tex: { value: null }, thr: { value: .8 } }),
+    blur: fxMat('uniform sampler2D tex; uniform vec2 dir; varying vec2 vUv; void main(){ vec3 s = texture2D(tex, vUv).rgb * .227; s += (texture2D(tex, vUv + dir * 1.385).rgb + texture2D(tex, vUv - dir * 1.385).rgb) * .316; s += (texture2D(tex, vUv + dir * 3.23).rgb + texture2D(tex, vUv - dir * 3.23).rgb) * .07; gl_FragColor = vec4(s, 1.0); }', { tex: { value: null }, dir: { value: new THREE.Vector2(0, 0) } }),
+    rays: fxMat('uniform sampler2D tex; uniform vec2 sun; uniform float k; varying vec2 vUv; void main(){ vec2 d = (vUv - sun) / 40.0; vec2 p = vUv; float w = 1.0; vec3 s = vec3(0.0); for (int i = 0; i < 40; i++) { p -= d; s += texture2D(tex, p).rgb * w; w *= .955; } gl_FragColor = vec4(s * k / 40.0, 1.0); }', { tex: { value: null }, sun: { value: FX.sun }, k: { value: 1.0 } }),
+    comp: fxMat('uniform sampler2D tex, bloom, rays; uniform float kb, kr; varying vec2 vUv; void main(){ vec3 c = texture2D(tex, vUv).rgb; vec3 b = texture2D(bloom, vUv).rgb; vec3 r = texture2D(rays, vUv).rgb; c += b * kb + r * kr * vec3(1.0, .93, .78); c = c / (1.0 + max(vec3(0.0), c - 1.0) * .35); gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }', { tex: { value: null }, bloom: { value: null }, rays: { value: null }, kb: { value: .85 }, kr: { value: .55 } })
+  };
+  FX.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), FXM.comp); FX.quad.frustumCulled = false;
+  const FX_SCENE = new THREE.Scene(); FX_SCENE.add(FX.quad);
+  function fxResize() {
+    const w = Math.max(1, Math.floor(renderer.domElement.width)), h = Math.max(1, Math.floor(renderer.domElement.height));
+    if (FX.rt && FX.w === w && FX.h === h) return; FX.w = w; FX.h = h;
+    for (const k of ['rt', 'rtA', 'rtB', 'rtR']) if (FX[k]) FX[k].dispose();
+    const type = (renderer.capabilities.isWebGL2 || renderer.extensions.get('OES_texture_half_float')) ? THREE.HalfFloatType : THREE.UnsignedByteType;
+    FX.rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: true, stencilBuffer: false });
+    FX.rt.samples = 0;
+    const qw = Math.max(1, w >> 2), qh = Math.max(1, h >> 2), o = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: false, stencilBuffer: false };
+    FX.rtA = new THREE.WebGLRenderTarget(qw, qh, o); FX.rtB = new THREE.WebGLRenderTarget(qw, qh, o); FX.rtR = new THREE.WebGLRenderTarget(qw, qh, o);
+  }
+  const fxPass = (mat, target) => { FX.quad.material = mat; renderer.setRenderTarget(target); renderer.render(FX_SCENE, FX.cam); };
+  const _sunV = new THREE.Vector3();
+  function renderFrame(day) {
+    if (!FX.on || !FX.rt) { renderer.setRenderTarget(null); renderer.render(scene3, cam3); return; }
+    renderer.setRenderTarget(FX.rt); renderer.render(scene3, cam3);
+    const rt = FX.rt, qw = FX.rtA.width, qh = FX.rtA.height;
+    FXM.bright.uniforms.tex.value = rt.texture; fxPass(FXM.bright, FX.rtA);
+    for (let i = 0; i < 2; i++) {
+      FXM.blur.uniforms.tex.value = FX.rtA.texture; FXM.blur.uniforms.dir.value.set(1 / qw, 0); fxPass(FXM.blur, FX.rtB);
+      FXM.blur.uniforms.tex.value = FX.rtB.texture; FXM.blur.uniforms.dir.value.set(0, 1 / qh); fxPass(FXM.blur, FX.rtA);
+    }
+    // sun screen position: project a point far along the light direction from the camera target
+    _sunV.copy(sun.position).sub(sun.target.position).normalize().multiplyScalar(400).add(sun.target.position).project(cam3);
+    FX.sun.set(_sunV.x * .5 + .5, _sunV.y * .5 + .5);
+    const dayK = Math.max(0, Math.min(1, (day - .08) * 1.6));                       // shafts only while the sun is up
+    FXM.rays.uniforms.tex.value = FX.rtA.texture; FXM.rays.uniforms.k.value = 1.0; fxPass(FXM.rays, FX.rtR);
+    FXM.comp.uniforms.tex.value = rt.texture; FXM.comp.uniforms.bloom.value = FX.rtA.texture; FXM.comp.uniforms.rays.value = FX.rtR.texture;
+    FXM.comp.uniforms.kb.value = .6 * FX.bloom; FXM.comp.uniforms.kr.value = (.12 + .32 * dayK) * FX.rays;
+    fxPass(FXM.comp, null);
+    renderer.setRenderTarget(null);
+  }
   addEventListener('resize', size3); size3();
   /* graphics quality: mobile / low / medium / high — render scale, shadow map size, grass density, soft-shadow filtering.
      Chosen from Settings › Display, remembered in localStorage; phones default to 'mobile', everything else to 'high'. */
   const QUAL = { level: 'high', gd: 6, gs: 2 };
   const QUAL_DEF = {
-    mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 3, gs: 1 },
-    low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 5, gs: 2 },
-    medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 9, gs: 3 },
-    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 14, gs: 5 }   // tuft counts — each tuft is ~7 blades, so this reads as dense grass at a fraction of the objects
+    mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 3, gs: 1, fx: 0 },
+    low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 5, gs: 2, fx: 0 },
+    medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 9, gs: 3, fx: 1 },
+    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 14, gs: 5, fx: 1 }   // tuft counts — each tuft is ~7 blades, so this reads as dense grass at a fraction of the objects
   };
   let GRASS_POOL = null;                                              // set once the grass pool exists (setQuality runs before the pools are built)
   function setQuality(level, save) {
@@ -10223,6 +10551,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     renderer.shadowMap.enabled = !!q.shadow; renderer.shadowMap.type = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap; renderer.shadowMap.needsUpdate = true;
     sun.castShadow = !!q.shadow;
     if (GRASS_POOL) GRASS_POOL.castShadow = !!q.shadow && q.gs >= 5;
+    FX.on = !!q.fx; if (FX.on) fxResize();
     if (sun.shadow.mapSize.x !== q.map) { sun.shadow.mapSize.set(q.map, q.map); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
     scene3.traverse(o => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });   // shadow define changes need a recompile
     if (save) { try { localStorage.setItem('zrts_qual', QUAL.level); } catch (e) {} }
@@ -10245,7 +10574,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const elevV = (vx, vy) => baseElev(vx, vy) + ((CRAT && vx >= 0 && vy >= 0 && vx < VW && vy < VH) ? CRAT[vIdx(vx, vy)] : 0);
   const elevAtW = (x, y) => { const fx = x * K * RES, fy = y * K * RES; const x0 = Math.floor(fx), y0 = Math.floor(fy), u = fx - x0, v = fy - y0; const a = elevV(x0, y0), b = elevV(x0 + 1, y0), c = elevV(x0, y0 + 1), d = elevV(x0 + 1, y0 + 1); return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v; };
   const groundY = (x, y) => Math.max(elevAtW(x, y), -.06);          // entities never sink below the water surface
-  const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .07, envMapIntensity: .3 });   // the ground takes only a little sky bounce, so the HD sheen stays on the models
+  const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .07, envMapIntensity: .65 });   // the ground takes only a little sky bounce, so the HD sheen stays on the models
   terrMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, { tGrass: { value: TEX.grass }, tSand: { value: TEX.sand }, tRock: { value: TEX.rock }, tRoad: { value: TEX.road }, tDirt: { value: TEX.dirt }, uWet: { value: 0 } });
     terrMat.userData.sh = sh;   // kept so the rain system can drive uWet every frame
@@ -10294,7 +10623,18 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     scene3.add(m); return m;
   }
   const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: lin(0x2b6684), transparent: true, opacity: .74, roughness: .18, metalness: .3, normalMap: TEX.waterN, normalScale: new THREE.Vector2(.5, .5) }));
-  cloudy(water.material); water.rotation.x = -HPI; water.position.y = -.06; scene3.add(water);
+  water.geometry.dispose(); water.geometry = new THREE.PlaneGeometry(4000, 4000, 180, 180);           // enough vertices to carry a real swell
+  water.material.envMapIntensity = 1.4;
+  const WATER_U = { uWT: { value: 0 } };
+  water.material.onBeforeCompile = sh => {                                                                // waves: two crossing swells + a short chop in the vertex stage, and the normal map rocks with them
+    cloudHook(sh); Object.assign(sh.uniforms, WATER_U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWT; varying float vWv;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float w = sin(position.x * 0.9 + uWT * 1.4) * 0.045 + sin(position.y * 1.3 - uWT * 1.1) * 0.035 + sin((position.x + position.y) * 3.1 + uWT * 2.6) * 0.014; transformed.z += w; vWv = w; }');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uWT; varying float vWv;')
+      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n{ float crest = smoothstep(0.05, 0.09, vWv); gl_FragColor.rgb += crest * 0.10; }');   // faint foam on the crests
+  };
+  water.material.needsUpdate = true;
+  water.rotation.x = -HPI; water.position.y = -.06; scene3.add(water);
   function updateTerrain(cx0, cy0, cx1, cy1) {
     let made = 0;
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
@@ -10891,6 +11231,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
 
   /* ======================= buildings ======================= */
   const BAGS = matFor('#8a7c58', { map: TEX.bags, roughness: 1 });
+  const SENS0 = matFor('#5ad0ff', { emissive: lin('#3ab0ff'), emissiveIntensity: 1.2 });
   function sandbagRing(g, r, n, h) { for (let i = 0; i < n; i++) { const a = i / n * TAU, s = box(.34, h, .2, BAGS, Math.cos(a) * r, h / 2, Math.sin(a) * r, 0, -a, 0); g.add(s); const s2 = box(.34, h, .2, BAGS, Math.cos(a + Math.PI / n) * r, h * 1.45, Math.sin(a + Math.PI / n) * r, 0, -a - Math.PI / n, 0); g.add(s2); } }
   /* which of the four neighbouring tiles hold another wall/fence — bits 1:+x 2:−x 4:+z 8:−z — so segments join and corners connect */
   function wallMask(b) {
@@ -10902,7 +11243,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   function mkBuilding(b) {
     // models are designed at d.mw × d.mh tiles and scaled up to fill the real footprint d.w × d.h (so the hitbox and placement match what you see)
     const d = b.def, g = new THREE.Group(), w = d.mw || d.w, h = d.mh || d.h, ht = (d.hgt || 30) * K;
-    const wall = matFor(d.col ? d.col[1] : '#4a5344', CONC), roof = matFor(d.roof || (d.col ? d.col[0] : '#5d6a52'), { map: TEX.roof, roughness: .55, metalness: .25, envMapIntensity: 1.0 }), trim = matFor(d.col ? d.col[0] : '#5d6a52', CONC);
+    const wall = matFor(d.col ? d.col[1] : '#4a5344', CONC), roof = matFor(d.roof || (d.col ? d.col[0] : '#5d6a52'), { map: TEX.corrHD, bumpMap: TEX.corrHD, bumpScale: .015, roughness: .5, metalness: .35, envMapIntensity: 1.1 }), trim = matFor(d.col ? d.col[0] : '#5d6a52', CONC);
     if (d.flat) { g.add(box(w * .9, .05, h * .9, matFor(d.col[0], { map: TEX.panel }), 0, .03, 0)); for (let i = 0; i < 6; i++) g.add(cyl(.02, 0, .16, BARREL, (i % 3 - 1) * .28, .1, (i < 3 ? -.2 : .2), 'y')); }
     else if (d.wall) {
       const fence = b.t === 'fence', isGate = !!d.gate, mask = wallMask(b); g.userData.mask = mask;
@@ -10983,13 +11324,23 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       g.add(box(.6, .06, .2, matFor('#5a4a34', WOODM), 0, .22, R + .25)); g.add(box(.5, .3, .05, matFor('#3a3a3a'), w * .35, .15, R + .25));
     } else if (b.t === 'armory') {
       // research lab: white block with a glazed front, roof dish and vents; a firing lane and sandbag butt beside it for the test range
-      const LAB = matFor('#c9ccd0', CONC), LABD = matFor('#8a9096', PANEL);
+      const LAB = matFor('#d6dadf', { map: TEX.lab, roughness: .45, metalness: .1, envMapIntensity: 1.1 }), LABD = matFor('#8a9096', PANEL), CYAN = matFor('#9ff0ff', { emissive: lin('#3fd8ff'), emissiveIntensity: 1.6, roughness: .2 }), LABGL = matFor('#6fb8e0', { roughness: .05, metalness: .6, transparent: true, opacity: .55, envMapIntensity: 1.8 });
       // the lab block takes the left half of the site; the test range takes the right half — everything stays inside the real footprint
       const BW = w * .52, BX = -w * .23;
       g.add(box(BW, ht, h * .96, LAB, BX, ht / 2, 0)); g.add(box(BW + .06, .1, h, LABD, BX, ht + .05, 0)); g.add(box(BW, .12, h * .96, LABD, BX, .06, 0));
       g.add(box(BW * .8, ht * .5, .06, GLASS, BX, ht * .5, h * .48 + .03)); for (let i = 0; i < 4; i++) g.add(box(.03, ht * .5, .08, LABD, BX - BW * .3 + i * BW * .2, ht * .5, h * .48 + .04));
       const dish = shadowed(new THREE.Mesh(new THREE.SphereGeometry(.32, 12, 8, 0, TAU, 0, .8), matFor('#d8dce0', { side: THREE.DoubleSide }))); dish.position.set(BX - BW * .2, ht + .3, -h * .25); dish.rotation.x = -.8; g.add(dish);
       for (let i = 0; i < 3; i++) g.add(cyl(.07, .07, .3, LABD, BX + BW * .1 + i * .2, ht + .2, -h * .3, 'y'));
+      // research-lab dressing: a glass containment cylinder with a glowing core on the roof, a lit blue frame around the glazing,
+      // cyan light strips along the plinth, a rooftop antenna cluster and an exhaust/HVAC block — the building reads as a lab, not a shed
+      g.add(cyl(.26, .26, .62, LABGL, BX + BW * .18, ht + .31, h * .12, 'y')); g.add(cyl(.1, .1, .5, CYAN, BX + BW * .18, ht + .31, h * .12, 'y')); g.add(cyl(.3, .3, .06, LABD, BX + BW * .18, ht + .65, h * .12, 'y')); g.add(cyl(.3, .3, .06, LABD, BX + BW * .18, ht + .03, h * .12, 'y'));
+      const core = g.children[g.children.length - 3]; g.userData.core = core;
+      g.add(box(BW * .84, .04, .05, CYAN, BX, ht * .78, h * .48 + .06)); g.add(box(BW * .84, .04, .05, CYAN, BX, ht * .22, h * .48 + .06));   // glazing frame light strips
+      g.add(box(BW + .1, .03, .04, CYAN, BX, .14, h * .48 + .05)); g.add(box(BW + .1, .03, .04, CYAN, BX, .14, -h * .48 - .05));             // plinth strips
+      g.add(box(.04, .03, h * .96, CYAN, BX - BW * .5 - .05, .14, 0));
+      for (let i = 0; i < 3; i++) { g.add(cyl(.015, .015, .5 + i * .2, TRACK, BX - BW * .38 + i * .12, ht + .3 + i * .1, h * .3, 'y')); g.add(sph(.03, i === 1 ? RED : CYAN, BX - BW * .38 + i * .12, ht + .55 + i * .2, h * .3)); }   // antenna cluster
+      g.add(box(.36, .22, .3, LABD, BX + BW * .32, ht + .11, -h * .34)); g.add(cyl(.05, .05, .3, TRACK, BX + BW * .32, ht + .36, -h * .34, 'y'));   // HVAC + exhaust
+      g.add(box(.5, .08, .04, matFor('#1c2a34', { emissive: lin('#3fd8ff'), emissiveIntensity: .8 }), BX, ht * .92, h * .48 + .04));            // lit sign over the entrance
       const win = matFor('#182028', { emissive: lin('#8fd0ff'), emissiveIntensity: 0, roughness: .3 }); g.userData.wins = win;
       for (let i = 0; i < 3; i++) g.add(box(.26, .26, .04, win, BX - BW * .3 + i * BW * .3, ht * .7, -h * .48 - .02));
       // the test range sits to the RIGHT (+x) of the lab, inside the footprint; its five lanes run straight NORTH (−z)
@@ -11003,6 +11354,83 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       }
       g.add(box(.3, .1, .3, matFor('#5a4a34', WOODM), rx0 - .3, .05, rz - .4));                              // ammo crate beside the firing line
       g.userData.range = { x0: rx0, z: rz, lane: LANE, n: NL, dx: DX };
+    } else if (b.t === 'hq') {
+      // command post: a two-tier concrete bunker — wide lower block with a battered (sloped) front and a set-back upper storey — under a
+      // rotating radar dish and an antenna farm; sandbag revetments, a floodlit entrance with a canopy, generator with exhaust,
+      // roof AC units, a lit "HQ" sign strip and the flag.  Everything sits inside the 4×4 model footprint.
+      const HQC = matFor('#575f52', CONC), HQD = matFor('#3f463c', CONC), STL2 = matFor('#6a7076', { metalness: .55, roughness: .4 }), AMB = matFor('#ffcf7a', { emissive: lin('#ffb040'), emissiveIntensity: 1.2 });
+      const H1 = ht * .58, H2 = ht;
+      g.add(box(w * .96, H1, h * .96, HQC, 0, H1 / 2, 0)); g.add(box(w * .98, .1, h * .98, HQD, 0, H1 + .05, 0));                           // lower block + parapet
+      g.add(box(w * .62, H2 - H1, h * .6, HQC, -w * .1, H1 + (H2 - H1) / 2, -h * .12)); g.add(box(w * .66, .1, h * .64, HQD, -w * .1, H2 + .05, -h * .12));   // upper storey
+      g.add(box(w * .96, .12, h * .96, HQD, 0, .06, 0));                                                                                    // plinth
+      for (const sd of [-1, 1]) g.add(box(.08, H1 * .9, h * .9, HQD, sd * w * .49, H1 * .45, 0, 0, 0, sd * .06));                            // battered side buttresses
+      const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 }); g.userData.wins = win;
+      for (let i = 0; i < 5; i++) g.add(box(.22, .16, .04, win, -w * .4 + (i + .5) * (w * .8 / 5), H1 * .62, h * .48 + .02));               // slit windows
+      for (let i = 0; i < 3; i++) g.add(box(.3, .22, .04, win, -w * .3 + i * w * .2, H1 + (H2 - H1) * .55, h * .18 + .02));                 // upper storey glazing
+      g.add(box(.5, H1 * .55, .06, matFor('#2a2e30', PANEL), w * .12, H1 * .27, h * .48 + .03));                                            // blast door
+      g.add(box(.9, .05, .36, STL2, w * .12, H1 * .6, h * .48 + .18)); for (const sd of [-1, 1]) g.add(box(.04, H1 * .6, .04, STL2, w * .12 + sd * .4, H1 * .3, h * .48 + .34));   // entrance canopy
+      g.add(box(.7, .06, .1, AMB, w * .12, H1 * .56, h * .48 + .2)); g.userData.lamp = g.children[g.children.length - 1];                   // floodlight bar under the canopy
+      g.add(box(w * .5, .07, .05, matFor('#1c2a34', { emissive: lin('#ffb040'), emissiveIntensity: .9 }), -w * .18, H1 * .86, h * .48 + .03));   // lit sign strip
+      for (let x = -w * .42; x < w * .42; x += .36) for (const sd of [1]) { g.add(box(.34, .16, .2, BAGS, x, .08, h * .49 + .3)); g.add(box(.3, .14, .18, BAGS, x + .17, .22, h * .49 + .3)); }   // sandbag revetment along the front
+      for (let z = -h * .4; z < h * .4; z += .36) { g.add(box(.2, .16, .34, BAGS, -w * .49 - .3, .08, z)); g.add(box(.18, .14, .3, BAGS, -w * .49 - .3, .22, z + .17)); }
+      g.add(cyl(.05, .05, .5, STL2, w * .18, H2 + .25, -h * .3, 'y')); const radar = box(.85, .07, .18, STL2, w * .18, H2 + .55, -h * .3, 0, .4, .25); g.add(radar); g.userData.radar = radar;   // rotating radar bar
+      g.add(cyl(.02, .02, 2.0, TRACK, w * .4, H1 + 1.0, -h * .4, 'y')); g.add(box(.3, .18, .02, matFor('#b23030'), w * .4 + .16, H1 + 1.85, -h * .4)); g.userData.flag = g.children[g.children.length - 1];   // flag
+      for (let i = 0; i < 3; i++) { g.add(cyl(.015, .015, .9 + i * .3, TRACK, -w * .4 + i * .14, H2 + .45 + i * .15, -h * .38, 'y')); g.add(sph(.035, i === 1 ? RED : SENS0, -w * .4 + i * .14, H2 + .9 + i * .3, -h * .38)); }   // antenna farm
+      const dish = shadowed(new THREE.Mesh(new THREE.SphereGeometry(.3, 12, 8, 0, TAU, 0, .8), matFor('#d0d4d8', { side: THREE.DoubleSide }))); dish.position.set(-w * .3, H2 + .28, h * .05); dish.rotation.x = -.9; g.add(dish);
+      for (let i = 0; i < 2; i++) g.add(box(.3, .18, .3, STL2, w * .28 + i * .4, H1 + .09, h * .3));                                        // roof AC units on the lower block
+      g.add(box(.5, .34, .3, matFor('#3a3e2a', PANEL), w * .38, .17, -h * .05)); g.add(cyl(.04, .04, .5, TRACK, w * .52, .45, -h * .05, 'y')); g.userData.gen = { x: w * .52, y: .72, z: -h * .05 };   // generator + exhaust stack
+      g.add(box(.6, .04, .16, matFor('#e8e8dc'), w * .12, .01, h * .49 + .6));                                                              // painted threshold
+    } else if (b.t === 'factory') {
+      // scrap factory: a sawtooth-roofed hall with a glazed north face on each tooth, twin brick stacks, a conveyor feeding crates
+      // through a side door, a loading dock and pallets of salvage — the conveyor runs and the stacks smoke while the plant works
+      const FW = matFor('#5a5650', CONC), BRK = matFor('#7a4a3a', { map: TEX.brick, roughness: .9 }), STL2 = matFor('#6a7076', { metalness: .55, roughness: .4 }), TEETH = 3, TW = w * .96 / TEETH;
+      g.add(box(w * .96, ht * .7, h * .96, FW, 0, ht * .35, 0)); g.add(box(w * .96, .12, h * .96, trim, 0, .06, 0));                           // hall
+      for (let i = 0; i < TEETH; i++) {                                                                                                     // sawtooth roof: slope + glazed vertical
+        const cx = -w * .48 + TW * (i + .5);
+        g.add(box(TW * .98, .06, h * 1.0, roof, cx + TW * .03, ht * .7 + ht * .12, 0, 0, 0, -.42));
+        g.add(box(.05, ht * .24, h * .9, GLASS, cx - TW * .47, ht * .7 + ht * .12, 0));
+      }
+      for (const sx of [-.3, .05]) { g.add(cyl(.11, .14, ht * 1.2, BRK, sx * w, ht * .7 + ht * .6, -h * .32, 'y')); g.add(cyl(.13, .13, .08, TRACK, sx * w, ht * .7 + ht * 1.2, -h * .32, 'y')); }   // stacks
+      const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 }); g.userData.wins = win;
+      for (let i = 0; i < 4; i++) g.add(box(.26, .22, .04, win, -w * .36 + i * w * .24, ht * .42, h * .48 + .02));
+      g.add(box(.7, ht * .5, .05, matFor('#c9a33d', { map: TEX.corrHD }), w * .25, ht * .25, h * .48 + .03));                                  // roller door
+      g.add(box(w * .5, .14, .5, matFor('#4a4a46', { map: TEX.floorHD }), w * .15, .07, h * .48 + .3));                                         // loading dock
+      // conveyor: a belt on legs running out of the side wall along +x, crates ride it (animated)
+      const belt = new THREE.Group(); belt.position.set(w * .49, .34, -h * .1); g.add(belt);
+      belt.add(box(1.0, .05, .3, TRACK, .5, 0, 0)); for (const lx of [.15, .85]) belt.add(box(.04, .34, .26, STL2, lx, -.18, 0)); belt.add(cyl(.04, .04, .32, STL2, 1.0, 0, 0, 'z')); belt.add(cyl(.04, .04, .32, STL2, 0, 0, 0, 'z'));
+      const crates = []; for (let i = 0; i < 3; i++) { const c = box(.16, .14, .18, matFor(i === 1 ? '#8a7a4a' : '#7a6a5a', { map: TEX.panel }), 0, .1, 0); belt.add(c); crates.push(c); }
+      g.userData.conveyor = { crates };
+      for (let i = 0; i < 3; i++) g.add(box(.26, .16 + (i % 2) * .1, .26, matFor('#6a6660', { map: TEX.panel, metalness: .5, roughness: .4 }), w * .49 + .3 + (i % 2) * .3, .08 + (i % 2) * .05, h * .25 + i * .28));   // salvage pallets by the door
+      g.add(box(.3, .5, .3, matFor('#3a3e2a', PANEL), -w * .42, .25, h * .42)); g.add(cyl(.03, .03, .4, TRACK, -w * .42, .7, h * .42, 'y'));   // transformer
+    } else if (b.t === 'warehouse') {
+      // supply warehouse: steel portal frame with a corrugated roof and an open front, pallet racks of green supply cages on
+      // both sides of a centre aisle, a loading dock across the front — and a forklift (animated) shuttling cages to the dock
+      const STL2 = matFor('#6a7076', { metalness: .55, roughness: .4 }), FLR = matFor('#55554f', { map: TEX.floorHD, roughness: .8 }), CAGE = matFor('#3f8a4a', { metalness: .6, roughness: .4, wireframe: true }), CRT = matFor('#4a7a3a', { map: TEX.panel, roughness: .7 });
+      g.add(box(w * .96, .1, h * .96, FLR, 0, .05, 0));                                                                                     // slab
+      g.add(box(w * .96, ht * .85, .06, wall, 0, ht * .425, -h * .47));                                                                      // back wall
+      for (const sd of [-1, 1]) g.add(box(.06, ht * .85, h * .94, wall, sd * w * .47, ht * .425, 0));                                        // side walls
+      for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) g.add(box(.06, ht * .9, .06, STL2, -w * .46 + i * w * .23, ht * .45, sd * h * .46));   // portal columns
+      g.add(box(w * 1.0, .06, h * 1.0, roof, 0, ht * .9 + .03, 0, .06, 0, 0));                                                              // roof (gentle pitch)
+      g.add(box(w * .96, .06, .06, STL2, 0, ht * .86, h * .47));                                                                             // front header beam
+      g.add(box(w * .9, .05, .08, matFor('#1c2a34', { emissive: lin('#8dffbe'), emissiveIntensity: .8 }), 0, ht * .8, h * .47 + .04));       // lit fascia strip
+      const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 }); g.userData.wins = win;
+      for (let i = 0; i < 4; i++) g.add(box(.3, .18, .04, win, -w * .36 + i * w * .24, ht * .6, -h * .47 - .02));
+      const cageAt = (x, y, z) => { g.add(box(.3, .28, .3, CAGE, x, y + .14, z)); g.add(box(.22, .2, .22, CRT, x, y + .12, z)); };
+      for (const sd of [-1, 1]) {                                                                                                            // racks: two bays × two levels each side
+        const rz = sd * h * .28;
+        for (let i = 0; i < 4; i++) g.add(box(.05, ht * .55, .05, STL2, -w * .4 + i * w * .26, ht * .275, rz + (i % 2 ? .18 : -.18)));
+        for (let lv = 0; lv < 2; lv++) { g.add(box(w * .8, .03, .4, STL2, 0, .12 + lv * .34, rz)); for (let i = 0; i < 3; i++) if ((i + lv + sd) % 3) cageAt(-w * .3 + i * w * .3, .14 + lv * .34, rz); }
+      }
+      g.add(box(w * .96, .12, .5, matFor('#4a4a46', { map: TEX.floorHD }), 0, .06, h * .48 + .3));                                           // loading dock
+      for (let i = 0; i < 2; i++) cageAt(w * .32 + i * .34, .12, h * .48 + .3);                                                              // cages waiting on the dock
+      // the forklift: yellow body, black wheels, mast, forks, overhead guard, driver — with a cage it carries on the forks
+      const fk = new THREE.Group(); const YEL = matFor('#e2b32a', PANEL), BLK = matFor('#1a1a18', { roughness: .9 });
+      fk.add(box(.3, .16, .24, YEL, 0, .14, 0)); fk.add(box(.14, .12, .2, BLK, -.06, .28, 0)); fk.add(box(.05, .2, .06, BLK, .04, .4, 0)); fk.add(sph(.04, matFor('#c9a684'), .04, .5, 0));   // body, seat, driver
+      for (const s of [-1, 1]) { fk.add(cyl(.05, .05, .04, BLK, -.1, .05, s * .12, 'z')); fk.add(cyl(.05, .05, .04, BLK, .1, .05, s * .12, 'z')); }
+      for (const s of [-1, 1]) fk.add(box(.02, .5, .02, BLK, .17, .27, s * .09)); fk.add(box(.28, .02, .26, BLK, 0, .5, 0));               // mast + overhead guard
+      const forks = new THREE.Group(); forks.position.set(.18, .04, 0); for (const s of [-1, 1]) forks.add(box(.28, .015, .03, BLK, .14, 0, s * .06)); fk.add(forks);
+      const load = new THREE.Group(); load.position.set(.16, .02, 0); load.add(box(.3, .28, .3, CAGE, 0, .14, 0)); load.add(box(.22, .2, .22, CRT, 0, .12, 0)); forks.add(load);
+      g.add(fk); g.userData.fork = { g: fk, forks, load, w, h };
     } else {
       g.add(box(w * .96, ht, h * .96, wall, 0, ht / 2, 0)); g.add(box(w, .12, h, roof, 0, ht + .06, 0)); g.add(box(w * .96, .12, h * .96, trim, 0, .06, 0));
       const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 });
@@ -11255,7 +11683,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     cam3.position.set(tx, ty + Math.sin(TILT) * dist, tz + Math.cos(TILT) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
     sun.shadow.camera.left = -dist * .9; sun.shadow.camera.right = dist * .9; sun.shadow.camera.top = dist * .9; sun.shadow.camera.bottom = -dist * .9; sun.shadow.camera.updateProjectionMatrix();
     const day = updateLighting3(cxw, cyw); dayNow = day;
-    TEX.waterN.offset.x = G.t * .004; TEX.waterN.offset.y = G.t * .0025;
+    TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
     const vx0 = CAM.x - 200, vx1 = CAM.x + CAM.vw + 200, vy0 = CAM.y - 300, vy1 = CAM.y + CAM.vh + 200;
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
     if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
@@ -11295,6 +11723,18 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           }
         } else { const lean = wm * (.04 + gust * .03); put(P.bush, x + wdx * lean * .3, y + .16 * sc, z + wdz * lean * .3, wdz * lean * 2, q.a, -wdx * lean * 2, sc, sc * .8, sc, BUSHC[q.id & 1]); }
       }
+      /* ---- felled trees: tip over about the base toward f.dir, bounce once on impact, then lie until they break apart (sim removes them) ---- */
+      if (G.fallen && G.fallen.length) for (let i = 0; i < G.fallen.length; i++) {
+        const f = G.fallen[i]; if (f.x < vx0 - 200 || f.x > vx1 + 200 || f.y < vy0 - 200 || f.y > vy1 + 200) continue;
+        const k = Math.min(1, f.t / f.dur), fall = k * k * (3 - 2 * k) * k;          // slow start, accelerating over
+        let th = fall * 1.42; if (f.hit) { const b = f.t - f.dur; th = 1.42 + Math.max(0, .12 * Math.sin(b * 9) * Math.exp(-b * 4)) - .04; }   // settles a hair short of flat, with a bounce
+        const x = f.x * K, z = f.y * K, y = groundY(f.x, f.y), sc = f.sc, ux = Math.cos(f.dir) * Math.sin(th), uy = Math.cos(th), uz = Math.sin(f.dir) * Math.sin(th);
+        const ry = -f.dir, rz = -th, con = hash2(f.id, 13) < .62, v = (hash2(f.id, 7) * 5) | 0;
+        const at = (h) => [x + ux * h, y + uy * h + .02, z + uz * h];
+        let p = at((con ? .42 : .34) * sc); put(P.trunk, p[0], p[1], p[2], 0, ry, rz, sc * (con ? .9 : 1.15), sc * (con ? 1.4 : 1.15), sc * (con ? .9 : 1.15));
+        if (con) { const H = 2.35 * sc, w0 = .78 * sc; for (let t = 0; t < 4; t++) { const fr = t / 4, w = w0 * (1 - fr * .62); p = at(.55 * sc + H * fr * .78); put(P.cone, p[0], p[1], p[2], 0, ry, rz, w, H * (.42 - fr * .07), w, CONIF[(v + t) % 4]); } }
+        else for (let t = 0; t < 4; t++) { const fr = t / 3, r = (.92 - fr * .28) * sc, an = t * 2.1 + f.a, off = (t ? .3 : 0) * sc; p = at((.95 + fr * .55) * sc); put(P.crown, p[0] + Math.cos(an) * off, p[1], p[2] + Math.sin(an) * off, 0, ry + an * .2, rz, r, r * .85, r, LEAF[(v + t) % 5]); }
+      }
       /* ---- grass blades: they sway on the wind, and lie flat (then slowly stand back up) where troops and vehicles have run through ---- */
       const gtx0 = Math.max(0, (vx0 / TS) | 0), gtx1 = Math.min(MW - 1, (vx1 / TS) | 0), gty0 = Math.max(0, (vy0 / TS) | 0), gty1 = Math.min(MH - 1, (vy1 / TS) | 0);
       const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 2600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
@@ -11321,7 +11761,21 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (const b of G.builds) { let bm = buildMeshes.get(b.id); if (b.dead) { if (bm) { scene3.remove(bm.g); buildMeshes.delete(b.id); } continue; }
       // a wall whose neighbours changed, or a building that reached a new tier, is rebuilt so its shape reflects the new state
       if (bm && ((b.def.wall && b.t !== 'gate' && bm.g.userData.mask !== wallMask(b)) || (bm.g.userData.tier || 1) !== (b.tier || 1))) { scene3.remove(bm.g); buildMeshes.delete(b.id); bm = null; }
-      if (!bm) { bm = mkBuilding(b); buildMeshes.set(b.id, bm); } const g = bm.g; g.visible = b.x > vx0 - 200 && b.x < vx1 + 200 && b.y > vy0 - 300 && b.y < vy1 + 200; if (!g.visible) continue; g.position.set(b.x * K, groundY(b.x, b.y), b.y * K); { const bs = g.userData.bs || 1; g.scale.set(bs, bs * (b.done ? 1 : Math.max(.08, b.prog || 0)), bs); } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6; if (b.sel) put(P.sel, b.x * K, groundY(b.x, b.y) + .04, b.y * K, -HPI, 0, 0, Math.max(b.w, b.h) * .7, Math.max(b.w, b.h) * .7, 1);
+      if (!bm) { bm = mkBuilding(b); buildMeshes.set(b.id, bm); } const g = bm.g; g.visible = b.x > vx0 - 200 && b.x < vx1 + 200 && b.y > vy0 - 300 && b.y < vy1 + 200; if (!g.visible) continue; g.position.set(b.x * K, groundY(b.x, b.y), b.y * K); { const bs = g.userData.bs || 1; g.scale.set(bs, bs * (b.done ? 1 : Math.max(.08, b.prog || 0)), bs); } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6;
+      if (b.done && g.userData.conveyor) { const cs = g.userData.conveyor.crates; for (let i = 0; i < cs.length; i++) cs[i].position.x = ((G.t * .35 + i / cs.length) % 1) * 1.0; }
+      if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
+      if (g.userData.flag) g.userData.flag.rotation.y = Math.sin(G.t * 2.2 + b.id) * .25;
+      if (b.done && g.userData.fork) {                                                          // forklift cycle: rack → dock loaded, lower, back empty, lift
+        const F = g.userData.fork, ph = (G.t * .12 + b.id * .37) % 1, x0 = -F.w * .3, x1 = F.w * .36, zA = 0, zD = F.h * .48 + .1;
+        let x, z, ang, lift = .34, loaded = true;
+        if (ph < .3) { const k = ph / .3; x = x0 + (x1 - x0) * k; z = zA; ang = 0; }                                    // drive down the aisle with a cage
+        else if (ph < .42) { const k = (ph - .3) / .12; x = x1; z = zA + (zD - zA) * k; ang = HPI; }                     // turn out to the dock
+        else if (ph < .5) { const k = (ph - .42) / .08; x = x1; z = zD; ang = HPI; lift = .34 * (1 - k); }               // lower the cage
+        else if (ph < .58) { const k = (ph - .5) / .08; x = x1 - .35 * k; z = zD; ang = HPI; lift = .04; loaded = false; }   // back off
+        else if (ph < .9) { const k = (ph - .58) / .32; x = x1 - .35 - (x1 - .35 - x0) * k; z = zD - (zD - zA) * k; ang = Math.PI; lift = .04; loaded = false; }   // return to the racks
+        else { const k = (ph - .9) / .1; x = x0; z = zA; ang = 0; lift = .04 + .3 * k; loaded = k > .3; }                // pick the next cage
+        F.g.position.set(x, .02, z); F.g.rotation.y = -ang; F.forks.position.y = lift; F.load.visible = loaded;
+      } if (b.sel) put(P.sel, b.x * K, groundY(b.x, b.y) + .04, b.y * K, -HPI, 0, 0, Math.max(b.w, b.h) * .7, Math.max(b.w, b.h) * .7, 1);
       drawDamageState(b, g.position.x, g.position.y, g.position.z, b.w * .5, b.h * .5, (b.def.hgt || 30) * K * (g.userData.bs || 1));
       if (G.hordeAlert && b.done && !b.def.flat && !b.def.lamp && b.owner !== 'invader') {     // horde siren: a red rotating beacon on the roof of every building
         const bs = g.userData.bs || 1, top = g.position.y + (b.def.hgt || 30) * K * bs + .22, bx0 = g.position.x, bz0 = g.position.z;
@@ -11553,7 +12007,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (const im of PER_FRAME) flush(im);
     bbFlush(partsAdd); bbFlush(partsAlpha);
     if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; }
-    renderer.render(scene3, cam3);
+    renderFrame(dayNow);
     for (const im of PER_FRAME) im.count = 0;
     growPools();                                                     // any pool that ran dry this frame (huge waves) gets a bigger buffer for the next one
 
