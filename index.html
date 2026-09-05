@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>LAST LINE — Zombie Defense</title>
 <style>
@@ -864,7 +866,8 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <div class="mpjoin"><input id="mpCode" placeholder="ROOM CODE" maxlength="6" autocomplete="off"><button class="mbtn" id="mpJoin"><span class="ml">JOIN</span></button></div>
       <button class="mbtn" id="mpLocal"><span class="ml">LOCAL HOT-SEAT (test)</span></button>
     </div>
-    <div class="mpnote" id="mpNote">Host creates a room and shares the code. Firebase transport plugs into <code>NET</code>.</div>
+    <div class="mpnote" id="mpNote">Host creates a room and shares the 4-letter code (no O, 0, I or 1). Both players must see the same server and build below.</div>
+    <div class="mpnote" id="mpStatus" style="font-weight:700"><span id="mpDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#7a7a7a;margin-right:6px;vertical-align:middle"></span><span id="mpStatusTxt">checking server…</span> · build <code id="mpBuild">?</code></div>
     <button class="mback" data-go="main">◀ BACK</button>
   </div>
 
@@ -12734,7 +12737,24 @@ function openLobby() {
   mpShow('lobby'); $('lobCode').textContent = '· ' + LOBBY.code;
   buildCfgControls(); bindSpawnMap(); renderLobby();
 }
-function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); }
+function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
+/* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
+   database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
+const BUILD_TAG = 'b10';
+function mpStatusCheck() {
+  const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
+  if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
+  const set = (ok, msg) => { dot.style.background = ok === null ? '#c9a33d' : ok ? '#3ddc84' : '#ff5a48'; dot.style.boxShadow = '0 0 8px ' + dot.style.background; txt.textContent = msg; };
+  if (!window.firebase || !window.__FB_CONFIG) { set(false, 'server SDK failed to load — check your internet / ad-blocker'); return; }
+  if (!attachFirebaseIfPresent()) { set(false, 'server init failed'); return; }
+  set(null, 'connecting to server…');
+  try {
+    if (mpStatusCheck._ref) mpStatusCheck._ref.off();
+    mpStatusCheck._ref = window.__DB.ref('.info/connected');
+    mpStatusCheck._ref.on('value', s => set(!!s.val(), s.val() ? 'server connected' : 'server unreachable — firewall or network is blocking firebaseio.com'));
+    setTimeout(() => { if (txt.textContent.startsWith('connecting')) set(false, 'no answer from server — check connection'); }, 8000);
+  } catch (e) { set(false, 'server error: ' + e.message); }
+}
 
 /* ---------------- config controls (host-editable, everyone sees) ---------------- */
 function buildCfgControls() {
