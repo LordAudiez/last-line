@@ -599,7 +599,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     <h2>Settings</h2>
     <div class="sc">Saves and audio. Changes apply immediately.</div>
 
-    <div class="grp">
+    <div class="grp pinned">
       <h3>Save game</h3>
       <div class="rowb">
         <button class="sx go" id="btnSave">💾 Save</button>
@@ -5827,13 +5827,75 @@ function deOverlapUnits(dt) {
           const d = Math.sqrt(d2v); let nx, ny;
           if (d < .01) { const ang = (a.id * 2.399 + b.id); nx = Math.cos(ang); ny = Math.sin(ang); }
           else { nx = dx / d; ny = dy / d; }
-          const push = (min - d) * .5;
+          const push = Math.min((min - d) * .3, 2.2);       // gentle, capped correction so bodies separate without shoving each other around
           if (!solidAt(a.x + nx * push, a.y + ny * push, true)) { a.x += nx * push; a.y += ny * push; }
           if (!solidAt(b.x - nx * push, b.y - ny * push, true)) { b.x -= nx * push; b.y -= ny * push; }
         }
       }
     }
   }
+}
+
+/* ---- squad grouping ----
+   Stateful fire-teams: the first man in contact becomes a leader; nearby troops JOIN him into fixed slots (they never
+   swap places once assigned). When a leader's team is full (6) the next man becomes a NEW leader and walks two tiles
+   clear before others join him. A team disbands once no enemy has been near any member for 5 seconds. */
+const GRP_JOIN2 = (3.2 * TS) * (3.2 * TS);
+function grpLeave(u) {
+  const L = u.grpLeader;
+  if (L && L !== u && L.grp) { const i = L.grp.indexOf(u); if (i >= 0) L.grp[i] = null; }
+  if (L === u && u.grp) { for (const m of u.grp) if (m && m !== u) { m.grpLeader = null; m.grpRole = 0; } u.grp = null; }
+  u.grpLeader = null; u.grpRole = 0;
+}
+function assignCoverGroups(dt) {
+  G._coverT = (G._coverT || 0) - dt;
+  if (G._coverT > 0) return; G._coverT = .25;
+  const el = (G._coverLast != null) ? Math.max(dt, G.t - G._coverLast) : .25; G._coverLast = G.t;   // real time since the last grouping pass
+  const freeForm = (typeof UI === 'undefined') || !UI.formation || UI.formation === 'free';
+  // 1. eligibility + 5s contact countdown
+  for (let i = 0; i < G.units.length; i++) {
+    const u = G.units[i];
+    if (u.dead || u.remote) { continue; }
+    const foot = !u.def.veh && !u.def.fly && !u.def.hauler;
+    const hasT = u.tgts && u.tgts[0] && !u.tgts[0].dead;
+    if (hasT) u.grpHotT = 5; else if (u.grpHotT > 0) u.grpHotT = Math.max(0, u.grpHotT - el);
+    const elig = freeForm && foot && !u.inside && !u.roping && !u.ropeHold && !u.backOff && (hasT || u.grpHotT > 0) &&
+      (!u.order || u.order.type === 'amove' || u.order.type === 'attack' || u.order.type === 'guard');
+    u._grpElig = elig;
+    if (!elig && u.grpLeader) grpLeave(u);
+  }
+  // 2. validate leaders + prune rosters
+  for (let i = 0; i < G.units.length; i++) {
+    const u = G.units[i];
+    if (u.grpLeader !== u) continue;                       // only leaders
+    if (!u._grpElig) { grpLeave(u); continue; }
+    if (!u.grp) u.grp = [u];
+    for (let s = 0; s < u.grp.length; s++) { const m = u.grp[s]; if (m && (m.dead || !m._grpElig || m.grpLeader !== u || dist2(m.x, m.y, u.x, u.y) > GRP_JOIN2)) { if (m && m !== u) { m.grpLeader = null; m.grpRole = 0; } u.grp[s] = null; } }
+  }
+  // 3. place ungrouped eligible troops
+  const leaders = [];
+  for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (u.grpLeader === u && u._grpElig) leaders.push(u); }
+  const ung = [];
+  for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (u._grpElig && !(u.grpLeader && u.grpLeader.grpLeader === u.grpLeader && !u.grpLeader.dead)) ung.push(u); }
+  ung.sort((a, b) => a.id - b.id);                          // deterministic join order
+  for (const u of ung) {
+    if (u.grpLeader === u) continue;                        // already a leader
+    // nearest leader with a free slot in range
+    let best = null, bd = GRP_JOIN2;
+    for (const Ld of leaders) { if (!Ld.grp) continue; let free = false; for (let s = 0; s < 6; s++) if (!Ld.grp[s]) { free = true; break; } if (!free) continue; const d = dist2(u.x, u.y, Ld.x, Ld.y); if (d < bd) { bd = d; best = Ld; } }
+    if (best) {
+      let s = 0; while (s < 6 && best.grp[s]) s++; if (s >= 6) continue;
+      best.grp[s] = u; u.grpLeader = best; u.grpRole = s;
+    } else {
+      // become a new leader; if crowding another leader, step two tiles clear first
+      u.grpLeader = u; u.grp = [u, null, null, null, null, null]; u.grpRole = 0;
+      let near = null, nd = 1e9; for (const Ld of leaders) { if (Ld === u) continue; const d = dist2(u.x, u.y, Ld.x, Ld.y); if (d < nd) { nd = d; near = Ld; } }
+      if (near && nd < (2.4 * TS) * (2.4 * TS)) { const a = angTo(near.x, near.y, u.x, u.y); u.grpAway = { x: near.x + Math.cos(a) * 2 * TS, y: near.y + Math.sin(a) * 2 * TS }; u.grpAwayT = 2.5; }
+      leaders.push(u);
+    }
+  }
+  // 4. publish member counts + fixed roles
+  for (const Ld of leaders) { if (!Ld.grp) continue; let n = 0; for (let s = 0; s < 6; s++) { const m = Ld.grp[s]; if (m) { n++; m.grpRole = s; } } Ld.grpN = n; if (Ld.grpAwayT > 0) Ld.grpAwayT -= dt; }
 }
 
 /* ==================== UNITS ==================== */
@@ -5949,58 +6011,36 @@ function updateUnits(dt) {
     const rng = unitRange(u);
     const engaged = updateWeapons(u, dt, o);
     if (!u.def.veh) {
-      /* ---- squad cover ----
-         In free formation (no formation shape locked) troops in contact bunch into fire-teams of up to SIX and take
-         layered cover poses; a 7th man starts a fresh team. Recomputed a few times a second. Roles, front to back:
+      /* ---- squad cover ---- (groups are formed once per tick by assignCoverGroups; here each man just takes his pose)
+         The FIRST man in contact becomes a team leader; nearby troops join him up to SIX. Once a leader's team is full
+         the next man starts a NEW team and moves two tiles clear before others join him. Roles, front to back:
            team of 2  → #2 rests one hand on #1's shoulder and fires
-           team of 3+ → #1 drops to a crouch; #2 stacks on his back; #3 grips #1's arm and fires; #4 covers left;
-                        #5 covers right; #6 grips #1's body and fires. */
-      const freeForm = (typeof UI === 'undefined') || !UI.formation || UI.formation === 'free';
-      u._budT = (u._budT || 0) - dt;
-      if (u._budT <= 0) {
-        u._budT = .2;
-        u.buddy = null; u.buddyKind = null; u.coverCrouch = false; u.coverFocus = 0; u.coverSlot = null; u.coverActive = false; u.coverLeaderRef = null;
-        const inContact = engaged || (u.tgts && u.tgts[0] && !u.tgts[0].dead);
-        const orderFree = !o || o.type === 'amove' || o.type === 'attack' || o.type === 'guard';
-        if (freeForm && inContact && orderFree && !u.inside && !u.def.hauler && !u.roping && !u.ropeHold) {
-          // gather the fire-team cluster: nearby friendly foot-troops that are also in contact & free
-          const nl = G.hUnits.near(u.x, u.y, 120, _q3), team = _q5; team.length = 0;
-          for (let k = 0; k < nl.length; k++) {
-            const v = nl[k];
-            if (v.dead || v.inside || v.def.veh || v.def.fly || v.def.hauler || v.roping || v.ropeHold) continue;
-            if (plyOf(v).team !== plyOf(u).team) continue;
-            if (!(v.tgts && v.tgts[0] && !v.tgts[0].dead) && v !== u) continue;
-            if (dist2(v.x, v.y, u.x, u.y) > 120 * 120) continue;
-            team.push(v);
-          }
-          if (team.length >= 2) {
-            const thr = (m) => { const t = m.tgts && m.tgts[0]; return t ? dist2(m.x, m.y, t.x, t.y) : 1e12; };
-            team.sort((a, b) => { const da = thr(a), db = thr(b); return da !== db ? (da < db ? -1 : 1) : a.id - b.id; });
-            const idx = team.indexOf(u), grp = Math.floor(idx / 6), role = idx - grp * 6;
-            const gStart = grp * 6, gN = Math.min(6, team.length - gStart), leader = team[gStart];
-            if (leader && gN >= 2) {
-              u.coverActive = true; u.coverRole = role; u.coverLeaderRef = leader;
-              const lang = leader.ang, cf = Math.cos(lang), sf = Math.sin(lang), px = -sf, py = cf;
-              let back = 0, lat = 0;
-              if (gN === 2) {
-                if (role === 1) { u.buddy = leader; u.buddyKind = 'shoulder'; back = 14; lat = 7; }
-              } else {
-                if (role === 0) u.coverCrouch = true;                          // point man crouches
-                else if (role === 1) { back = 15; lat = 0; }                    // stacks on his back
-                else if (role === 2) { u.buddy = leader; u.buddyKind = 'arm'; back = 14; lat = -11; }
-                else if (role === 3) { u.coverFocus = -1; back = 5; lat = -22; } // covers left
-                else if (role === 4) { u.coverFocus = 1; back = 5; lat = 22; }   // covers right
-                else if (role === 5) { u.buddy = leader; u.buddyKind = 'body'; back = 14; lat = 11; }
-              }
-              if (role >= 1) u.coverSlot = { x: leader.x - cf * back + px * lat, y: leader.y - sf * back + py * lat };
-            }
-          }
+           team of 3+ → #1 crouches; #2 stacks on his back; #3 grips his arm; #4 covers left; #5 covers right; #6 grips his body. */
+      const L = u.grpLeader;
+      u.buddy = null; u.buddyKind = null; u.coverCrouch = false; u.coverFocus = 0; u.coverSlot = null; u.coverActive = false; u.coverLeaderRef = null;
+      if (L && !L.dead && !u.backOff) {
+        u.coverActive = true; u.coverLeaderRef = L;
+        const gN = L.grpN || 1, role = u.grpRole || 0;
+        if (role === 0) { if (gN > 2) u.coverCrouch = true; }                 // leader / point man
+        else {
+          const lang = L.ang, cf = Math.cos(lang), sf = Math.sin(lang), px = -sf, py = cf;
+          let back = 15, lat = 0;
+          if (gN === 2) { u.buddy = L; u.buddyKind = 'shoulder'; back = 14; lat = 7; }
+          else if (role === 1) { back = 15; lat = 0; }
+          else if (role === 2) { u.buddy = L; u.buddyKind = 'arm'; back = 14; lat = -11; }
+          else if (role === 3) { u.coverFocus = -1; back = 5; lat = -22; }
+          else if (role === 4) { u.coverFocus = 1; back = 5; lat = 22; }
+          else { u.buddy = L; u.buddyKind = 'body'; back = 14; lat = 11; }
+          u.coverSlot = { x: L.x - cf * back + px * lat, y: L.y - sf * back + py * lat };
         }
+      } else if (u.grpLeader === u && u.grpAwayT > 0) {
+        u.grpAwayT -= dt; u.coverActive = true; u.coverLeaderRef = u;         // a fresh leader still walking his team clear
+        if (u.grpAway) u.coverSlot = u.grpAway;
       }
-      // followers walk into their cover slot; the point man holds his ground
+      // followers (and a relocating fresh leader) walk into slot; an established point man holds his ground
       if (u.coverSlot && !u.backOff && !u.inside) {
         const dd = Math.hypot(u.coverSlot.x - u.x, u.coverSlot.y - u.y);
-        if (dd > 3) {
+        if (dd > 4) {
           const sp = Math.min(dd / dt, u.def.spd * paceMul(u)), mx = (u.coverSlot.x - u.x) / dd, my = (u.coverSlot.y - u.y) / dd;
           tryMove(u, u.x + mx * sp * dt, u.y + my * sp * dt, true, mx, my, sp, dt); u.step = (u.step || 0) + sp * dt * .17;
         }
@@ -6109,7 +6149,7 @@ function updateUnits(dt) {
     /* ---- idle life: a standing, unengaged foot-soldier fidgets — checks his weapon, tops up the mag, does a squat
        or a push-up, or (next to another idle buddy) trades a fist-bump or a little dance ---- */
     if (!u.def.veh && !u.def.fly) {
-      const moving = Math.hypot(u.x - (u._ix != null ? u._ix : u.x), u.y - (u._iy != null ? u._iy : u.y)) > .6;
+      const moving = Math.hypot(u.x - (u._ix != null ? u._ix : u.x), u.y - (u._iy != null ? u._iy : u.y)) > 1.8;   // ignore tiny settling nudges
       u._ix = u.x; u._iy = u.y;
       const restful = !u.order && !engaged && !(u.tgts && u.tgts[0] && !u.tgts[0].dead) && !u.coverActive && !u.ropeHold && !u.roping && !u.backOff && !u.inside && (u.reloads ? !(u.reloads[0] > 0) : true) && !moving;
       const freeF = (typeof UI === 'undefined') || !UI.formation || UI.formation === 'free';
@@ -7156,6 +7196,7 @@ function step(dt) {
   rebuildHashes();
   updateTime(dt);
   updateAmbient(dt);
+  assignCoverGroups(dt);
   updateUnits(dt);
   deOverlapUnits(dt);
   updateZeds(dt);
@@ -10033,10 +10074,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
      Chosen from Settings › Display, remembered in localStorage; phones default to 'mobile', everything else to 'high'. */
   const QUAL = { level: 'high', gd: 6, gs: 2 };
   const QUAL_DEF = {
-    mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 16, gs: 6 },
-    low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 30, gs: 10 },
-    medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 55, gs: 18 },
-    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 90, gs: 30 }
+    mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 3, gs: 1 },
+    low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 5, gs: 2 },
+    medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 9, gs: 3 },
+    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 14, gs: 5 }   // tuft counts — each tuft is ~7 blades, so this reads as dense grass at a fraction of the objects
   };
   function setQuality(level, save) {
     const q = QUAL_DEF[level] || QUAL_DEF.high; QUAL.level = QUAL_DEF[level] ? level : 'high'; QUAL.gd = q.gd; QUAL.gs = q.gs;
@@ -10218,9 +10259,40 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const decalMat = t => new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   P.scorch = pool(DECALG, decalMat(TEX.scorch), 700, false);
   P.splat = TEX.splat.map(t => pool(DECALG, decalMat(t), 500, false));
-  // grass blades: a thin box with its base at the origin, so it can tilt from the ground when trampled
-  const GRASSG = new THREE.BoxGeometry(.05, .5, .016); GRASSG.translate(0, .25, 0);   // tall, thicker blade (base at ground); ~half an infantry body so it can screen units
-  P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, side: THREE.DoubleSide }), 120000, false);
+  // grass TUFT: one model = several tapered blades fanned around the base, so a whole clump is a SINGLE instance.
+  // Same dense/detailed look for a fraction of the object count. Base at y=0 (unit height 1) so it tilts + scales cleanly.
+  // Blades carry a baked vertical shade (dark root → bright tip) as grayscale vertex colours; the green tint comes per-instance.
+  const GRASST = (() => {
+    const BL = 7, pos = [], col = [], idx = [];   // 7 blades per tuft
+    let v = 0;
+    for (let bI = 0; bI < BL; bI++) {
+      const yaw = (bI / BL) * TAU + (bI * 2.399), rr = bI === 0 ? 0 : (.05 + (bI % 3) * .05), off = yaw;
+      const ox = Math.cos(off) * rr, oz = Math.sin(off) * rr;
+      const bw = .055 - bI * .002, tw = bw * .28, h = 1 - (bI % 3) * .12, bow = (bI % 2 ? 1 : -1) * .06;   // slight bow at the tip
+      const c = Math.cos(yaw), s = Math.sin(yaw);
+      // a blade is a 3-segment strip (root, mid, tip) so it can bow — 4 verts up each side => 8 verts, 6 tris
+      const shade = .82 + (bI % 3) * .06;   // per-blade base brightness
+      const segs = [[0, bw, .78 * shade], [.4, bw * .7, .95 * shade], [.72, bw * .45, 1.08 * shade], [1, tw, 1.28 * shade]];
+      const base = v;
+      for (let si = 0; si < segs.length; si++) {
+        const [ty, hw, sh] = segs[si], yy = ty * h, bx = bow * ty * ty;   // bow grows toward the tip
+        for (const sx of [-1, 1]) {
+          const lx = sx * hw + bx;
+          pos.push(ox + c * lx, yy, oz + s * lx);
+          col.push(sh, sh, sh);
+        }
+      }
+      for (let si = 0; si < segs.length - 1; si++) { const a = base + si * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+      v += segs.length * 2;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  })();
+  const GRASSG = GRASST;
+  P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, side: THREE.DoubleSide, vertexColors: true }), 40000, false);
   const GRASSC = [lin('#5f8a3a'), lin('#4c7430'), lin('#6b9440')];
   const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.bush, P.beam, P.grass].concat(P.splat);
   const PROPS = [P.trunk, P.rock, P.barrel, P.wreck], foliage = [];
@@ -11075,16 +11147,16 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       outer: for (let ty = gty0; ty <= gty1; ty++) for (let tx = gtx0; tx <= gtx1; tx++) {
         const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue; if (G.gridB[ti]) continue;
         for (let k = 0; k < per; k++) {
-          if (P.grass.count >= 119000) break outer;
+          if (P.grass.count >= 39000) break outer;
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
-          const cols = 10, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 10) / 10;   // spread the (now very dense) blades evenly across the tile
+          const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;   // spread the tufts across the tile
           const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS, flat = grassFlat(wx, wy);
           const bh = (.34 + h1 * .22) * (1 - flat * .82);                                        // ~half-body tall, near-flat once trampled
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
           let rx, rz;
           if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran/landed through
           else { const ph = tt * 2.4 + wx * .02 + wy * .017, sway = wm * (.14 + Math.sin(ph) * .11); rx = wdz * sway; rz = -wdx * sway; }
-          put(P.grass, wx * K, groundY(wx, wy), wy * K, rx, h2 * TAU, rz, thick, bh / .5, thick, GRASSC[(tx + ty + k) % 3]);
+          put(P.grass, wx * K, groundY(wx, wy), wy * K, rx, h2 * TAU, rz, thick, bh, thick, GRASSC[(tx + ty + k) % 3]);
         }
       }
     }
