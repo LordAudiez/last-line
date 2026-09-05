@@ -5820,7 +5820,9 @@ function deOverlapUnits(dt) {
         if (b === a || b.dead || b.inside || b.roping > 0 || (b.def && (b.def.veh || b.def.fly))) continue;
         if (plyOf(a).team !== plyOf(b).team) continue;
         const dx = a.x - b.x, dy = a.y - b.y; let d2v = dx * dx + dy * dy;
-        const min = (a.r + b.r) * .72;
+        // two DIFFERENT fire-teams keep a one-tile gap between them; same-team members can stand touching
+        const diffTeam = a.coverActive && b.coverActive && a.coverLeaderRef && a.coverLeaderRef !== b.coverLeaderRef;
+        const min = diffTeam ? TS : (a.r + b.r) * .72;
         if (d2v < min * min) {
           const d = Math.sqrt(d2v); let nx, ny;
           if (d < .01) { const ang = (a.id * 2.399 + b.id); nx = Math.cos(ang); ny = Math.sin(ang); }
@@ -5957,7 +5959,7 @@ function updateUnits(dt) {
       u._budT = (u._budT || 0) - dt;
       if (u._budT <= 0) {
         u._budT = .2;
-        u.buddy = null; u.buddyKind = null; u.coverCrouch = false; u.coverFocus = 0; u.coverSlot = null; u.coverActive = false;
+        u.buddy = null; u.buddyKind = null; u.coverCrouch = false; u.coverFocus = 0; u.coverSlot = null; u.coverActive = false; u.coverLeaderRef = null;
         const inContact = engaged || (u.tgts && u.tgts[0] && !u.tgts[0].dead);
         const orderFree = !o || o.type === 'amove' || o.type === 'attack' || o.type === 'guard';
         if (freeForm && inContact && orderFree && !u.inside && !u.def.hauler && !u.roping && !u.ropeHold) {
@@ -5977,7 +5979,7 @@ function updateUnits(dt) {
             const idx = team.indexOf(u), grp = Math.floor(idx / 6), role = idx - grp * 6;
             const gStart = grp * 6, gN = Math.min(6, team.length - gStart), leader = team[gStart];
             if (leader && gN >= 2) {
-              u.coverActive = true; u.coverRole = role;
+              u.coverActive = true; u.coverRole = role; u.coverLeaderRef = leader;
               const lang = leader.ang, cf = Math.cos(lang), sf = Math.sin(lang), px = -sf, py = cf;
               let back = 0, lat = 0;
               if (gN === 2) {
@@ -6118,14 +6120,14 @@ function updateUnits(dt) {
           // pick the next fidget; look for an idle neighbour for the social ones
           let mate = null;
           if (freeF) { const nl = G.hUnits.near(u.x, u.y, 26, _q3); let bd = 1e9; for (let k = 0; k < nl.length; k++) { const v = nl[k]; if (v === u || v.dead || v.inside || v.def.veh || v.def.fly || plyOf(v).team !== plyOf(u).team) continue; if (v.order || (v.tgts && v.tgts[0] && !v.tgts[0].dead) || v.coverActive) continue; const dd = dist2(v.x, v.y, u.x, u.y); if (dd < 26 * 26 && dd < bd) { bd = dd; mate = v; } } }
-          const solo = ['check', 'check', 'magcheck', 'squat', 'pushup', 'dance', 'stand'];
-          const duo = ['fist', 'danceduo'];
-          const pick = (mate && Math.random() < .5) ? duo[(Math.random() * duo.length) | 0] : solo[(Math.random() * solo.length) | 0];
+          // fidgets: with a buddy nearby they stand and chat; alone they just check the weapon / top up the mag / stand easy
+          const solo = ['check', 'magcheck', 'stand', 'stand'];
+          const pick = (mate && Math.random() < .7) ? 'talk' : solo[(Math.random() * solo.length) | 0];
           u.idleAct = pick;
-          u.idleDur = pick === 'pushup' ? rnd(3, 5) : pick === 'squat' ? rnd(3, 4.5) : pick === 'dance' || pick === 'danceduo' ? rnd(3.5, 6) : pick === 'stand' ? rnd(1.5, 3) : rnd(1.6, 2.8);
+          u.idleDur = pick === 'talk' ? rnd(4, 7) : pick === 'stand' ? rnd(1.5, 3) : rnd(1.6, 2.8);
           u.idleT = u.idleDur;
-          u.idlePartner = (pick === 'fist' || pick === 'danceduo') ? mate : null;
-          if (u.idlePartner) { u.idlePartner.idleAct = pick; u.idlePartner.idleDur = u.idleDur; u.idlePartner.idleT = u.idleDur; u.idlePartner.idlePartner = u; }
+          u.idlePartner = (pick === 'talk') ? mate : null;
+          if (u.idlePartner) { u.idlePartner.idleAct = 'talk'; u.idlePartner.idleDur = u.idleDur; u.idlePartner.idleT = u.idleDur; u.idlePartner.idlePartner = u; }
         }
         u.idlePh = u.idleDur ? 1 - Math.max(0, u.idleT) / u.idleDur : 0;
         if (u.idlePartner && !u.idlePartner.dead) u.ang = angLerp(u.ang, angTo(u.x, u.y, u.idlePartner.x, u.idlePartner.y), 1 - Math.pow(.05, dt));
@@ -10031,10 +10033,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
      Chosen from Settings › Display, remembered in localStorage; phones default to 'mobile', everything else to 'high'. */
   const QUAL = { level: 'high', gd: 6, gs: 2 };
   const QUAL_DEF = {
-    mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 2, gs: 1 },
-    low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 3, gs: 1 },
-    medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 5, gs: 2 },
-    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 9, gs: 3 }
+    mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 16, gs: 6 },
+    low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 30, gs: 10 },
+    medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 55, gs: 18 },
+    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 90, gs: 30 }
   };
   function setQuality(level, save) {
     const q = QUAL_DEF[level] || QUAL_DEF.high; QUAL.level = QUAL_DEF[level] ? level : 'high'; QUAL.gd = q.gd; QUAL.gs = q.gs;
@@ -10218,7 +10220,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   P.splat = TEX.splat.map(t => pool(DECALG, decalMat(t), 500, false));
   // grass blades: a thin box with its base at the origin, so it can tilt from the ground when trampled
   const GRASSG = new THREE.BoxGeometry(.05, .5, .016); GRASSG.translate(0, .25, 0);   // tall, thicker blade (base at ground); ~half an infantry body so it can screen units
-  P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, side: THREE.DoubleSide }), 20000, false);
+  P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, side: THREE.DoubleSide }), 120000, false);
   const GRASSC = [lin('#5f8a3a'), lin('#4c7430'), lin('#6b9440')];
   const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.bush, P.beam, P.grass].concat(P.splat);
   const PROPS = [P.trunk, P.rock, P.barrel, P.wreck], foliage = [];
@@ -11073,9 +11075,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       outer: for (let ty = gty0; ty <= gty1; ty++) for (let tx = gtx0; tx <= gtx1; tx++) {
         const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue; if (G.gridB[ti]) continue;
         for (let k = 0; k < per; k++) {
-          if (P.grass.count >= 19980) break outer;
+          if (P.grass.count >= 119000) break outer;
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
-          const cellx = (k % 3) / 3, celly = ((k / 3) | 0) / 2;   // spread blades across the tile so the ground is covered
+          const cols = 10, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 10) / 10;   // spread the (now very dense) blades evenly across the tile
           const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS, flat = grassFlat(wx, wy);
           const bh = (.34 + h1 * .22) * (1 - flat * .82);                                        // ~half-body tall, near-flat once trampled
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
