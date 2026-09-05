@@ -12886,7 +12886,7 @@ function tryStartMatch() {
 
 /* ---------------- wire the menu buttons ---------------- */
 function initLobbyUI() {
-  const go = name => $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name);
+  const go = name => { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); };
   const online = attachFirebaseIfPresent();
   const note = $('mpNote'); if (note) note.textContent = online ? 'Online: Host a game and share the room code with friends.' : 'Local test only — no Firebase config found. Host/Local run in this tab.';
   const mm = $('mMulti'); if (mm) mm.onclick = () => go('mp-home');
