@@ -6387,6 +6387,12 @@ function updateUnits(dt) {
       }
     }
 
+    /* --- field camp member: sit / patrol / guard / relax, or ring the fire when the enemy comes --- */
+    if (u.camp) {
+      if (u.order) { u.camp = null; u.campRole = null; u.sitting = false; u.campRelax = false; u.stance = 'aggr'; }   // a direct order breaks the trooper out of camp
+      else { campMember(u, dt); continue; }
+    }
+
     /* --- medic heal aura: every friendly trooper within a couple of tiles mends while the medic stands near --- */
     if (u.def.healAura) {
       u.healT = (u.healT || 0) - dt;
@@ -7689,6 +7695,151 @@ function updateParticles(dt) {
   }
 }
 
+/* ==================== CAMP (infantry field camp) ====================
+   A squad of 4+ infantry can pitch a camp: a campfire in the middle with a small tent beside it.
+   Inside the camp, wounded troops mend. Roles: up to four sit around the fire, one walks a patrol
+   loop (swapping in with a sitter every two loops), one stands guard on the entrance; any extra
+   just stand easy. If the enemy comes near, everyone stands and rings the fire, facing outward to
+   fire in every direction. */
+function campCenterOwner(c) { return c.members[0] ? (c.members[0].owner || 0) : (G.me || 0); }
+
+function assignCampRoles(c) {
+  const m = c.members.filter(u => u && !u.dead);
+  // sit slots around the fire
+  c.slots = [];
+  for (let i = 0; i < 4; i++) { const a = i / 4 * TAU + .35; c.slots.push({ x: c.fireX + Math.cos(a) * c.r * .34, y: c.fireY + Math.sin(a) * c.r * .34 }); }
+  let si = 0;
+  for (let i = 0; i < m.length; i++) {
+    const u = m[i];
+    if (i === 0) u.campRole = 'guard';
+    else if (i === 1) { u.campRole = 'patrol'; c.patrol = u; }
+    else if (si < 4) { u.campRole = 'sit'; u.campSlot = si++; }
+    else u.campRole = 'relax';
+    u.sitting = false;
+  }
+}
+function ensureCampRoles(c) {
+  const m = c.members;
+  if (!m.length) return;
+  if (!m.some(u => u.campRole === 'guard')) { const u = m.find(u => u.campRole !== 'patrol') || m[0]; if (u) u.campRole = 'guard'; }
+  if (m.length > 1 && !m.some(u => u.campRole === 'patrol')) { const u = m.find(u => u.campRole === 'relax') || m.find(u => u.campRole === 'sit') || m.find(u => u.campRole !== 'guard'); if (u) { u.campRole = 'patrol'; u.sitting = false; c.patrol = u; c.patrolAng = c.patrolAng || 0; } }
+}
+
+function makeCamp(wx, wy) {
+  if (!G.camps) G.camps = [];
+  const foot = G.sel.filter(u => u.kind === 'unit' && !u.def.veh && !u.def.fly && !u.dead && !u.inside);
+  if (foot.length < 4) { AU.ui('no'); if (typeof alertMsg === 'function') alertMsg('Need at least 4 infantry to make camp', ''); return; }
+  const cx = wx, cy = wy, r = 3.4 * TS, seed = G.uid++;
+  const c = {
+    id: 'C' + seed, x: cx, y: cy, r, fireX: cx, fireY: cy,
+    tentX: cx - r * .62, tentY: cy - r * .58, tentA: 0,
+    entX: cx + r * .9, entY: cy, members: foot.slice(),
+    state: 'deploy', stateT: 0, deployDur: 2.2, packDur: 1.9,
+    patrolAng: 0, alarm: false, dead: false, seed, grow: 0, healT: 0, owner: foot[0].owner || 0
+  };
+  assignCampRoles(c);
+  for (const u of foot) { u.order = null; u.camp = c; u.stance = 'camp'; u.backOff = null; u.grpLeader = null; u.coverActive = false; }
+  G.camps.push(c);
+  part('ring', cx, cy, 0, 0, .5, 14, '#ffc27a', { grow: r * 1.5, glow: 1 });
+  AU.ui('build');
+  if (typeof refreshCard === 'function') refreshCard(true);
+}
+function breakCamp(c) {
+  if (!c || c.dead || c.state === 'pack') return;
+  c.state = 'pack'; c.stateT = 0; c.alarm = false;
+  AU.ui('ok');
+}
+function campOf(units) { for (const u of units) if (u.camp && !u.camp.dead) return u.camp; return null; }
+
+function campSteer(u, dt, tx, ty, stop) {
+  const dd = Math.hypot(tx - u.x, ty - u.y);
+  if (dd <= (stop || 5)) { u.vx *= Math.pow(.001, dt); u.vy *= Math.pow(.001, dt); return true; }
+  const sp = Math.min(dd / dt, u.def.spd * .82), mx = (tx - u.x) / dd, my = (ty - u.y) / dd;
+  tryMove(u, u.x + mx * sp * dt, u.y + my * sp * dt, true, mx, my, sp, dt);
+  u.step = (u.step || 0) + sp * dt * .17;
+  u.ang = angLerp(u.ang, Math.atan2(my, mx), 1 - Math.pow(.02, dt));
+  return false;
+}
+function campMember(u, dt) {
+  const c = u.camp;
+  if (!c || c.dead) { u.camp = null; u.campRole = null; u.sitting = false; u.stance = 'aggr'; return; }
+  u.sitting = false; u.campRelax = false; u.coverCrouch = false; u.coverActive = false; u.grpLeader = null; u.buddy = null;
+  updateWeapons(u, dt, null);                                   // always able to engage a threat
+  if (c.alarm) {                                                // enemy near → stand in the defensive ring, face outward and fire
+    const idx = Math.max(0, c.members.indexOf(u)), n = Math.max(1, c.members.length), a = idx / n * TAU;
+    campSteer(u, dt, c.x + Math.cos(a) * c.r * .72, c.y + Math.sin(a) * c.r * .72, 6);
+    if (u.tgts && u.tgts[0] && !u.tgts[0].dead) u.ang = angLerp(u.ang, angTo(u.x, u.y, u.tgts[0].x, u.tgts[0].y), 1 - Math.pow(.02, dt));
+    else u.ang = angLerp(u.ang, a, 1 - Math.pow(.05, dt));
+    return;
+  }
+  if (c.state !== 'active') {                                   // deploying / packing → busy near the fire
+    const a = (u.id % 8) / 8 * TAU;
+    campSteer(u, dt, c.x + Math.cos(a) * c.r * .45, c.y + Math.sin(a) * c.r * .45, 8);
+    if (Math.hypot(u.x - c.x, u.y - c.y) < c.r) u.ang = angLerp(u.ang, angTo(u.x, u.y, c.fireX, c.fireY), 1 - Math.pow(.05, dt));
+    return;
+  }
+  if (u.campRole === 'sit') {
+    const slot = c.slots[u.campSlot] || c.slots[0];
+    if (campSteer(u, dt, slot.x, slot.y, 5)) { u.sitting = true; u.ang = angLerp(u.ang, angTo(u.x, u.y, c.fireX, c.fireY), 1 - Math.pow(.08, dt)); }
+  } else if (u.campRole === 'patrol') {
+    c.patrolAng = (c.patrolAng || 0) + dt * .55;
+    const R = c.r * .82, tx = c.x + Math.cos(c.patrolAng) * R, ty = c.y + Math.sin(c.patrolAng) * R;
+    if (!campSteer(u, dt, tx, ty, 3)) u.ang = angLerp(u.ang, c.patrolAng + Math.PI / 2, 1 - Math.pow(.04, dt));
+  } else if (u.campRole === 'guard') {
+    campSteer(u, dt, c.entX, c.entY, 5);
+    u.ang = angLerp(u.ang, Math.atan2(c.entY - c.y, c.entX - c.x), 1 - Math.pow(.06, dt));
+  } else {                                                      // relax: stand easy near the fire
+    const a = (u.id % 6) / 6 * TAU;
+    if (campSteer(u, dt, c.x + Math.cos(a) * c.r * .62, c.y + Math.sin(a) * c.r * .62, 6)) { u.campRelax = true; u.ang = angLerp(u.ang, angTo(u.x, u.y, c.fireX, c.fireY), 1 - Math.pow(.05, dt)); }
+  }
+}
+
+function updateCamps(dt) {
+  if (!G.camps || !G.camps.length) return;
+  for (let i = G.camps.length - 1; i >= 0; i--) {
+    const c = G.camps[i];
+    c.members = c.members.filter(u => u && !u.dead && u.camp === c && !u.inside);
+    ensureCampRoles(c);
+    if (!c.members.length && c.state !== 'pack') c.dead = true;
+    c.stateT += dt;
+    if (c.state === 'deploy') { c.grow = clamp(c.stateT / c.deployDur, 0, 1); if (c.stateT >= c.deployDur) { c.state = 'active'; c.stateT = 0; } }
+    else if (c.state === 'pack') { c.grow = clamp(1 - c.stateT / c.packDur, 0, 1); if (c.stateT >= c.packDur) c.dead = true; }
+    else c.grow = 1;
+    if (c.state === 'active') {
+      let en = false; const ar = c.r * 1.7;
+      const near = G.hZeds ? G.hZeds.near(c.x, c.y, ar, _q) : G.zeds;
+      for (let k = 0; k < near.length; k++) { const z = near[k]; if (!z.dead && !z.def.struct && dist2(z.x, z.y, c.x, c.y) < ar * ar) { en = true; break; } }
+      c.alarm = en;
+    } else c.alarm = false;
+    // patrol rotation: after two full loops, swap the walker with a sitter
+    if (c.state === 'active' && !c.alarm && c.patrol && !c.patrol.dead && c.patrol.camp === c) {
+      if ((c.patrolAng || 0) >= 2 * TAU) {
+        c.patrolAng = 0;
+        const sitters = c.members.filter(u => u.campRole === 'sit');
+        if (sitters.length) { const oldP = c.patrol, np = sitters[(Math.random() * sitters.length) | 0]; oldP.campRole = 'sit'; oldP.campSlot = np.campSlot; oldP.sitting = false; np.campRole = 'patrol'; np.sitting = false; c.patrol = np; }
+      }
+    }
+    // healing: friendly infantry inside the camp mend over time
+    c.healT = (c.healT || 0) - dt;
+    if (c.state === 'active' && c.healT <= 0) {
+      c.healT = .5; const own = c.owner || 0;
+      for (const v of G.units) {
+        if (v.dead || v.def.veh || v.def.fly || v.inside || v.hp >= v.maxHp || (v.owner || 0) !== own) continue;
+        if (dist2(v.x, v.y, c.x, c.y) > c.r * c.r) continue;
+        v.hp = Math.min(v.maxHp, v.hp + v.maxHp * .05);
+        if (Math.random() < .4) part('spark', v.x + rnd(-6, 6), v.y + rnd(-6, 6), 0, -20, .5, 1.1, '#8dffbe', { z: 6, vz: 22, glow: 1 });
+      }
+    }
+    // campfire embers + a warm flickering light at night
+    if (c.grow > .05) {
+      if (G.night) G.lights.push({ x: c.fireX, y: c.fireY, r: 140 * c.grow, c: [255, 140, 60], i: (.7 + Math.sin(G.t * 9 + c.seed) * .18) * c.grow });
+      if (Math.random() < dt * 22 * c.grow) part('spark', c.fireX + rnd(-4, 4), c.fireY + rnd(-4, 4), rnd(-8, 8), rnd(-8, 8), rnd(.4, .8), rnd(1, 2), '#ff9a3a', { z: rnd(3, 7), vz: rnd(26, 48), glow: 1 });
+      if (Math.random() < dt * 6 * c.grow) part('smoke', c.fireX, c.fireY, rnd(-3, 3), rnd(-3, 3), rnd(1.6, 2.6), rnd(3, 5), 'rgba(64,58,52,.75)', { z: 8, vz: rnd(18, 30), grow: 6, drag: .9 });
+    }
+    if (c.dead) { for (const u of c.members) if (u) { u.camp = null; u.campRole = null; u.sitting = false; u.campRelax = false; u.stance = 'aggr'; } G.camps.splice(i, 1); }
+  }
+}
+
 /* ==================== MAIN STEP ==================== */
 function step(dt) {
   G.t += dt; G.frame++;
@@ -7703,6 +7854,7 @@ function step(dt) {
   deOverlapUnits(dt);
   updateZeds(dt);
   updateBuildings(dt);
+  updateCamps(dt);
   updateBullets(dt);
   updateItems(dt);
   updateProps(dt);
@@ -9839,6 +9991,7 @@ function cancelQueue() {
 
 function tryPlace(wx, wy) {
   const t = UI.place; if (!t) return;
+  if (t === 'camp') { if (typeof makeCamp === 'function') makeCamp(wx, wy); UI.place = null; refreshCard(true); return; }
   const d = BDEF[t];
   const tx = Math.floor(wx / TS - (d.w - 1) / 2), ty = Math.floor(wy / TS - (d.h - 1) / 2);
 
@@ -10104,6 +10257,16 @@ function cardFor() {
     if (units.some(u => !u.def.veh)) {
       const foot = units.filter(u => !u.def.veh), on = foot.every(u => u.flash);
       btns.push({ g: '🔦', n: on ? 'Light On' : 'Flashlight', k: 'I', act: on, tip: 'Toggle each trooper\'s flashlight: a beam thrown on the ground the way they face at night — handy to see, but it shows the horde where you are.', fn: () => { const v = !on; for (const u of foot) u.flash = v; AU.ui('ok'); refreshCard(true); } });
+    }
+    {
+      // field camp: pitch a camp (campfire + tent) that heals troops; needs 4+ infantry. Same button breaks camp.
+      const foot = units.filter(u => !u.def.veh && !u.def.fly);
+      const inCamp = (typeof campOf === 'function') && campOf(units);
+      if (inCamp) {
+        btns.push({ g: '⛺', n: 'Break Camp', k: 'C', act: true, tip: 'Pack up the camp — the tent and campfire go back in the packs and the squad forms up again.', fn: () => { if (typeof breakCamp === 'function') breakCamp(inCamp); UI.place = null; refreshCard(true); } });
+      } else if (foot.length > 3) {
+        btns.push({ g: '⛺', n: UI.place === 'camp' ? 'Placing…' : 'Make Camp', k: 'C', act: UI.place === 'camp', tip: 'Pitch a field camp: a campfire and tent where troops rest and heal. Four sit by the fire, one walks patrol, one guards the entrance; if the enemy comes they ring the fire and fire outward. Click to choose the spot.', fn: () => { UI.place = UI.place === 'camp' ? null : 'camp'; if (UI.place) { UI.clearMode = false; UI.attackMove = false; } AU.ui('ok'); refreshCard(true); } });
+      }
     }
     if (units.some(u => u.def.fly && u.def.rotor)) {
       const heli = units.filter(u => u.def.fly && u.def.rotor), on = heli.every(u => u.flash);
@@ -11050,13 +11213,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const legsGone = !(lm & L_LL) && !(lm & L_RL), oneLeg = !(lm & L_LL) || !(lm & L_RL);
     const rc = o.rc || 0, relP = o.reload || 0, relK = relP > 0 ? Math.sin(Math.min(1, relP) * Math.PI) : 0;   // recoil kick 0..1 and reload progress 0..1 (bell-shaped hand travel)
     const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + idLean;   // tactical stance while engaged: leaning into the gun, knees bent; crouch/idle add more
-    const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) + idHip;
+    const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.sit ? legL * .82 : 0) + idHip;
     const spread = torsoW * .24;
     // legs: thigh + shin with a knee that folds on the trailing leg, a knee pad at the joint and a chunky boot — reads as a real leg in motion
     for (let s = -1; s <= 1; s += 2) {
-      const bit = s < 0 ? L_LL : L_RL, swing = (zed ? .45 : .5) * sw * s;
+      const bit = s < 0 ? L_LL : L_RL, swing = o.sit ? 1.15 : (zed ? .45 : .5) * sw * s;
       if (lm & bit) {
-        const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = swing < 0 ? swing - bend : swing * .72;
+        const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = o.sit ? -.05 : (swing < 0 ? swing - bend : swing * .72);
         limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, tL, legW, ry, swing, trou, legW * 1.08);
         const kf = Math.sin(swing) * tL, ky = hipY - Math.cos(swing) * tL;
         if (!zed) put(P.head, X(kf + legW * .18, s * spread), ky, Z(kf + legW * .18, s * spread), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
@@ -12186,6 +12349,36 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         }
       } }
     for (const [id, bm] of buildMeshes) if (!G.builds.some(b => b.id === id)) { scene3.remove(bm.g); buildMeshes.delete(id); }
+    /* ---- field camps: campfire + tent ---- */
+    if (G.camps) for (const c of G.camps) {
+      const g = c.grow || 0; if (g < .02) continue;
+      if (c.x < vx0 - 240 || c.x > vx1 + 240 || c.y < vy0 - 240 || c.y > vy1 + 240) continue;
+      const LOG = col3('#6a4f34'), CANVAS = col3('#b7ab7e'), CANVAS2 = col3('#9a8f64'), FLAP = col3('#4e4630'), EMB = col3('#d85526');
+      // campfire: a ring of logs, glowing embers, and flickering flames
+      const fx = c.fireX * K, fz = c.fireY * K, fgy = groundY(c.fireX, c.fireY);
+      put(P.shadow, fx, fgy + .02, fz, -HPI, 0, 0, .5 * g, .5 * g, 1);                             // scorched ground
+      for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + .4; put(P.cyl, fx + Math.cos(a) * .16, fgy + .045, fz + Math.sin(a) * .16, HPI, a, 0, .04, .34, .04, LOG); }
+      put(P.cyl, fx, fgy + .025, fz, 0, 0, 0, .12, .03, .12, EMB);                                 // flat ember bed
+      const fl = (.9 + Math.sin(G.t * 11 + c.seed) * .13) * g, wob = Math.sin(G.t * 7 + c.seed) * .03;
+      bb(partsAdd, fx, fgy + .14 * g, fz, .2 * fl, 1, .5, .16, .95 * g);
+      bb(partsAdd, fx + wob, fgy + .3 * g, fz, .13 * fl, 1, .74, .28, .85 * g);
+      bb(partsAdd, fx - wob * .6, fgy + .46 * g, fz, .075 * fl, 1, .93, .6, .6 * g);
+      // tent: an olive A-frame ridge tent — two sloped canvas panels, a ridge pole, end uprights, a door flap and guy-ropes to stakes
+      const tx = c.tentX * K, tz = c.tentY * K, tgy = groundY(c.tentX, c.tentY);
+      const OLIVE = col3('#5c6b3c'), OLIVE2 = col3('#4c5a32'), POLE = col3('#4a3826'), ROPE = col3('#9a8a62'), thin = .016;
+      const lenF = 1.55 * g, half = .58 * g, ridgeH = .46 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half);
+      put(P.box, tx + half * .5, tgy + ridgeH * .5, tz, 0, 0, -phi, slant * 1.04, thin, lenF, OLIVE);   // +X roof slope (lit)
+      put(P.box, tx - half * .5, tgy + ridgeH * .5, tz, 0, 0, phi, slant * 1.04, thin, lenF, OLIVE2);   // -X roof slope (shaded)
+      put(P.cyl, tx, tgy + ridgeH, tz, HPI, 0, 0, thin * 1.4, lenF * 1.06, thin * 1.4, POLE);           // ridge pole (runs toward/away)
+      for (const sz of [-1, 1]) put(P.cyl, tx, tgy + ridgeH * .5, tz + sz * lenF * .5, 0, 0, 0, thin * 1.3, ridgeH, thin * 1.3, POLE);   // end uprights
+      put(P.box, tx + half * .3, tgy + ridgeH * .4, tz - lenF * .5, 0, 0, 0, half * .5, ridgeH * .78, thin, FLAP);              // door flap on the near gable, pushed aside
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {                                             // guy-ropes + ground stakes at the four corners
+        const ex = tx + sx * half, ez = tz + sz * lenF * .46, ox = tx + sx * (half + .55 * g), oz = tz + sz * (lenF * .5 + .5 * g);
+        const mx = (ex + ox) / 2, mz = (ez + oz) / 2, dx = ox - ex, dz = oz - ez, len = Math.hypot(dx, dz), yaw = Math.atan2(dz, dx);
+        put(P.box, mx, tgy + ridgeH * .1, mz, 0, -yaw, -.16, len, thin * .5, thin * .5, ROPE);
+        put(P.cyl, ox, tgy + .07, oz, 0, 0, 0, thin * 1.1, .16, thin * 1.1, POLE);
+      }
+    }
     /* ---- units ---- */
     const live = new Set();
     for (const u of G.units) {
@@ -12232,7 +12425,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bud = { x: b.x * K - Math.sin(b.ang) * rt, y: groundY(b.x, b.y) + bodyH * hMul, z: b.y * K + Math.cos(b.ang) * rt };
           }
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
-          drawFigure(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
+          drawFigure(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 7.5, dk = .5 + (1 - dayNow) * .5;
@@ -12372,6 +12565,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
     ghostBegin();
     if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = canPlace(UI.place, gx, gy2) && (UI.queue.length ? true : affordable(d.cost)); ghost3(gx, gy2, d, ok); }
+    if (UI.place === 'camp' && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = 3.4 * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ffc27a')); }
     if (UI.moving) { const d = UI.moving.def, gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); ghost3(gx, gy2, d, canPlace(UI.moving.t, gx, gy2, UI.moving)); }
     if (UI.queue) for (const q of UI.queue) ghost3(q.tx, q.ty, BDEF[q.t], true, true);
     ghostEnd();
@@ -13000,7 +13194,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b36';
+const BUILD_TAG = 'b37';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
