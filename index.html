@@ -2579,12 +2579,12 @@ const UDEF = {
   ac130: {
     name: 'AC-130 Gunship', key: 'B', g: '✈️', hp: 2600, spd: 205, r: 40, sight: 620, armor: 6, pop: 10, veh: true, fly: 1, alt: 900, orbit: 1, heavy: 1,
     cost: { s: 900, c: 900 }, time: 70, spr: 'ac130', needs: 'airbase',
-    wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 3 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },
+    wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 5 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },   // 105mm: biggest blast in the game — the old five-tile Abrams area
     weps: [
       { dmg: 60, rng: 540, cd: .5, spread: .02, spd: 1600, kind: 'shell', splash: TS, sfx: 'chain40', off: 20, slew: .006 },
       { dmg: 12, rng: 520, cd: .045, spread: .05, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, off: 20, slew: .008 }
     ],
-    desc: 'Orbits a point raining down a 105mm Howitzer (three-tile blast, one-shot kill on anything), a 30mm chain gun (one-tile blast) and a minigun — three separate targets at once. Fires continuously while it circles.'
+    desc: 'Orbits a point raining down a 105mm Howitzer (five-tile blast, one-shot kill on anything), a 30mm chain gun (one-tile blast) and a minigun — three separate targets at once. Fires continuously while it circles.'
   },
   f16: {
     name: 'F-16 Falcon', key: 'N', g: '🛩️', hp: 1500, spd: 410, r: 26, sight: 660, armor: 5, pop: 8,
@@ -2616,7 +2616,7 @@ const UDEF = {
     name: 'M1 Abrams', key: 'M', g: '🛡️', hp: 1250, spd: 68, r: 26, sight: 32 * 32, armor: 11, pop: 4, veh: true,
     cost: { s: 350, c: 380 }, time: 38, spr: 'abrams', tur: 'abrams_t', head: 1, heavy: true, drawScale: 1.1,
     wep: {
-      dmg: 175, rng: 32 * 32, cd: 3.4, spread: .012, spd: 1500, kind: 'shell', splash: 5 * TS,   // HE round: a five-tile blast
+      dmg: 175, rng: 32 * 32, cd: 3.4, spread: .012, spd: 1500, kind: 'shell', splash: 3.5 * TS,   // HE round: blast area reduced 30% (was 5 tiles)
       sfx: 'tank', casings: 3, shake: 9, slew: .004, off: 82   // muzzle at the barrel tip
     },
     // commander's and loader's .50 cals — each hunts its own target
@@ -12902,7 +12902,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b14';
+const BUILD_TAG = 'b15';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
