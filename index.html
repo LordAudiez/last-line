@@ -827,6 +827,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <h3>Display</h3>
       <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgGrid" style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Tile grid overlay</span></label>
       <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgMap" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Minimap</span></label>
+      <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgFlash" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Unit flashlights &amp; headlights (night)</span></label>
       <div class="slid" style="margin-top:10px"><label>UI size</label><input type="range" id="uiScale" min="45" max="120" step="1"><span class="v" id="uiScaleV">100%</span></div>
       <div class="slid" style="margin-top:8px"><label>Graphics</label><div class="rowb" id="gfxRow" style="flex:1;margin:0"><button class="sx" data-q="mobile">📱 Mobile</button><button class="sx" data-q="low">Low</button><button class="sx" data-q="medium">Medium</button><button class="sx" data-q="high">High</button></div></div>
       <div class="sc" style="margin-top:6px">Mobile: no shadows, 60% render scale, sparse grass. High: full-resolution soft shadows and a dense grass carpet.</div>
@@ -10889,7 +10890,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     tracer: pool(BOXG, new THREE.MeshBasicMaterial({ color: 0xffe0a0 }), 800, false),
     sel: pool(new THREE.RingGeometry(.82, 1, 32), new THREE.MeshBasicMaterial({ color: 0x8dffbe, transparent: true, opacity: .85, side: THREE.DoubleSide, depthWrite: false }), 600, false),
     shadow: pool(new THREE.CircleGeometry(1, 14), new THREE.MeshBasicMaterial({ color: 0x101010, transparent: true, opacity: .22, depthWrite: false }), 600, false),
-    beam: pool(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TEX.beam, color: 0xffffff, transparent: true, opacity: .6, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), 400, false)
+    beam: pool(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TEX.beam, color: 0xffffff, transparent: true, opacity: .85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), 400, false)
   };
   for (const k in P) { const v = P[k]; for (const im of (Array.isArray(v) ? v : [v])) cloudy(im.material); }
   const DECALG = new THREE.PlaneGeometry(1, 1);
@@ -12168,7 +12169,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         const alt = d.fly ? (d.alt || 150) * K * ALTK * (u.altK === undefined ? 1 : u.altK) + (d.fly && u.altK !== undefined && u.altK < .02 ? .05 : 0) : 0; um.g.position.set(x, gy + alt, z);
         if (d.fly) { um.g.rotation.set(0, -u.ang, Math.sin(G.t * 2 + u.id) * .03); if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
         else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); um.tur.rotation.y = -((u.aimT !== undefined ? u.aimT : u.ang) - u.ang); if (u.recoil) um.tur.position.x = -.15 - u.recoil * .12; }
-        if (u.headlight && !d.fly) {                                        // headlights: a soft fan of light laid over the ground ahead of the hull
+        if (u.headlight && !d.fly && G.flashOn !== false) {                                        // headlights: a soft fan of light laid over the ground ahead of the hull
           const hl = u.r * K * 1.05, L = 7 + u.r * K * 3, dk = .35 + (1 - dayNow) * .65, ca = Math.cos(u.ang), sa = Math.sin(u.ang);
           for (const sd of [-1, 1]) {
             const hx = x + ca * hl - sa * sd * u.r * K * .5, hz = z + sa * hl + ca * sd * u.r * K * .5;
@@ -12176,7 +12177,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bb(partsAdd, hx, gy + .42, hz, .35 * dk, 1, .93, .75, .8);                                                   // lamp glow
           }
         }
-        if (d.fly && u.flash) {                                             // helicopter searchlight: a bright pool of light cast straight down onto the ground below
+        if (d.fly && u.flash && G.flashOn !== false) {                                             // helicopter searchlight: a bright pool of light cast straight down onto the ground below
           const gyb = groundY(u.x, u.y), dk = .45 + (1 - dayNow) * .55, R = (3.4 + (u.altK === undefined ? 1 : u.altK) * 2.6);
           put(P.beam, x, gyb + .06, z, -HPI, 0, 0, R, R, 1, WHITE);                                  // ground pool
           bb(partsAdd, x, gyb + .35, z, R * .45 * dk, 1, .98, .9, .7);                                // bright hot spot on the ground
@@ -12204,20 +12205,19 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
           drawFigure(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
         }
-        if (u.flash && u.t === 'gunner') {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
+        if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 7.5, dk = .5 + (1 - dayNow) * .5;
           const x0 = x + ca * .3, z0 = z + sa * .3, y0 = gy + .52, x1 = x + ca * L, z1 = z + sa * L, y1 = groundY(x1 / K, z1 / K) + .02;
           const pit = Math.atan2(y1 - y0, L - .3), len = Math.hypot(L - .3, y1 - y0);
           put(P.tracer, (x0 + x1) * .5, (y0 + y1) * .5, (z0 + z1) * .5, 0, -fa, pit, len, .012, .012, LASER);
           bb(partsAdd, x1, y1 + .02, z1, .14 * dk, .3, 1, .35, .95); bb(partsAdd, x0, y0, z0, .07, .3, 1, .35, .8);
-        } else if (u.flash) {                                                          // shoulder flashlight: a narrow beam thrown on the ground the way the trooper is facing
+        } else if (u.flash && G.flashOn !== false) {                                                          // shoulder flashlight: a narrow beam thrown on the ground the way the trooper is facing
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 5.5, dk = .45 + (1 - dayNow) * .55;
           const bx2 = x + ca * .18, bz2 = z + sa * .18;
           put(P.beam, bx2 + ca * L * .5, groundY((bx2 + ca * L * .5) / K, (bz2 + sa * L * .5) / K) + .05, bz2 + sa * L * .5, -HPI, -fa, 0, L, L * .52 * dk, 1, WHITE);
-          bb(partsAdd, x + ca * .25, gy + .5, z + sa * .25, .18 * dk, 1, .96, .82, .85);            // muzzle-lamp glow at the barrel
-          // the beam catches airborne dust/smoke: a few faint raised additive puffs along it (brighter where smoke actually sits)
+          // no bright lamp dot; only a soft glow in the air where the beam actually passes through smoke/dust
           for (let s3 = 1; s3 <= 3; s3++) { const t3 = s3 / 3.5, hx = x + ca * L * t3, hz = z + sa * L * t3, sm = smokeDensity(hx / K, hz / K);
-            bb(partsAdd, hx, gy + .45 - t3 * .12, hz, (.22 + t3 * .5) * dk * (.5 + sm), 1, .95, .8, (.12 + sm * .5) * dk); }
+            if (sm > .12) bb(partsAdd, hx, gy + .4 - t3 * .1, hz, (.14 + t3 * .28) * sm, 1, .95, .8, .3 * sm * dk); }
         }
         if (u.sel) put(P.sel, x, gy + .04, z, -HPI, 0, 0, .5, .5, 1);
       }
@@ -12793,6 +12793,7 @@ function loadFromLocal() { try { const s = localStorage.getItem(SAVE_KEY); if (!
   const saveDisp = () => { try { localStorage.setItem('zrts_disp', JSON.stringify({ grid: SHOW_GRID, map: tgMap.checked })); } catch (e) {} };
   tgGrid.addEventListener('change', () => { SHOW_GRID = tgGrid.checked; saveDisp(); });
   tgMap.addEventListener('change', () => { $('miniwrap').style.display = tgMap.checked ? '' : 'none'; saveDisp(); });
+  const tgFlash = $('tgFlash'); try { G.flashOn = JSON.parse(localStorage.getItem('zrts_flash') || 'true'); } catch (e) { G.flashOn = true; } if (tgFlash) { tgFlash.checked = G.flashOn; tgFlash.addEventListener('change', () => { G.flashOn = tgFlash.checked; try { localStorage.setItem('zrts_flash', JSON.stringify(G.flashOn)); } catch (e) {} }); }
 
   // ---- sound submenu (System / SFX / Background) ----
   const vM = $('volMaster'), vS = $('volSfx'), vA = $('volAmb');
@@ -12964,7 +12965,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b25';
+const BUILD_TAG = 'b26';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
