@@ -11234,7 +11234,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     marksman: { furn: col3('#8a7a56'), stock: 'cheek', mag: 5, optic: 'scope', bipod: 1, brake: 1, barrel: .5 },              // DMR, tan furniture, scope
     sniper:   { furn: col3('#4a5a3a'), stock: 'cheek', mag: 3, optic: 'bigscope', bipod: 1, brake: 1, barrel: .6 }            // bolt-action, big scope
   };
-  const LEDC = new THREE.Color(.82, .9, 1), TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35), LIGHTC = new THREE.Color(1, .96, .82), FLOODC = new THREE.Color(1, .91, .69), FLOODD = new THREE.Color(.52, .47, .36);
+  const LEDC = new THREE.Color(.82, .9, 1), TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35), LIGHTC = new THREE.Color(1, .96, .82), FLOODC = new THREE.Color(1, .91, .69), FLOODD = new THREE.Color(.52, .47, .36), FLOODF = new THREE.Color(.062, .068, .078);   // FLOODF: a cool flashlight-LED tint at ~5% — just a hint of a beam
   const LASER = col3('#30ff50'), KNEE = col3('#2a2c28'), GLOVE = col3('#2c2a26'), GUNMETAL = col3('#24272b'), GUNDK = col3('#15171a'), TANF = col3('#8a7a56'), SCOPE = col3('#1a1c1e'), LENS = col3('#7fc8ff'), RAIL = col3('#3a3d42');
   const HORSE = col3('#4a3a2a'), HDARK = col3('#2c2118'), HORSE_SEAT = .72 * FS;
   function drawHorse(x, y, z, ang, walk, bard) {
@@ -12251,6 +12251,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           put(P.pool, ex2, gye + .05, ez2, -HPI, 0, 0, R * 2.1, R * 2.1, 1, FLOODD);              // broad soft warm round spread
           put(P.pool, ex2, gye + .06, ez2, -HPI, 0, 0, R * 1.15, R * 1.15, 1, FLOODC);            // warmer centre
           bb(partsAdd, ex2, gye + .09, ez2, R * .5 * dk, 1, .95, .8, .3 * dk);                    // soft centre glow
+          const mdx = x + ca * Le * .5, mdz = z + sa * Le * .5, gml = groundY(mdx / K, mdz / K) + .04;
+          put(P.beam, mdx, gml, mdz, -HPI, -fa, 0, Le * 1.05, Le * .32 * dk, 1, FLOODF);          // barely-there ~5% warm cone, just a hint of a beam
         }
         if (u.sel) put(P.sel, x, gy + .04, z, -HPI, 0, 0, .5, .5, 1);
       }
@@ -12998,7 +13000,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b34';
+const BUILD_TAG = 'b36';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
