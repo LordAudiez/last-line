@@ -4095,28 +4095,33 @@ function fxSpark(x, y, ang, n, col) {
    wind and thin out over ~5 seconds. */
 function fxGunBump(vx, vy, r, k) {
   if (G.parts.length > PMAX * .9) return;
-  const n = Math.round(10 * k), R = r * (.7 + k * .12);
+  // a rolling ring of low dust puffs blown outward from under the hull (no flat drawn ring) — it hugs the ground,
+  // slows fast and drifts off on the wind, thinning over ~4-5 s
+  const n = Math.round(14 * k) + 6, R = r * .5;
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * TAU + rnd(-.25, .25), sp = rnd(60, 150) * (.6 + k * .35), sw = rnd(-1, 1) * 40;
-    part('dust', vx + Math.cos(a) * R, vy + Math.sin(a) * R * .8, Math.cos(a) * sp - Math.sin(a) * sw + G.wind.x * .6, Math.sin(a) * sp * .8 + Math.cos(a) * sw + G.wind.y * .6,
-      rnd(4.2, 5.4), rnd(6, 10) * (.8 + k * .25), 'rgba(176,164,140,1)', { z: rnd(0, 4), vz: rnd(3, 14), g: 4, grow: 14 + k * 6, drag: .93, wind: 1 });
+    const a = (i / n) * TAU + rnd(-.18, .18), sp = rnd(120, 240) * (.7 + k * .3), sw = rnd(-1, 1) * 30;
+    part('dust', vx + Math.cos(a) * R, vy + Math.sin(a) * R * .8, Math.cos(a) * sp - Math.sin(a) * sw + G.wind.x * .5, Math.sin(a) * sp * .8 + Math.cos(a) * sw + G.wind.y * .5,
+      rnd(4.2, 5.6), rnd(5, 8) * (.85 + k * .3), i % 3 ? 'rgba(178,166,142,1)' : 'rgba(198,186,160,1)', { z: rnd(0, 3), vz: rnd(2, 10), g: 5, grow: 20 + k * 8, drag: .9, wind: 1 });
   }
-  part('ring', vx, vy, 0, 0, .45, R * .8, 'rgba(190,178,150,.45)', { grow: R * 5 * (.7 + k * .3) });
+  // a few soft billows kicked straight up right at the muzzle base
+  for (let i = 0; i < Math.round(3 * k) + 1; i++) { const a = rnd(TAU), rr = rnd(0, R * .6);
+    part('dust', vx + Math.cos(a) * rr, vy + Math.sin(a) * rr * .8, Math.cos(a) * 30, Math.sin(a) * 24, rnd(3.5, 5), rnd(6, 10) * (.9 + k * .3), 'rgba(188,176,150,1)', { z: rnd(1, 5), vz: rnd(10, 26), g: -4, grow: 24 + k * 8, drag: .88, wind: 1 }); }
 }
 /* 120mm HE hitting the ground: a tall column of thrown earth, a wide rolling dust wave that lingers on the wind for
    ~5 s, heavy clods that arc out and bounce, and a scorch — the tank shell's impact reads as a real physical event */
-function fxShellImpact(x, y, r) {
+function fxShellImpact(x, y, r, smk) {
+  smk = smk === undefined ? 1 : smk;                                                 // smoke/dust amount (impact area itself is unchanged)
   fxMortar(x, y, r * .9, true);
   if (G.parts.length > PMAX * .9) return;
-  for (let i = 0; i < 26; i++) {                                                     // rolling dust wave
+  for (let i = 0; i < Math.round(26 * smk); i++) {                                    // rolling dust wave
     const a = rnd(TAU), sp = rnd(50, 190);
     part('dust', x + Math.cos(a) * 10, y + Math.sin(a) * 8, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .7 + G.wind.y * .5, rnd(3.8, 5.2), rnd(8, 14), 'rgba(160,146,118,1)', { z: rnd(0, 6), vz: rnd(4, 18), g: 4, grow: 26, drag: .92, wind: 1 });
   }
-  for (let i = 0; i < 18; i++) {                                                     // the earth column
+  for (let i = 0; i < Math.round(18 * smk); i++) {                                    // the earth column
     const a = rnd(TAU), sp = rnd(6, 60);
     part('dust', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(2.4, 4), rnd(7, 12), 'rgba(120,104,80,1)', { z: rnd(4, 30), vz: rnd(160, 420), g: 180, grow: 22, drag: .95, wind: 1 });
   }
-  for (let i = 0; i < 22; i++) {                                                     // heavy clods
+  for (let i = 0; i < 22; i++) {                                                     // heavy clods (debris = impact, not scaled by smoke)
     const a = rnd(TAU), sp = rnd(30, 200);
     part('debris', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(1.2, 2.4), rnd(2, 5), i % 3 ? '#4a3f33' : '#2e2820', { z: 4, vz: rnd(200, 520), vr: rnd(-14, 14), drag: .98, g: 560, bounce: 1 });
   }
@@ -4158,7 +4163,8 @@ function fxMuzzleDust(vx, vy, ang, ground, jet, muzLen, muzZ) {
     }
     for (let i = 0; i < 3; i++) part('smoke', mx, my, Math.cos(ang) * 40 * jet, Math.sin(ang) * 40 * jet, rnd(.8, 1.4), rnd(2, 4) * jet, 'rgba(250,250,248,1)', { z: Z + rnd(-3, 3), vz: rnd(20, 45), g: -30, grow: 24 * jet, drag: .9, wind: 1, a: .9 });   // wisps curling off the bore itself
     part('flash', mx, my, 0, 0, .07, 8 * jet, '#ffe0a8', { glow: 1, z: Z });
-    part('ring', mx, my, 0, 0, .34, 7 * jet, 'rgba(216,206,182,.6)', { grow: 150 * jet, z: Z });
+    for (let i = 0; i < Math.round(9 * jet) + 4; i++) { const a2 = rnd(TAU), sp = rnd(90, 240) * jet;   // dust wave rolling out low around the muzzle instead of a flat ring
+      part('dust', mx, my, Math.cos(a2) * sp + G.wind.x * .4, Math.sin(a2) * sp * .8 + G.wind.y * .4, rnd(3.8, 5.4), rnd(5, 9) * (.6 + jet), 'rgba(196,184,158,1)', { z: Z * .4 + rnd(0, 3), vz: rnd(2, 10), g: 5, grow: 40 * jet + 20, drag: .9, wind: 1 }); }
   }
 }
 /* A vehicle driving into a tree knocks it over: the trunk is taken out of the standing forest at once and handed to
@@ -7466,7 +7472,7 @@ function updateBullets(dt) {
 
     if (hit || b.life <= 0) {
       if (b.splash) {
-        if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }
+        if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .7); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }
         else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false); }
       } else if (hit) {
         damage(hit, b.dmg, b.ang, { wc: b.wc });
@@ -12902,7 +12908,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b15';
+const BUILD_TAG = 'b16';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
