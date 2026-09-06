@@ -866,8 +866,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
         <button class="dvbtn" data-wx="0" title="Clear skies">☀</button>
         <button class="dvbtn" data-wx="0.5" title="Rain">🌧</button>
         <button class="dvbtn" data-wx="1" title="Thunderstorm">⛈</button>
-        <button class="dvbtn" data-wx="snow" title="Snowfall">❄</button>
-        <button class="dvbtn" data-wx="auto" title="Back to automatic weather">⟲</button></div>
+        <button class="dvbtn" data-wx="auto" title="Back to automatic weather">⟲ AUTO</button></div>
       <div class="dvrow"><span class="dvlbl">Wind</span>
         <button class="dvbtn" id="dvWindMinus">−</button>
         <input id="dvWindN" class="dvnum" value="40" inputmode="numeric" readonly>
@@ -5833,16 +5832,6 @@ function rebuildHashes() {
   for (const z of G.zeds) if (!z.dead) G.hZeds.add(z);
 }
 
-/* buildings clear a footprint of snow around them, and camps clear their whole area — so troops there stand on flat, plain snow rather than sinking into deep drifts */
-function snowCleared(x, y) {
-  if (!(G.snow > 0)) return false;
-  const bs = G.builds;
-  for (let i = 0; i < bs.length; i++) { const b = bs[i]; if (b.dead) continue; const hw = b.w * TS * .55 + 26, hh = b.h * TS * .55 + 26; if (Math.abs(b.x - x) < hw && Math.abs(b.y - y) < hh) return true; }
-  const fc = G.fieldCamps;
-  if (fc) for (let i = 0; i < fc.length; i++) { const c = fc[i]; if (!c.dead && dist2(x, y, c.x, c.y) < c.r * c.r) return true; }
-  return false;
-}
-
 /* a watchtower lends its eyes to everything standing under it */
 function towerAt(x, y) {
   for (let i = 0; i < G.towers.length; i++) {
@@ -9350,26 +9339,15 @@ function rainTex() {
 function updateWeather(dt) {
   if (G.mode === undefined) return;
   WX.t += dt;
-  if (WX.forceSnow) {                                               // dev override: keep it snowing, no rain
-    WX.on = false; WX.snow = true; WX.k = Math.max(0, WX.k - dt / 8);
-  } else if (WX.forced != null) {                                   // dev override: ease straight to the chosen rain intensity
-    WX.snow = false;
+  if (WX.forced != null) {                                          // dev override: ease straight to the chosen intensity
     WX.k += clamp(WX.forced - WX.k, -dt * .6, dt * .6);
     WX.on = WX.forced > .05;
     if (WX.on) { WX.boltT -= dt; if (WX.k > .5 && WX.boltT <= 0 && Math.random() < dt * .09) { WX.flash = 1; WX.boltT = rnd(4, 14); WX.thunderT = rnd(.4, 1.6); G.lights.push({ x: CAM.x + CAM.vw / 2, y: CAM.y + CAM.vh / 2, r: 4000, c: [220, 230, 255], i: 1 }); } }
   } else if (!WX.on) {
     // the sky stays dry for the first week: no storm can start until day 7 or 8 has passed
     if ((G.days || 0) < (G.rainDay || 7)) { WX.t = 0; WX.next = rnd(40, 110); }
-    if (WX.t > WX.next) {
-      WX.t = 0; WX.on = true;
-      if (Math.random() < .10) { WX.snow = true; WX.snowStart = G.days || 0; WX.next = 1e9; alertMsg('❄ A snowstorm is moving in', 'info'); }   // 10% of weather events are a 5-day snowfall
-      else { WX.snow = false; WX.next = rnd(70, 160); alertMsg('Storm front moving in', ''); }
-    }
+    if (WX.t > WX.next) { WX.on = true; WX.t = 0; WX.next = rnd(70, 160); alertMsg('Storm front moving in', ''); }
     WX.k = Math.max(0, WX.k - dt / 14);
-  } else if (WX.snow) {
-    // snowfall runs for five in-game days, then clears
-    if ((G.days || 0) - (WX.snowStart || 0) >= 5) { WX.on = false; WX.snow = false; WX.t = 0; WX.next = rnd(150, 320); alertMsg('The snow is melting away', 'info'); }
-    WX.k = Math.max(0, WX.k - dt / 14);                             // no rain while it snows
   } else {
     WX.k = Math.min(1, WX.k + dt / 18);
     if (WX.t > WX.next) { WX.on = false; WX.t = 0; WX.next = rnd(150, 320); }
@@ -9385,18 +9363,6 @@ function updateWeather(dt) {
   // the ground soaks dark and glossy while it rains, then slowly dries out (read by the 3D terrain shader as uWet)
   if (G.wet === undefined) G.wet = 0;
   G.wet = WX.k > .1 ? Math.min(1, G.wet + dt * .10 * WX.k) : Math.max(0, G.wet - dt * .025);
-  // snow: builds up while it snows (read by the terrain shader as uSnow), melts slowly when it clears
-  if (G.snow === undefined) G.snow = 0;
-  const snowing = WX.snow || WX.forceSnow;
-  G.snow = snowing ? Math.min(1, G.snow + dt * .045) : Math.max(0, G.snow - dt * .03);
-  // drifting snowflakes across the view
-  if (snowing && G.snow > .05 && G.parts.length < PMAX * .82) {
-    const n = Math.round(G.snow * 22);
-    for (let i = 0; i < n; i++) {
-      const x = CAM.x + rnd(-80, CAM.vw + 80), y = CAM.y + rnd(-80, CAM.vh + 80);
-      part('snow', x, y, G.wind.x * .35 + rnd(-10, 10), G.wind.y * .35 + rnd(-10, 10), rnd(2.4, 3.8), rnd(1.2, 2.4), '#ffffff', { z: rnd(130, 200), vz: rnd(-64, -42), g: 0, wind: 1 });
-    }
-  }
   // falling rain streaks across the view for the 3D renderer (wind-driven)
   if (WX.k > .1 && G.parts.length < PMAX * .8) {
     const n = Math.round(WX.k * 24);
@@ -9906,12 +9872,8 @@ for (const el of document.querySelectorAll('[data-wave]')) el.onclick = e => { e
 for (const el of document.querySelectorAll('[data-wx]')) el.onclick = e => {
   e.stopPropagation();
   const v = el.dataset.wx;
-  if (typeof WX !== 'undefined') {
-    if (v === 'snow') { WX.forceSnow = true; WX.forced = 0; }
-    else if (v === 'auto') { WX.forceSnow = false; WX.forced = null; }
-    else { WX.forceSnow = false; WX.forced = parseFloat(v); }
-  }
-  alertMsg('Weather: ' + (v === 'auto' ? 'automatic' : v === '0' ? 'clear' : v === '0.5' ? 'rain' : v === 'snow' ? 'snowfall' : 'storm'), 'info');
+  if (typeof WX !== 'undefined') WX.forced = (v === 'auto') ? null : parseFloat(v);
+  alertMsg('Weather: ' + (v === 'auto' ? 'automatic' : v === '0' ? 'clear' : v === '0.5' ? 'rain' : 'storm'), 'info');
   AU.ui('ok');
 };
 let dvWindDir = 0; const DV_WDIRS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
@@ -11222,11 +11184,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const groundY = (x, y) => Math.max(elevAtW(x, y), -.06);          // entities never sink below the water surface
   const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .07, envMapIntensity: .65 });   // the ground takes only a little sky bounce, so the HD sheen stays on the models
   terrMat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, { tGrass: { value: TEX.grass }, tSand: { value: TEX.sand }, tRock: { value: TEX.rock }, tRoad: { value: TEX.road }, tDirt: { value: TEX.dirt }, uWet: { value: 0 }, uSnow: { value: 0 } });
+    Object.assign(sh.uniforms, { tGrass: { value: TEX.grass }, tSand: { value: TEX.sand }, tRock: { value: TEX.rock }, tRoad: { value: TEX.road }, tDirt: { value: TEX.dirt }, uWet: { value: 0 } });
     terrMat.userData.sh = sh;   // kept so the rain system can drive uWet every frame
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat; attribute vec2 ex; varying vec4 vSplat; varying vec2 vEx; varying float vWy; varying vec2 vWxz;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat; vEx = ex; vWy = (modelMatrix * vec4(transformed, 1.0)).y; vWxz = (modelMatrix * vec4(transformed, 1.0)).xz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; uniform float uSnow; varying float vWy; varying vec2 vWxz; varying vec4 vSplat; varying vec2 vEx;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; varying float vWy; varying vec2 vWxz; varying vec4 vSplat; varying vec2 vEx;')
       .replace('#include <map_fragment>', [
         'vec4 w = vSplat; float dw = vEx.x;',
         // break the blend seams up with a noise so the material boundary looks organic rather than a straight fade
@@ -11239,10 +11201,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         '{ float wet = 1.0 - smoothstep(-0.06, 0.05, vWy); t *= 1.0 - wet * 0.42;',
         '  float wl = -0.045 + sin(vWxz.x * 2.6 + uTime * 1.3) * 0.012 + sin(vWxz.y * 3.1 - uTime * 0.9) * 0.010 + sin((vWxz.x + vWxz.y) * 7.0 + uTime * 2.4) * 0.004;',
         '  float foam = 1.0 - smoothstep(0.0, 0.016, abs(vWy - wl)); foam *= 0.55 + 0.45 * sin(vWxz.x * 11.0 + vWxz.y * 9.0 + uTime * 3.0); t += foam * 0.45; }',                   // crater floor: churned earth
-        'diffuseColor.rgb *= t * 2.0 * (1.0 - uWet * 0.38);',   // rain-soaked ground darkens
-        // snow blankets every ground type above the waterline with a slightly sparkling white
-        'float sn = uSnow * smoothstep(-0.01, 0.06, vWy); vec3 snowCol = vec3(0.9, 0.93, 0.98) + (fract(sin(dot(vWxz, vec2(12.9898,78.233))) * 43758.5453) - 0.5) * 0.06; diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, sn);'].join('\n'))
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= (1.0 - uWet * 0.7); roughnessFactor = mix(roughnessFactor, 0.92, uSnow * smoothstep(-0.01, 0.06, vWy));');   // wet ground turns glossy; snow is matte
+        'diffuseColor.rgb *= t * 2.0 * (1.0 - uWet * 0.38);'].join('\n'))   // rain-soaked ground darkens
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= (1.0 - uWet * 0.7);');   // ...and turns glossy
     cloudHook(sh);
   };
   const CCOL = {}; for (const k in TERR) CCOL[k] = lin('rgb(' + TERR[k].join(',') + ')');
@@ -12479,7 +12439,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
     const vx0 = CAM.x - 200, vx1 = CAM.x + CAM.vw + 200, vy0 = CAM.y - 300, vy1 = CAM.y + CAM.vh + 200;
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
-    if (terrMat.userData.sh) { terrMat.userData.sh.uniforms.uWet.value = G.wet || 0; terrMat.userData.sh.uniforms.uSnow.value = G.snow || 0; }   // rain-soaked / snow-covered ground
+    if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
 
     /* ---- props: static parts (trunks, rocks, barrels, wrecks) refreshed when the camera moves; canopies + bushes every frame so they sway on the wind ---- */
     if (Math.abs(cxw - lastPX) > 48 || Math.abs(cyw - lastPY) > 48 || G.frame % 30 === 0 || lastNB !== G.builds.length) {
@@ -12508,7 +12468,6 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     {
       // wind: every crown leans downwind and rocks on two overlapping gusts, bushes shiver at the base
       const wm = clamp(Math.hypot(G.wind.x, G.wind.y) / 55, 0, 1.6), wl = Math.hypot(G.wind.x, G.wind.y) + 1e-3, wdx = G.wind.x / wl, wdz = G.wind.y / wl, tt = G.t;
-      const bare = (G.snow || 0) > .5;                 // snowfall strips the deciduous leaves and buries the low brush
       for (let i = 0; i < foliage.length; i++) {
         const q = foliage[i]; if (G.deadProps.has(q.id)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
         const ph = tt * 1.7 + q.x * .013 + q.y * .011, gust = (Math.sin(ph) * .55 + Math.sin(ph * 2.7 + 1.3) * .25 + Math.sin(ph * .37) * .2);
@@ -12517,17 +12476,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const spv = hash2(q.id, 13);
           if (spv >= .62 && spv < .72) {
             // birch: a slender, airy crown in lighter yellow-greens, higher on the trunk, with a darker inner layer
-            if (!bare) for (let k = 0; k < 3; k++) { const f = k / 2, r = (.62 - f * .16) * sc, an = k * 2.3 + q.a, hgt = (1.25 + f * .5) * sc, kk = 1.2 + f * .8, off = (k ? .22 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk, an * .3, rz * kk, r, r * .9, r, BIRCHC[(v + k) % 3]); }
+            for (let k = 0; k < 3; k++) { const f = k / 2, r = (.62 - f * .16) * sc, an = k * 2.3 + q.a, hgt = (1.25 + f * .5) * sc, kk = 1.2 + f * .8, off = (k ? .22 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk, an * .3, rz * kk, r, r * .9, r, BIRCHC[(v + k) % 3]); }
           } else if (spv < .55) {
             // conifer / cypress: four stacked tiers, each narrower and brighter toward the tip; top tiers sway most in the wind
             const H = 2.35 * sc, w0 = .78 * sc;
             for (let k = 0; k < 4; k++) { const f = k / 4, hb = y + .55 * sc + H * f * .78, th = H * (.42 - f * .07), w = w0 * (1 - f * .62), kk = .6 + f * 1.2; put(P.cone, x + lx * kk * sc * 1.2, hb, z + lz * kk * sc * 1.2, rx * kk, q.a + k * .7, rz * kk, w, th, w, CONIF[(v + k) % 4]); }
           } else {
             // broadleaf: a rounded, layered crown built from overlapping smooth spheres (darker inside, lighter sunward top) over a shaded under-canopy
-            if (!bare) { put(P.crown, x + lx * .9, y + .78 * sc, z + lz * .9, rx, q.a, rz, .8 * sc, .5 * sc, .8 * sc, UNDERC);
-              for (let k = 0; k < 4; k++) { const f = k / 3, r = (.92 - f * .28) * sc, an = k * 2.1 + q.a, hgt = (.95 + f * .55) * sc, kk = 1 + f * .7, off = (k ? .3 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .2, an * .7, rz * kk, r, r * .8, r, LEAF[(v + k) % 5]); } }
+            put(P.crown, x + lx * .9, y + .78 * sc, z + lz * .9, rx, q.a, rz, .8 * sc, .5 * sc, .8 * sc, UNDERC);
+            for (let k = 0; k < 4; k++) { const f = k / 3, r = (.92 - f * .28) * sc, an = k * 2.1 + q.a, hgt = (.95 + f * .55) * sc, kk = 1 + f * .7, off = (k ? .3 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .2, an * .7, rz * kk, r, r * .8, r, LEAF[(v + k) % 5]); }
           }
-        } else if (!bare) { const lean = wm * (.04 + gust * .03); put(P.bush, x + wdx * lean * .3, y + .16 * sc, z + wdz * lean * .3, wdz * lean * 2, q.a, -wdx * lean * 2, sc, sc * .8, sc, BUSHC[q.id & 1]); }
+        } else { const lean = wm * (.04 + gust * .03); put(P.bush, x + wdx * lean * .3, y + .16 * sc, z + wdz * lean * .3, wdz * lean * 2, q.a, -wdx * lean * 2, sc, sc * .8, sc, BUSHC[q.id & 1]); }
       }
       /* ---- felled trees: tip over about the base toward f.dir, bounce once on impact, then lie until they break apart (sim removes them) ---- */
       if (G.fallen && G.fallen.length) for (let i = 0; i < G.fallen.length; i++) {
@@ -12572,8 +12531,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
           const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;   // spread the tufts across the tile
           const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS, flat = grassFlat(wx, wy);
-          const bh = (.34 + h1 * .22) * (1 - flat * .82) * Math.max(0, 1 - (G.snow || 0) * 2);    // ~half-body tall, near-flat once trampled — and buried as snow builds up
-          if (bh < .02) continue;                                                                 // fully under the snow
+          const bh = (.34 + h1 * .22) * (1 - flat * .82);                                        // ~half-body tall, near-flat once trampled
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
           let rx, rz;
           if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran/landed through
@@ -12751,9 +12709,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bud = { x: b.x * K - Math.sin(b.ang) * rt, y: groundY(b.x, b.y) + bodyH * hMul, z: b.y * K + Math.cos(b.ang) * rt };
           }
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
-          const snk = ((G.snow || 0) > .5 && !u.sitting && !snowCleared(u.x, u.y)) ? (G.snow - .5) * 2 * .26 : 0;   // wade knee/waist-deep through fresh drifts (buried to ~half the body)
-          if (snk > 0) { const mv = Math.hypot(u.x - (u._sfx != null ? u._sfx : u.x), u.y - (u._sfy != null ? u._sfy : u.y)); if (mv > 9 && decalList.length < 1400) { u._sfx = u.x; u._sfy = u.y; const perp = u.ang + HPI, hw = u.r * .3; decalList.push({ foot: 1, x: (u.x + Math.cos(perp) * hw) * K, y: (u.y + Math.sin(perp) * hw) * K, r: .24, rot: u.ang }); decalList.push({ foot: 1, x: (u.x - Math.cos(perp) * hw) * K, y: (u.y - Math.sin(perp) * hw) * K, r: .24, rot: u.ang }); } }   // footprints trail through the snow
-          drawFigure(x, gy - snk, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
+          drawFigure(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 7.5, dk = .5 + (1 - dayNow) * .5;
@@ -12870,7 +12826,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (const p of G.parts) {
       if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
       const x = p.x * K, z = p.y * K, gy = groundY(p.x, p.y), y = gy + (p.z || 0) * K + .05, a = p.a, k = p.kind;
-      const c = ((G.snow || 0) > .35 && (k === 'dust' || k === 'fog') && !p.noSnow) ? [.95, .97, 1] : rgbOf(p.col || '#ffffff'), r = p.r * K;   // dust reads as blown snow while it's snowing
+      const c = rgbOf(p.col || '#ffffff'), r = p.r * K;
       if (k === 'fire') bb(partsAdd, x, y + .1, z, r * 2.2, c[0], c[1], c[2], a * .9);
       else if (k === 'flash') bb(partsAdd, x, y + .1, z, r * 4, 1, .92, .7, a);
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
@@ -12883,13 +12839,12 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (k === 'chunk') { if (p.col && MEAT(p.col)) { const v = rgbOf(p.col); if (v[1] > v[0] * 1.6) continue; put(P.gore, x, y, z, p.rot * 1.3, p.rot, p.rot * .7, r * .9, r * .7, r * .8, col3(p.col)); } else put(P.box, x, y, z, p.rot * 1.1, p.rot, p.rot * .6, r * 1.2, r * .6, r * .9, col3(p.col || '#5a4028')); }
       else if (k === 'casing') put(P.cyl, x, y, z, p.rot, p.rot * 2, HPI, r * .3, r * 1.1, r * .3, col3('#c9a33d'));
       else if (k === 'rain') put(P.cyl, x, y, z, .12, 0, 0, .012, .75, .012, col3('#a8c0d8'));   // falling streak
-      else if (k === 'snow') bb(partsAlpha, x, y, z, Math.max(.03, r * .55), .97, .98, 1, Math.min(1, a * 1.7));   // drifting snowflake
       else if (k === 'splash') put(P.ring, x, gy + .05, z, -HPI, 0, 0, r * .5, r * .5, 1);
       else if (k === 'debris' || k === 'leaf') put(P.box, x, y, z, p.rot * 1.4, p.rot, p.rot * .5, r * 1.3, r * .3, r * .9, col3(p.col || '#4a423a'));
       else bb(partsAlpha, x, y, z, Math.max(.05, r * 1.4), c[0], c[1], c[2], Math.min(1, a * 2));
     }
     /* ---- ground decals: scorch marks on crater floors, blood splatter ---- */
-    for (let i = decalList.length - 1; i >= 0; i--) { const dl = decalList[i]; if (dl.x < vx0 * K || dl.x > vx1 * K || dl.y < vy0 * K || dl.y > vy1 * K) continue; const gy = groundY(dl.x / K, dl.y / K) + .02; if (dl.foot) put(P.shadow, dl.x, gy + .01, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 1.35, 1); else if (dl.k < 0) put(P.scorch, dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, WHITE); else put(P.splat[dl.k], dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, dl.c); }
+    for (let i = decalList.length - 1; i >= 0; i--) { const dl = decalList[i]; if (dl.x < vx0 * K || dl.x > vx1 * K || dl.y < vy0 * K || dl.y > vy1 * K) continue; const gy = groundY(dl.x / K, dl.y / K) + .02; if (dl.k < 0) put(P.scorch, dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, WHITE); else put(P.splat[dl.k], dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, dl.c); }
     /* ---- placement ghosts ---- */
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
     ghostBegin();
@@ -13523,7 +13478,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b49';
+const BUILD_TAG = 'b50';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
