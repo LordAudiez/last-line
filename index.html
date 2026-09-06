@@ -7585,10 +7585,40 @@ function updateItems(dt) {
 
 function updateParticles(dt) {
   const wx = G.wind.x, wy = G.wind.y;
+  // things that stir the smoke this frame: moving units/vehicles (their wake) and bullets in flight (their draft).
+  // built once so the per-particle loop below only walks these short lists.
+  let SMOV = null, SBUL = null, SDOWN = null;
+  if (G.parts.length) {
+    SMOV = []; SDOWN = [];
+    for (const u of G.units) { if (u.dead || u.inside) continue;
+      if (u.def.fly && u.def.rotor && (u.landed || (u.altK !== undefined && u.altK < .32))) SDOWN.push(u);   // low / landing helicopter: rotor downwash
+      const sv = (u.vx || 0) * (u.vx || 0) + (u.vy || 0) * (u.vy || 0); if (sv > 400) SMOV.push(u); }        // moving faster than 20 px/s
+    for (const z of G.zeds) { if (z.dead || z.def.struct) continue; const sv = (z.vx || 0) * (z.vx || 0) + (z.vy || 0) * (z.vy || 0); if (sv > 900) SMOV.push(z); }   // fast movers (runners) stir it too
+    SBUL = G.bullets;
+  }
   for (let i = G.parts.length - 1; i >= 0; i--) {
     const p = G.parts[i];
     p.life -= dt;
     if (p.life <= 0) { G.parts.splice(i, 1); continue; }
+    // smoke/dust reacts to movement through it: a unit's wake drags it along, a bullet's draft streaks it — aerodynamic disturbance
+    if (SMOV && (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog')) {
+      for (let m = 0; m < SMOV.length; m++) { const u = SMOV[m], dx = p.x - u.x, dy = p.y - u.y, R = u.r * 2.4 + 22, d2 = dx * dx + dy * dy;
+        if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, push = f * f * (u.def && u.def.veh ? 4.2 : 2.0);
+          p.vx += (u.vx || 0) * push * dt; p.vy += (u.vy || 0) * push * dt;                       // dragged along the direction of travel
+          const sx = -(u.vy || 0), sy = (u.vx || 0); p.vx += sx * f * .35 * dt; p.vy += sy * f * .35 * dt;   // curl to the side (wake swirl)
+        }
+      }
+      for (let m = 0; m < SBUL.length; m++) { const b = SBUL[m]; if (b.team !== 1 && b.team !== 2) continue; const dx = p.x - b.x, dy = p.y - b.y;
+        if (dx > -26 && dx < 26 && dy > -26 && dy < 26) { const d2 = dx * dx + dy * dy; if (d2 < 676) { const bl = Math.hypot(b.vx, b.vy) || 1, f = 1 - Math.sqrt(d2) / 26;
+          p.vx += b.vx / bl * f * 140 * dt; p.vy += b.vy / bl * f * 140 * dt;                      // punched along the round's path (smoke trace)
+        } }
+      }
+      for (let m = 0; m < SDOWN.length; m++) { const h = SDOWN[m], dx = p.x - h.x, dy = p.y - h.y, R = h.r * 5 + 40, d2 = dx * dx + dy * dy;
+        if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, k = (h.landed ? 1 : (0.32 - h.altK) / 0.32);   // strongest on the ground, fading as it climbs
+          p.vx += dx / d * f * 260 * k * dt; p.vy += dy / d * f * 260 * k * dt;                    // blasted radially OUTWARD, clearing a circle under the rotor
+        }
+      }
+    }
     p.x += p.vx * dt; p.y += p.vy * dt;
     const dr = Math.pow(p.drag, dt * 60);
     if (p.wind) {
@@ -12911,7 +12941,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b20';
+const BUILD_TAG = 'b21';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
