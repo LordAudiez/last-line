@@ -7603,9 +7603,10 @@ function updateParticles(dt) {
     // smoke/dust reacts to movement through it: a unit's wake drags it along, a bullet's draft streaks it — aerodynamic disturbance
     if (SMOV && (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog')) {
       for (let m = 0; m < SMOV.length; m++) { const u = SMOV[m], dx = p.x - u.x, dy = p.y - u.y, R = u.r * 2.4 + 22, d2 = dx * dx + dy * dy;
-        if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, push = f * f * (u.def && u.def.veh ? 4.2 : 2.0);
+        if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, push = f * f * (u.def && u.def.veh ? 2.4 : 1.2);
           p.vx += (u.vx || 0) * push * dt; p.vy += (u.vy || 0) * push * dt;                       // dragged along the direction of travel
-          const sx = -(u.vy || 0), sy = (u.vx || 0); p.vx += sx * f * .35 * dt; p.vy += sy * f * .35 * dt;   // curl to the side (wake swirl)
+          const sx = -(u.vy || 0), sy = (u.vx || 0); p.vx += sx * f * .3 * dt; p.vy += sy * f * .3 * dt;     // curl to the side (wake swirl)
+          if (f > .3) p.life = Math.min(p.life, .5 + f * .5);                                     // smoke stirred by a passing unit wisps away fast instead of trailing thick behind it
         }
       }
       for (let m = 0; m < SBUL.length; m++) { const b = SBUL[m]; if (b.team !== 1 && b.team !== 2) continue; const dx = p.x - b.x, dy = p.y - b.y;
@@ -12941,7 +12942,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b21';
+const BUILD_TAG = 'b22';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
