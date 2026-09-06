@@ -7726,7 +7726,7 @@ function ensureCampRoles(c) {
 }
 
 function makeCamp(wx, wy) {
-  if (!G.camps) G.camps = [];
+  if (!G.fieldCamps) G.fieldCamps = [];
   const foot = G.sel.filter(u => u.kind === 'unit' && !u.def.veh && !u.def.fly && !u.dead && !u.inside);
   if (foot.length < 4) { AU.ui('no'); if (typeof alertMsg === 'function') alertMsg('Need at least 4 infantry to make camp', ''); return; }
   const cx = wx, cy = wy, r = 4.2 * TS, seed = G.uid++;
@@ -7739,7 +7739,7 @@ function makeCamp(wx, wy) {
   };
   assignCampRoles(c);
   for (const u of foot) { u.order = null; u.camp = c; u.stance = 'camp'; u.backOff = null; u.grpLeader = null; u.coverActive = false; }
-  G.camps.push(c);
+  G.fieldCamps.push(c);
   part('ring', cx, cy, 0, 0, .5, 14, '#ffc27a', { grow: r * 1.5, glow: 1 });
   AU.ui('build');
   if (typeof refreshCard === 'function') refreshCard(true);
@@ -7795,9 +7795,9 @@ function campMember(u, dt) {
 }
 
 function updateCamps(dt) {
-  if (!G.camps || !G.camps.length) return;
-  for (let i = G.camps.length - 1; i >= 0; i--) {
-    const c = G.camps[i];
+  if (!G.fieldCamps || !G.fieldCamps.length) return;
+  for (let i = G.fieldCamps.length - 1; i >= 0; i--) {
+    const c = G.fieldCamps[i];
     c.members = c.members.filter(u => u && !u.dead && u.camp === c && !u.inside);
     ensureCampRoles(c);
     if (!c.members.length && c.state !== 'pack') c.dead = true;
@@ -7836,7 +7836,7 @@ function updateCamps(dt) {
       if (Math.random() < dt * 22 * c.grow) part('spark', c.fireX + rnd(-4, 4), c.fireY + rnd(-4, 4), rnd(-8, 8), rnd(-8, 8), rnd(.4, .8), rnd(1, 2), '#ff9a3a', { z: rnd(3, 7), vz: rnd(26, 48), glow: 1 });
       if (Math.random() < dt * 6 * c.grow) part('smoke', c.fireX, c.fireY, rnd(-3, 3), rnd(-3, 3), rnd(1.6, 2.6), rnd(3, 5), 'rgba(64,58,52,.75)', { z: 8, vz: rnd(18, 30), grow: 6, drag: .9 });
     }
-    if (c.dead) { for (const u of c.members) if (u) { u.camp = null; u.campRole = null; u.sitting = false; u.campRelax = false; u.stance = 'aggr'; } G.camps.splice(i, 1); }
+    if (c.dead) { for (const u of c.members) if (u) { u.camp = null; u.campRole = null; u.sitting = false; u.campRelax = false; u.stance = 'aggr'; } G.fieldCamps.splice(i, 1); }
   }
 }
 
@@ -12350,7 +12350,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       } }
     for (const [id, bm] of buildMeshes) if (!G.builds.some(b => b.id === id)) { scene3.remove(bm.g); buildMeshes.delete(id); }
     /* ---- field camps: campfire + tent ---- */
-    if (G.camps) for (const c of G.camps) {
+    if (G.fieldCamps) for (const c of G.fieldCamps) {
       const g = c.grow || 0; if (g < .02) continue;
       if (c.x < vx0 - 240 || c.x > vx1 + 240 || c.y < vy0 - 240 || c.y > vy1 + 240) continue;
       const LOG = col3('#4a3826'), STONE = col3('#8a857a'), OLIVE = col3('#5c6b3c'), OLIVE2 = col3('#4c5a32'), POLE = col3('#4a3826'), ROPE = col3('#9a8a62'), FLAP = col3('#3c4526'), thin = .02;
@@ -12365,23 +12365,27 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       bb(partsAdd, fx, fgy + .15 * g, fz, .21 * fl, 1, .5, .16, .95 * g);
       bb(partsAdd, fx + wob, fgy + .32 * g, fz, .14 * fl, 1, .74, .28, .85 * g);
       bb(partsAdd, fx - wob * .6, fgy + .5 * g, fz, .08 * fl, 1, .93, .6, .6 * g);
-      // tents: three olive A-frame ridge tents around the fire (bigger + taller)
-      const lenF = 3.0 * g, half = 1.12 * g, ridgeH = .92 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half), panelTh = .1 * g;
+      // tents: three olive A-frame ridge tents around the fire — compact, with CLOSED triangular gable ends so they read as solid tents
+      const lenF = 1.95 * g, half = .84 * g, ridgeH = .34 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half), panelTh = .07 * g;
       const tents = c.tents || [{ x: c.x, y: c.y - c.r * .7, a: -Math.PI / 2 }];
       for (const tt of tents) {
         const tx = tt.x * K, tz = tt.y * K, tgy = groundY(tt.x, tt.y);
         const th = Math.PI / 2 - (tt.a || 0), cth = Math.cos(th), sth = Math.sin(th);               // yaw so the doorway faces the fire
         const RX = (lx, lz) => tx + lx * cth + lz * sth, RZ = (lx, lz) => tz - lx * sth + lz * cth;   // rotate a local offset into world by Ry(th)
-        put(P.box, RX(half * .5, 0), tgy + ridgeH * .5, RZ(half * .5, 0), 0, th, -phi, slant * 1.04, panelTh, lenF, OLIVE);   // +X roof slope (lit) — thick so it never reads as a bare frame
-        put(P.box, RX(-half * .5, 0), tgy + ridgeH * .5, RZ(-half * .5, 0), 0, th, phi, slant * 1.04, panelTh, lenF, OLIVE2); // -X roof slope (shaded)
-        put(P.box, RX(0, 0), tgy + ridgeH, RZ(0, 0), 0, th, 0, thin * 1.4, thin * 1.4, lenF * 1.06, POLE);                    // ridge pole (box, along local Z)
-        for (const sz of [-1, 1]) put(P.cyl, RX(0, sz * lenF * .5), tgy + ridgeH * .5, RZ(0, sz * lenF * .5), 0, 0, 0, thin * 1.3, ridgeH, thin * 1.3, POLE);   // end uprights
-        put(P.box, RX(half * .3, -lenF * .5), tgy + ridgeH * .4, RZ(half * .3, -lenF * .5), 0, th, 0, half * .5, ridgeH * .78, thin, FLAP);   // door flap on the gable facing the fire
+        // closed triangular gable end-walls (stepped strips), so you can't see straight through the tent
+        for (const endz of [-1, 1]) {
+          const nS = 5, col = endz < 0 ? FLAP : OLIVE2;                                              // front gable a touch darker (the doorway side)
+          for (let s = 0; s < nS; s++) { const fr = (s + .5) / nS, w = half * (1 - fr) * 2; put(P.box, RX(0, endz * lenF * .5), tgy + ridgeH * fr, RZ(0, endz * lenF * .5), 0, th, 0, w, ridgeH / nS * 1.02, thin, col); }
+        }
+        put(P.box, RX(half * .5, 0), tgy + ridgeH * .5, RZ(half * .5, 0), 0, th, -phi, slant * 1.05, panelTh, lenF, OLIVE);   // +X roof slope (lit)
+        put(P.box, RX(-half * .5, 0), tgy + ridgeH * .5, RZ(-half * .5, 0), 0, th, phi, slant * 1.05, panelTh, lenF, OLIVE2); // -X roof slope (shaded)
+        put(P.box, RX(0, 0), tgy + ridgeH, RZ(0, 0), 0, th, 0, thin * 1.4, thin * 1.4, lenF * 1.06, POLE);                    // ridge pole
+        put(P.box, RX(half * .26, -lenF * .5), tgy + ridgeH * .3, RZ(half * .26, -lenF * .5), 0, th, 0, half * .45, ridgeH * .6, thin * 1.5, POLE);   // rolled-open door flap on the front
         for (const sx of [-1, 1]) for (const sz of [-1, 1]) {                                         // guy-ropes + ground stakes
-          const ex = RX(sx * half, sz * lenF * .46), ez = RZ(sx * half, sz * lenF * .46), ox = RX(sx * (half + .6 * g), sz * (lenF * .5 + .55 * g)), oz = RZ(sx * (half + .6 * g), sz * (lenF * .5 + .55 * g));
+          const ex = RX(sx * half, sz * lenF * .46), ez = RZ(sx * half, sz * lenF * .46), ox = RX(sx * (half + .45 * g), sz * (lenF * .5 + .4 * g)), oz = RZ(sx * (half + .45 * g), sz * (lenF * .5 + .4 * g));
           const mx = (ex + ox) / 2, mz = (ez + oz) / 2, dx = ox - ex, dz = oz - ez, len = Math.hypot(dx, dz), yaw = Math.atan2(dz, dx);
           put(P.box, mx, tgy + ridgeH * .1, mz, 0, -yaw, -.16, len, thin * .5, thin * .5, ROPE);
-          put(P.cyl, ox, tgy + .08, oz, 0, 0, 0, thin * 1.1, .18, thin * 1.1, POLE);
+          put(P.cyl, ox, tgy + .08, oz, 0, 0, 0, thin * 1.1, .16, thin * 1.1, POLE);
         }
       }
     }
@@ -12662,7 +12666,7 @@ function newGame(opts) {
   if (opts.size) setMapSize(opts.size.w, opts.size.h);
   if (opts.seed != null) WSEED = opts.seed;
   G.diff = DIFFS[opts.diff] || DIFFS.normal; G.diffName = opts.diff || 'normal';
-  G.mode = opts.mode || 'defense'; G.villages = []; G.camps = []; G.bonus = 0; G.cutscene = null;
+  G.mode = opts.mode || 'defense'; G.villages = []; G.camps = []; G.fieldCamps = []; G.bonus = 0; G.cutscene = null;
   G.topples = []; G.fuses = [];
   // the world grid is sized to the map — reallocate it when the size changes
   if (G.gridB.length !== MW * MH) G.gridB = new Int32Array(MW * MH); else G.gridB.fill(0);
@@ -13200,7 +13204,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b40';
+const BUILD_TAG = 'b41';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
