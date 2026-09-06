@@ -4148,27 +4148,19 @@ function fxMuzzleDust(vx, vy, ang, ground, jet, muzLen, muzZ) {
   if (jet > 0) {
     const L = muzLen || 20, Z = muzZ || 0;
     const mx = vx + Math.cos(ang) * L, my = vy + Math.sin(ang) * L;   // muzzle on the barrel axis (world space), at the bore's height
-    const m = Math.max(6, Math.round(14 * jet));
-    for (let i = 0; i < m; i++) {
-      const a = ang + rnd(-.138, .138), sp = (i < 3 ? rnd(60, 220) : rnd(200, 864)) * jet;   // a continuous plume: slow gas at the bore, fast punch out front
-      part('dust', mx, my, Math.cos(a) * sp, Math.sin(a) * sp,
-        rnd(5, 7.5), rnd(8, 12), 'rgba(206,194,168,1)',
-        { z: Z * .5 + rnd(1, 7), vz: rnd(2, 9), grow: 24, drag: .84, wind: 1 });
+    // muzzle jet: a THIN, FAST V-shaped cone of smoke blown straight off the muzzle tip — narrow at the bore, fanning
+    // outward into a V, pushed away hard and gone within ~2 s (much lighter than the old ballooning cloud)
+    const nj = Math.round(11 * jet) + 5;
+    for (let i = 0; i < nj; i++) {
+      const off = rnd(-1, 1) * (.08 + Math.random() * .42);                      // tight at the bore, spreading into a V
+      const a = ang + off, sp = rnd(420, 860) * jet;                              // fast punch away from the muzzle
+      part('smoke', mx, my, Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp + G.wind.y * .3,
+        rnd(1.2, 1.9), rnd(2.6, 4.4) * jet, i < nj * .4 ? 'rgba(230,222,206,1)' : 'rgba(172,162,148,1)',
+        { z: Z + rnd(-2, 4), vz: rnd(1, 6), g: -5, grow: 22 * jet, drag: .82, wind: 1, a: .45, rot: rnd(TAU), vr: rnd(-2, 2) });
     }
-    // propellant smoke: a fast, tight cone of hot gas out of the bore that slows hard and then rides the wind
-    for (let i = 0; i < m; i++) {
-      const a = ang + rnd(-.11, .11), sp = Math.pow(Math.random(), 1.6) * 700 * jet + 40;
-      part('smoke', mx, my, Math.cos(a) * sp, Math.sin(a) * sp, rnd(2.2, 4.0), rnd(4, 7) * jet, i < m * .4 ? 'rgba(225,215,195,1)' : 'rgba(150,142,128,1)',
-        { z: Z + rnd(-4, 6), vz: rnd(4, 14), g: -10, grow: 30 * jet, drag: .86, wind: 1, a: .6, rot: rnd(TAU), vr: rnd(-1.5, 1.5) });
-    }
-    // bore steam: a white jet of hot vapour blown straight out of the muzzle that balloons, curls up and thins within a couple of seconds
-    const ns = Math.round(10 * jet) + 4;
-    for (let i = 0; i < ns; i++) {
-      const f = i / ns, a = ang + rnd(-.07, .07), sp = (120 + f * 520) * jet;
-      part('smoke', mx + Math.cos(ang) * f * 8, my + Math.sin(ang) * f * 8, Math.cos(a) * sp, Math.sin(a) * sp, rnd(1.0, 2.2), rnd(3, 5) * jet, 'rgba(240,240,236,1)',
-        { z: Z + rnd(-2, 3), vz: rnd(8, 26), g: -26, grow: 42 * jet, drag: .80, wind: 1, a: .8, rot: rnd(TAU), vr: rnd(-3, 3) });
-    }
-    for (let i = 0; i < 3; i++) part('smoke', mx, my, Math.cos(ang) * 40 * jet, Math.sin(ang) * 40 * jet, rnd(.8, 1.4), rnd(2, 4) * jet, 'rgba(250,250,248,1)', { z: Z + rnd(-3, 3), vz: rnd(20, 45), g: -30, grow: 24 * jet, drag: .9, wind: 1, a: .9 });   // wisps curling off the bore itself
+    // a couple of hot, fast wisps right at the muzzle lips (the leading edge of the cone)
+    for (let i = 0; i < Math.round(3 * jet) + 1; i++) { const a = ang + rnd(-.12, .12);
+      part('smoke', mx + Math.cos(ang) * 6, my + Math.sin(ang) * 6, Math.cos(a) * rnd(500, 900) * jet, Math.sin(a) * rnd(500, 900) * jet, rnd(1.0, 1.6), rnd(2, 3.4) * jet, 'rgba(244,238,224,1)', { z: Z + rnd(-1, 3), vz: rnd(2, 8), g: -6, grow: 16 * jet, drag: .8, wind: 1, a: .5 }); }
     part('flash', mx, my, 0, 0, .07, 8 * jet, '#ffe0a8', { glow: 1, z: Z });
     // the flash lights the smoke in front of the barrel: a few short additive orange puffs riding the plume + a warm muzzle light
     if (jet >= .6) { for (let i = 0; i < Math.round(4 * jet) + 2; i++) { const d = rnd(4, (muzLen || 20) + 14), a3 = ang + rnd(-.16, .16);
@@ -12919,7 +12911,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b19';
+const BUILD_TAG = 'b20';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
