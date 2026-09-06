@@ -12366,7 +12366,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       bb(partsAdd, fx + wob, fgy + .32 * g, fz, .14 * fl, 1, .74, .28, .85 * g);
       bb(partsAdd, fx - wob * .6, fgy + .5 * g, fz, .08 * fl, 1, .93, .6, .6 * g);
       // tents: three olive A-frame ridge tents around the fire — compact, with CLOSED triangular gable ends so they read as solid tents
-      const lenF = 2.9 * g, half = 1.12 * g, ridgeH = .82 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half), panelTh = .09 * g;
+      const lenF = 2.9 * g, half = 1.12 * g, ridgeH = 1.64 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half), panelTh = .09 * g;
       const tents = c.tents || [{ x: c.x, y: c.y - c.r * .7, a: -Math.PI / 2 }];
       for (const tt of tents) {
         const tx = tt.x * K, tz = tt.y * K, tgy = groundY(tt.x, tt.y);
@@ -13204,7 +13204,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b43';
+const BUILD_TAG = 'b44';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
