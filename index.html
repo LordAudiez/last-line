@@ -2898,7 +2898,23 @@ function buildIcon(t) {
   else if (t === 'warehouse') b = S(sh + '<rect x="4" y="13" width="24" height="15" rx="1.5" fill="' + col + '"/><path d="M3 14 L16 6 L29 14 Z" fill="' + roof + '"/><rect x="6" y="16" width="20" height="12" fill="' + dark + '"/>' + [7.5, 12, 16.5, 21].map(x => '<rect x="' + x + '" y="18" width="3.6" height="3.2" fill="#3f8a4a" stroke="#8de0a0" stroke-width=".5"/><rect x="' + x + '" y="22.5" width="3.6" height="3.2" fill="#3f8a4a" stroke="#8de0a0" stroke-width=".5"/>').join('') + '<g class="ico-fork"><rect x="20" y="22" width="6" height="5" rx="1" fill="#e2b32a"/><rect x="18" y="20" width="1.2" height="8" fill="#2a2a26"/><rect x="15" y="27" width="4" height="1" fill="#2a2a26"/><circle cx="21.5" cy="28" r="1.2" fill="#1a1a18"/><circle cx="25" cy="28" r="1.2" fill="#1a1a18"/></g>');
   b = b || d.g || '';
   // producers carry a badge of WHAT they make — a soldier, a tank, a helicopter, a flask, a scrap gear, a supply crate — so the menu reads at a glance
-  const BADGE = { barracks: ['unit', 'rifleman'], vbay: ['unit', 'abrams'], airbase: ['unit', 'blackhawk'], armory: ['svg', '<path d="M12 4 H20 M14 4 V12 L8 24 Q7 27 10 27 H22 Q25 27 24 24 L18 12 V4" fill="#dff4ff" stroke="#4aa8d8" stroke-width="1.4"/><path d="M11 20 H21 L23 25 H9 Z" fill="#4ad0ff"/><circle class="ico-pulse" cx="14" cy="22" r="1.2" fill="#fff"/>'], refinery: ['svg', '<circle cx="16" cy="16" r="6" fill="#ffbe63"/><circle cx="16" cy="16" r="2.5" fill="#3a2a10"/>' + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="14.5" y="6" width="3" height="4" fill="#ffbe63" transform="rotate(' + a + ' 16 16)"/>').join('')], factory: ['svg', '<circle cx="16" cy="16" r="6" fill="#ffbe63"/><circle cx="16" cy="16" r="2.5" fill="#3a2a10"/>' + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="14.5" y="6" width="3" height="4" fill="#ffbe63" transform="rotate(' + a + ' 16 16)"/>').join('')], warehouse: ['svg', '<rect x="6" y="9" width="20" height="16" rx="2" fill="#3ddc84"/><rect x="14" y="9" width="4" height="16" fill="#0d3a22" opacity=".5"/><rect x="6" y="15" width="20" height="4" fill="#0d3a22" opacity=".5"/>'] };
+  const SYM = {
+    gun: '<circle cx="16" cy="16" r="9" fill="none" stroke="#ff6b6b" stroke-width="2"/><line x1="16" y1="4" x2="16" y2="11" stroke="#ff6b6b" stroke-width="2"/><line x1="16" y1="21" x2="16" y2="28" stroke="#ff6b6b" stroke-width="2"/><line x1="4" y1="16" x2="11" y2="16" stroke="#ff6b6b" stroke-width="2"/><line x1="21" y1="16" x2="28" y2="16" stroke="#ff6b6b" stroke-width="2"/><circle cx="16" cy="16" r="2" fill="#ff6b6b"/>',
+    mortar: '<path d="M5 25 Q16 2 27 25" fill="none" stroke="#ffbe63" stroke-width="2.4" stroke-dasharray="3 3"/><circle cx="27" cy="25" r="3.4" fill="#ff6b6b"/>',
+    tower: '<circle cx="16" cy="16" r="7" fill="none" stroke="#8dffbe" stroke-width="2.4"/><circle cx="16" cy="16" r="2.4" fill="#8dffbe"/><path d="M16 5 A11 11 0 0 1 27 16" fill="none" stroke="#8dffbe" stroke-width="2" opacity=".6"/>',
+    bulb: '<circle cx="16" cy="13" r="8" fill="#ffe27a"/><rect x="12" y="20" width="8" height="5" rx="1" fill="#c9a33d"/><line x1="16" y1="1" x2="16" y2="5" stroke="#ffe27a" stroke-width="2"/><line x1="3" y1="13" x2="7" y2="13" stroke="#ffe27a" stroke-width="2"/><line x1="25" y1="13" x2="29" y2="13" stroke="#ffe27a" stroke-width="2"/>',
+    wall: '<rect x="5" y="8" width="22" height="16" fill="#b8b0a0"/><path d="M5 16 H27 M16 8 V16 M11 16 V24 M21 16 V24 M11 8 V16 M21 8 V16" stroke="#5a5348" stroke-width="1.6"/>',
+    fence: '<path d="M6 22 L26 22 M6 14 L26 14" stroke="#9aa0a8" stroke-width="2"/><path d="M8 10 L8 26 M16 10 L16 26 M24 10 L24 26" stroke="#6a5a3a" stroke-width="2.4"/><path d="M6 14 L12 22 M14 14 L20 22 M22 14 L26 20" stroke="#dfe6ea" stroke-width="1.2"/>',
+    gate: '<rect x="5" y="9" width="4" height="16" fill="#6a5a3a"/><rect x="23" y="9" width="4" height="16" fill="#6a5a3a"/><rect x="9" y="11" width="14" height="4" fill="#c9a33d"/><path d="M11 25 L11 17 M21 25 L21 17" stroke="#c9cf8a" stroke-width="2"/>',
+    trap: [8,13,18,23].map(x=>'<path d="M'+x+' 24 L'+(x+2.4)+' 12 L'+(x+4.8)+' 24 Z" fill="#cfd6dd" stroke="#8a929a" stroke-width=".6"/>').join('') + '<line x1="5" y1="24" x2="29" y2="24" stroke="#5a5348" stroke-width="1.6"/>',
+    bunker: '<path d="M4 24 L11 13 H21 L28 24 Z" fill="#4a4e4a"/><path d="M9 24 L14 16 H18 L23 24 Z" fill="#20241c"/><rect x="14" y="20" width="4" height="4" fill="#8dffbe"/>',
+    hq: '<rect x="7" y="13" width="18" height="12" fill="#cdeadd"/><path d="M5 13 L16 5 L27 13 Z" fill="#8dffbe"/><rect x="14" y="18" width="4" height="7" fill="#33482f"/><rect x="9" y="16" width="3" height="3" fill="#33482f"/><rect x="20" y="16" width="3" height="3" fill="#33482f"/>'
+  };
+  const flask = '<path d="M12 4 H20 M14 4 V12 L8 24 Q7 27 10 27 H22 Q25 27 24 24 L18 12 V4" fill="#dff4ff" stroke="#4aa8d8" stroke-width="1.4"/><path d="M11 20 H21 L23 25 H9 Z" fill="#4ad0ff"/><circle class="ico-pulse" cx="14" cy="22" r="1.2" fill="#fff"/>';
+  const gearB = '<circle cx="16" cy="16" r="6" fill="#ffbe63"/><circle cx="16" cy="16" r="2.5" fill="#3a2a10"/>' + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="14.5" y="6" width="3" height="4" fill="#ffbe63" transform="rotate(' + a + ' 16 16)"/>').join('');
+  const crate = '<rect x="6" y="9" width="20" height="16" rx="2" fill="#3ddc84"/><rect x="14" y="9" width="4" height="16" fill="#0d3a22" opacity=".5"/><rect x="6" y="15" width="20" height="4" fill="#0d3a22" opacity=".5"/>';
+  const BADGE = { hq: ['svg', SYM.hq], barracks: ['unit', 'rifleman'], vbay: ['unit', 'abrams'], airbase: ['unit', 'blackhawk'], armory: ['svg', flask], refinery: ['svg', gearB], factory: ['svg', gearB], warehouse: ['svg', crate],
+    turret: ['svg', SYM.gun], mortarpit: ['svg', SYM.mortar], tower: ['svg', SYM.tower], flood: ['svg', SYM.bulb], wall: ['svg', SYM.wall], fence: ['svg', SYM.fence], gate: ['svg', SYM.gate], trap: ['svg', SYM.trap], culvert: ['svg', SYM.bunker] };
   const bd = BADGE[t];
   if (b && b.startsWith('<svg') && bd) {
     const inner = (m) => m.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
@@ -9611,7 +9627,7 @@ function gameOver(reason) {
 
 /* ---------------- selection ---------------- */
 function clearSel() { for (const e of G.sel) e.sel = false; G.sel.length = 0; }
-function setSel(arr) { clearSel(); for (const e of arr) { e.sel = true; G.sel.push(e); } refreshCard(true); }
+function setSel(arr) { clearSel(); for (const e of arr) { e.sel = true; G.sel.push(e); } UI.tab = null; UI.bcat = null; UI.clearMode = false; refreshCard(true); }   // a fresh selection resets the command panel to its root menu
 /* select-all row above the minimap: every unit you own, or just the infantry / ground vehicles / aircraft */
 function selectAllOf(f) {
   const list = G.units.filter(u => !u.dead && !u.inside && isMine(u) && (f === 'all' || (f === 'inf' ? !u.def.veh : f === 'veh' ? (u.def.veh && !u.def.fly) : f === 'eng' ? !!u.def.builder : !!u.def.fly)));
@@ -12965,7 +12981,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b26';
+const BUILD_TAG = 'b27';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
