@@ -7275,11 +7275,18 @@ function updateBuildings(dt) {
     b.armT = Math.max(0, b.armT - dt);
     b.flick += dt * 6;
     if (b.def.searchlight) {
-      // the searchlight probes around the tower in random steps: hold a heading, then swing to a fresh one
-      if (b.beamTo === undefined) { b.beamTo = b.beam; b.beamT = rnd(.6, 2.2); }
-      b.beamT -= dt;
-      if (b.beamT <= 0) { b.beamTo = b.beam + rnd(-1, 1) * rnd(.6, 2.6); b.beamT = rnd(.8, 3.0); }
-      let da = b.beamTo - b.beam; b.beam += da * Math.min(1, dt * 2.2);
+      if (b.beam === undefined) b.beam = rnd(TAU);
+      // lock the beam onto the nearest enemy in the tower's reach; with none in sight it circles the tower
+      const vr = (b.def.vision || 520); let best = null, bd = vr * vr;
+      for (let zi = 0; zi < G.zeds.length; zi++) { const z = G.zeds[zi]; if (z.dead || z.def.struct) continue; const dd = dist2(z.x, z.y, b.x, b.y); if (dd < bd) { bd = dd; best = z; } }
+      if (best) { const ta = angTo(b.x, b.y, best.x, best.y); let da = ta - b.beam; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU; b.beam += da * Math.min(1, dt * 8); b.beamHold = .6; b.beamTgt = best; }
+      else { b.beamTgt = null; b.beamHold = Math.max(0, (b.beamHold || 0) - dt);
+        if (b.beamHold <= 0) { if (b.beamSpd === undefined) { b.beamSpd = .55; b.beamST = 0; }
+          if ((b.beamST -= dt) <= 0) { b.beamSpd = (Math.random() < .3 ? -1 : 1) * rnd(.35, .9); b.beamST = rnd(1.6, 4.2); }   // sweep a full circle at a wandering speed
+          b.beam += b.beamSpd * dt;
+        }
+      }
+      if (b.beam > TAU) b.beam -= TAU; else if (b.beam < 0) b.beam += TAU;
     }
 
     if (!b.done) {
@@ -11197,7 +11204,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     marksman: { furn: col3('#8a7a56'), stock: 'cheek', mag: 5, optic: 'scope', bipod: 1, brake: 1, barrel: .5 },              // DMR, tan furniture, scope
     sniper:   { furn: col3('#4a5a3a'), stock: 'cheek', mag: 3, optic: 'bigscope', bipod: 1, brake: 1, barrel: .6 }            // bolt-action, big scope
   };
-  const TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35);
+  const TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35), LIGHTC = new THREE.Color(1, .96, .82);
   const LASER = col3('#30ff50'), KNEE = col3('#2a2c28'), GLOVE = col3('#2c2a26'), GUNMETAL = col3('#24272b'), GUNDK = col3('#15171a'), TANF = col3('#8a7a56'), SCOPE = col3('#1a1c1e'), LENS = col3('#7fc8ff'), RAIL = col3('#3a3d42');
   const HORSE = col3('#4a3a2a'), HDARK = col3('#2c2118'), HORSE_SEAT = .72 * FS;
   function drawHorse(x, y, z, ang, walk, bard) {
@@ -11488,7 +11495,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       g.add(cyl(.1, .13, .14, POLE, 0, .07, 0, 'y')); g.add(cyl(.035, .055, H, POLE, 0, H * .5, 0, 'y'));
       g.add(cyl(.03, .03, .64, POLE, .32, H - .02, 0, 'x')); g.add(cyl(.03, .03, .22, POLE, .05, H - .13, 0, 'y'));   // arm + gusset
       g.add(box(.32, .1, .19, POLE, .64, H - .02, 0));                                                                  // cobra head
-      const lens = box(.26, .03, .14, matFor('#fff2d0', { emissive: lin('#ffe6b0'), emissiveIntensity: 1.3 }), .64, H - .085, 0); g.add(lens); g.userData.lamp = lens;
+      const lens = box(.26, .03, .14, matFor('#fff2d0', { emissive: lin('#fff0c8'), emissiveIntensity: 2.4 }), .64, H - .085, 0); g.add(lens); g.userData.lamp = lens;
     }
     else if (b.t === 'airbase') {
       const W = w, H = h, TAR = matFor('#5e6166', { map: TEX.road, roughness: .95 });   // the apron is the footprint
@@ -11866,7 +11873,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     CLOUD_U.uTime.value = G.t; CLOUD_U.uCloud.value = day * (.85 + wx * .25); cloudDrift(Math.min(.1, G.dt || .016));
     let n = 0; const dark = 1 - day, cand = [];
     for (let i = 0; i < G.lights.length; i++) { const L = G.lights[i]; cand.push([dist2(L.x, L.y, cxw, cyw), L.x, L.y, (L.z || 8) * K, L.r * K * 2.2, L.c, L.i * 3]); }
-    if (dark > .08) for (const b of G.builds) if (!b.dead && b.done && b.lr) cand.push([dist2(b.x, b.y, cxw, cyw), b.x, b.y, .9, b.lr * K * 1.4, b.def.lamp ? [255, 226, 160] : [255, 204, 140], dark * 1.6]);
+    if (dark > .08) for (const b of G.builds) if (!b.dead && b.done && b.lr) cand.push([dist2(b.x, b.y, cxw, cyw), b.x, b.y, .9, b.lr * K * (b.def.lamp ? 2.1 : 1.4), b.def.lamp ? [255, 232, 176] : [255, 204, 140], dark * (b.def.lamp ? 3.1 : 1.6)]);   // floodlights burn much brighter and reach further
     cand.sort((a, b) => a[0] - b[0]);
     for (const L of cand) { if (n >= LIGHTS.length) break; const Pl = LIGHTS[n++]; Pl.position.set(L[1] * K, groundY(L[1], L[2]) + L[3], L[2] * K); Pl.distance = L[4]; Pl.color.setRGB(L[5][0] / 255, L[5][1] / 255, L[5][2] / 255); Pl.intensity = L[6]; }
     for (; n < LIGHTS.length; n++) LIGHTS[n].intensity = 0;
@@ -12123,6 +12130,15 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         // muzzle flash at each rifle when it fires
         if (b.fxA > 0) bb(partsAdd, ax + Math.cos(aimA) * .55, py + .42, az + Math.sin(aimA) * .55, .3, 1, .92, .6, b.fxA * 9);
         if (b.fxB > 0) bb(partsAdd, bx + Math.cos(aimB) * .55, py + .42, bz + Math.sin(aimB) * .55, .3, 1, .92, .6, b.fxB * 9);
+        // sweeping searchlight: a really WIDE beam thrown from the platform along b.beam — circles the tower, snaps to an enemy
+        if (b.beam !== undefined) {
+          const fa = b.beam, ca = Math.cos(fa), sa = Math.sin(fa), dk = .5 + (1 - dayNow) * .9;
+          const L = ((b.def.vision || 520) * .7) * K, W = L * .95;                                  // long reach, very wide fan
+          const mx2 = g.position.x + ca * L * .5, mz2 = g.position.z + sa * L * .5;
+          put(P.beam, mx2, groundY(mx2 / K, mz2 / K) + .07, mz2, -HPI, -fa, 0, L, W * dk, 1, LIGHTC);   // wide ground fan
+          bb(partsAdd, g.position.x + ca * .3, py + .3, g.position.z + sa * .3, .5 * dk, 1, .95, .78, .9);   // the lamp itself glowing on the platform
+          bb(partsAdd, (mx2 + ca * L * .35), groundY((mx2 + ca * L * .35) / K, (mz2 + sa * L * .35) / K) + .1, (mz2 + sa * L * .35), W * .5 * dk, 1, .95, .8, .35 * dk);   // a soft pool of light at the beam's reach
+        }
       }
       if (g.userData.range && b.done) {                                          // research lab: five technicians test-fire on the range north of the building, each on their own rhythm
         const R = g.userData.range, sy = g.position.y, bs = g.userData.bs || 1, M = MODEL.marksman || MODEL.rifleman; const S = M ? M.S : {};
@@ -12195,7 +12211,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         } else if (u.flash) {                                                          // shoulder flashlight: a narrow beam thrown on the ground the way the trooper is facing
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 5.5, dk = .45 + (1 - dayNow) * .55;
           const bx2 = x + ca * .18, bz2 = z + sa * .18;
-          put(P.beam, bx2 + ca * L * .5, groundY((bx2 + ca * L * .5) / K, (bz2 + sa * L * .5) / K) + .05, bz2 + sa * L * .5, -HPI, -fa, 0, L, L * .4 * dk, 1, WHITE);
+          put(P.beam, bx2 + ca * L * .5, groundY((bx2 + ca * L * .5) / K, (bz2 + sa * L * .5) / K) + .05, bz2 + sa * L * .5, -HPI, -fa, 0, L, L * .52 * dk, 1, WHITE);
           bb(partsAdd, x + ca * .25, gy + .5, z + sa * .25, .18 * dk, 1, .96, .82, .85);            // muzzle-lamp glow at the barrel
         }
         if (u.sel) put(P.sel, x, gy + .04, z, -HPI, 0, 0, .5, .5, 1);
@@ -12943,7 +12959,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b23';
+const BUILD_TAG = 'b24';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
