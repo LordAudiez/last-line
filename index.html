@@ -12240,30 +12240,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const pit = Math.atan2(y1 - y0, L - .3), len = Math.hypot(L - .3, y1 - y0);
           put(P.tracer, (x0 + x1) * .5, (y0 + y1) * .5, (z0 + z1) * .5, 0, -fa, pit, len, .012, .012, LASER);
           bb(partsAdd, x1, y1 + .02, z1, .14 * dk, .3, 1, .35, .95); bb(partsAdd, x0, y0, z0, .07, .3, 1, .35, .8);
-        } else if (u.flash && G.flashOn !== false) {                                                          // modern tactical flashlight: a crisp LED beam that OBJECTS BLOCK, casting a shadow behind them
-          const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 5.8, dk = .45 + (1 - dayNow) * .55, Lw = L / K;
-          const bx2 = x + ca * .18, bz2 = z + sa * .18;
-          // occlusion: find the nearest thing standing in the beam (an enemy, a wall, a building) and stop the light there
-          let blk = Lw, blkR = 0;
-          for (let zi = 0; zi < G.zeds.length; zi++) { const zz = G.zeds[zi]; if (zz.dead) continue; const dx = zz.x - u.x, dy = zz.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca); const hw = 10 + t * .3; if (pp < zz.r + hw * .4) { blk = t; blkR = zz.r; } }
-          for (let bi = 0; bi < G.builds.length; bi++) { const bb2 = G.builds[bi]; if (bb2.dead || bb2.def.flat) continue; const dx = bb2.x - u.x, dy = bb2.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca), br = Math.max(bb2.w, bb2.h) * TS * .5; if (pp < br) { blk = t; blkR = br; } }
-          const Le = Math.min(L, blk * K + .1), midx = bx2 + ca * Le * .5, midz = bz2 + sa * Le * .5, gyl = groundY(midx / K, midz / K) + .05;
-          const ex2 = bx2 + ca * Le, ez2 = bz2 + sa * Le, gye = groundY(ex2 / K, ez2 / K);   // where the beam lands
-          // a warm floodlight-quality beam: the same amber light as a floodlight, shaped as a soft directional cone (low contrast — no harsh hot line)
-          put(P.beam, midx, gyl, midz, -HPI, -fa, 0, Le * 1.05, Le * .32 * dk, 1, FLOODD);      // dim warm cone body
-          put(P.beam, midx, gyl + .01, midz, -HPI, -fa, 0, Le, Le * .14 * dk, 1, FLOODC);        // gentle warm core down the middle
-          if (blk >= Lw) {                                                                          // nothing blocks it → a soft warm pool of floodlight where the beam lands
-            put(P.beam, ex2, gye + .04, ez2, -HPI, 0, 0, .95 * dk, .95 * dk, 1, FLOODD);          // warm floodlight ground pool
-            bb(partsAdd, ex2, gye + .05, ez2, .34 * dk, 1, .95, .8, .28 * dk);                    // soft centre of the pool
-          }
-          else {                                                                                                            // something blocks the beam → a soft shadow cast on the ground behind it
-            const ex = u.x + ca * blk, ey = u.y + sa * blk, sl = (Lw - blk);
-            for (let s4 = 1; s4 <= 3; s4++) { const t4 = s4 / 3, sx = (ex + ca * sl * t4) * K, sz = (ey + sa * sl * t4) * K, r4 = (blkR * K + .06) * (1 + t4 * .5);
-              put(P.shadow, sx, groundY(sx / K, sz / K) + .04, sz, -HPI, 0, 0, r4, r4 * .8, 1); }
-          }
-          // soft glow in the air where the beam passes through smoke/dust
-          for (let s3 = 1; s3 <= 3; s3++) { const t3 = s3 / 3.5, hx = x + ca * Le * t3, hz = z + sa * Le * t3, sm = smokeDensity(hx / K, hz / K);
-            if (sm > .12) bb(partsAdd, hx, gy + .4 - t3 * .1, hz, (.14 + t3 * .28) * sm, 1, .96, .82, .3 * sm * dk); }
+        } else if (u.flash && G.flashOn !== false) {                                                          // tactical flashlight: throws a normal ROUND pool of warm light ahead of the soldier (no beam) — objects block it short
+          const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 5.0, dk = .45 + (1 - dayNow) * .55, Lw = L / K;
+          // occlusion: a body or wall standing ahead stops the light short
+          let blk = Lw;
+          for (let zi = 0; zi < G.zeds.length; zi++) { const zz = G.zeds[zi]; if (zz.dead) continue; const dx = zz.x - u.x, dy = zz.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca); const hw = 10 + t * .3; if (pp < zz.r + hw * .4) blk = t; }
+          for (let bi = 0; bi < G.builds.length; bi++) { const bb2 = G.builds[bi]; if (bb2.dead || bb2.def.flat) continue; const dx = bb2.x - u.x, dy = bb2.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca), br = Math.max(bb2.w, bb2.h) * TS * .5; if (pp < br) blk = t; }
+          const Le = Math.min(L, blk * K + .1), ex2 = x + ca * Le, ez2 = z + sa * Le, gye = groundY(ex2 / K, ez2 / K);
+          const R = Le * .5;                                                                       // pool radius grows with how far the light reaches
+          put(P.pool, ex2, gye + .05, ez2, -HPI, 0, 0, R * 2.1, R * 2.1, 1, FLOODD);              // broad soft warm round spread
+          put(P.pool, ex2, gye + .06, ez2, -HPI, 0, 0, R * 1.15, R * 1.15, 1, FLOODC);            // warmer centre
+          bb(partsAdd, ex2, gye + .09, ez2, R * .5 * dk, 1, .95, .8, .3 * dk);                    // soft centre glow
         }
         if (u.sel) put(P.sel, x, gy + .04, z, -HPI, 0, 0, .5, .5, 1);
       }
@@ -13011,7 +12998,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b33';
+const BUILD_TAG = 'b34';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
