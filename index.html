@@ -7308,6 +7308,11 @@ function updateBuildings(dt) {
         }
       }
       if (b.beam > TAU) b.beam -= TAU; else if (b.beam < 0) b.beam += TAU;
+      if (G.night) {                                                          // the searchlight throws a normal round pool of warm light where it looks (a spread, not a beam)
+        const rr = (b.def.vision || 520) * .5, lx = b.x + Math.cos(b.beam) * rr, ly = b.y + Math.sin(b.beam) * rr;
+        G.lights.push({ x: lx, y: ly, r: 240, c: [255, 232, 176], i: 1.5 });
+        b.lx = lx; b.ly = ly;                                                 // remember the aim point so the renderer can draw the pool at the same spot
+      }
     }
 
     if (!b.done) {
@@ -10584,6 +10589,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   TEX.waterN = mkTex(256, (x, y) => { const h = (dx, dy) => fbm((x + dx) / 18, (y + dy) / 18, 3) * .7 + nz((x + dx) / 4, (y + dy) / 4) * .3; const gx = h(1, 0) - h(-1, 0), gy = h(0, 1) - h(0, -1); return [.5 - gx * 2.2, .5 - gy * 2.2, 1]; });
   TEX.cloud = mkTex(256, (x, y) => gray(fbm(x / 70, y / 70, 4) * .75 + fbm(x / 22 + 9, y / 22, 2) * .25));
   TEX.beam = mkTex(128, (x, y, u, v) => { const lat = Math.abs(v - .5) * 2, hw = .12 + .88 * u; let e = clamp(1 - lat / hw, 0, 1); e = Math.pow(e, .7); const ends = clamp(u / .12, 0, 1) * clamp((1 - u) / .34, 0, 1); const a = e * ends; return [1, .95, .82, a]; }, null, { clamp: 1 });   // defined cone body, feathered edges (no hard border)
+  TEX.pool = mkTex(128, (x, y, u, v) => { const d = Math.hypot(u - .5, v - .5) * 2; const a = Math.pow(clamp(1 - d, 0, 1), 1.5); return [1, .95, .82, a]; }, null, { clamp: 1 });   // soft round pool of light — a normal spread, not a beam
   TEX.waterN.repeat.set(900, 900); TEX.bump.repeat.set(1, 1);
   /* drifting cloud shadows: every lit material samples one scrolling cloud map by world position */
   const CLOUD_U = { uTime: { value: 0 }, uCloud: { value: 0 }, tCloud: { value: TEX.cloud }, uOff: { value: new THREE.Vector2(0, 0) }, uOff2: { value: new THREE.Vector2(0, 0) } };
@@ -10910,7 +10916,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     tracer: pool(BOXG, new THREE.MeshBasicMaterial({ color: 0xffe0a0 }), 800, false),
     sel: pool(new THREE.RingGeometry(.82, 1, 32), new THREE.MeshBasicMaterial({ color: 0x8dffbe, transparent: true, opacity: .85, side: THREE.DoubleSide, depthWrite: false }), 600, false),
     shadow: pool(new THREE.CircleGeometry(1, 14), new THREE.MeshBasicMaterial({ color: 0x101010, transparent: true, opacity: .22, depthWrite: false }), 600, false),
-    beam: pool(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TEX.beam, color: 0xffffff, transparent: true, opacity: .85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), 400, false)
+    beam: pool(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TEX.beam, color: 0xffffff, transparent: true, opacity: .85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), 400, false),
+    pool: pool(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TEX.pool, color: 0xffffff, transparent: true, opacity: .85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), 400, false)
   };
   for (const k in P) { const v = P[k]; for (const im of (Array.isArray(v) ? v : [v])) cloudy(im.material); }
   const DECALG = new THREE.PlaneGeometry(1, 1);
@@ -12153,17 +12160,16 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         // muzzle flash at each rifle when it fires
         if (b.fxA > 0) bb(partsAdd, ax + Math.cos(aimA) * .55, py + .42, az + Math.sin(aimA) * .55, .3, 1, .92, .6, b.fxA * 9);
         if (b.fxB > 0) bb(partsAdd, bx + Math.cos(aimB) * .55, py + .42, bz + Math.sin(aimB) * .55, .3, 1, .92, .6, b.fxB * 9);
-        // sweeping searchlight: the SAME warm cone beam as the infantry flashlight, only much wider — circles the tower, snaps to an enemy
+        // searchlight: a normal ROUND pool of warm floodlight thrown where the tower looks — a spread of light, not a beam
         if (b.beam !== undefined) {
           const fa = b.beam, ca = Math.cos(fa), sa = Math.sin(fa), dk = .5 + (1 - dayNow) * .9;
-          const L = ((b.def.vision || 520) * .7) * K;                                              // long reach
-          const mx2 = g.position.x + ca * L * .5, mz2 = g.position.z + sa * L * .5, gyt = groundY(mx2 / K, mz2 / K);
-          put(P.beam, mx2, gyt + .07, mz2, -HPI, -fa, 0, L * 1.02, L * .5 * dk, 1, FLOODD);        // wide dim warm cone body
-          put(P.beam, mx2, gyt + .08, mz2, -HPI, -fa, 0, L, L * .24 * dk, 1, FLOODC);              // warm core down the middle
+          const lx = (b.lx !== undefined ? b.lx : b.x + ca * (b.def.vision || 520) * .5) * K;
+          const lz = (b.ly !== undefined ? b.ly : b.y + sa * (b.def.vision || 520) * .5) * K;
+          const gyt = groundY(lx / K, lz / K), R = ((b.def.vision || 520) * .5) * K;               // wide, soft radius
+          put(P.pool, lx, gyt + .06, lz, -HPI, 0, 0, R * 2.1, R * 2.1, 1, FLOODD);                 // broad dim warm round spread
+          put(P.pool, lx, gyt + .07, lz, -HPI, 0, 0, R * 1.2, R * 1.2, 1, FLOODC);                 // brighter warm centre
+          bb(partsAdd, lx, gyt + .1, lz, R * .5 * dk, 1, .95, .8, .35 * dk);                       // soft glow at the centre of the pool
           bb(partsAdd, g.position.x + ca * .3, py + .3, g.position.z + sa * .3, .5 * dk, 1, .95, .78, .9);   // the lamp itself glowing on the platform
-          const ex = g.position.x + ca * L, ez = g.position.z + sa * L, gye = groundY(ex / K, ez / K);
-          put(P.beam, ex, gye + .06, ez, -HPI, 0, 0, L * .5 * dk, L * .5 * dk, 1, FLOODD);         // warm floodlight pool where it lands
-          bb(partsAdd, ex, gye + .08, ez, L * .22 * dk, 1, .95, .8, .35 * dk);                     // soft centre of the pool
         }
       }
       if (g.userData.range && b.done) {                                          // research lab: five technicians test-fire on the range north of the building, each on their own rhythm
@@ -13005,7 +13011,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b32';
+const BUILD_TAG = 'b33';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
