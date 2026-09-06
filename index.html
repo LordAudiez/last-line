@@ -4301,15 +4301,25 @@ function applyZedDamage(e, a, srcAng, opts) {
   const M = MODEL[e.t], special = !!e.def.special, wc = opts.wc, loc = e.limbs !== undefined && !opts.trueDmg && (wc === 'rifle' || wc === 'shotgun' || wc === 'vmg');
   if (loc) {
     if (wc === 'shotgun') {
-      if (!special) e.hp = 0;                                                 // a normal zombie is one-shot by buckshot
-      else { e.hp -= a * 1.6; if (Math.random() < .5) severZedPart(e, srcAng, Math.random() < .5 ? 'arm' : 'leg'); }
+      // buckshot: a headshot still drops a normal zombie outright; otherwise it is a control weapon — heavy body damage,
+      // a hard shove that slows the zombie, and a good chance to knock it flat so it has to pick itself back up
+      const r = Math.random();
+      if (r < .2 && !special) e.hp = 0;                                       // headshot → one-shot kill (unchanged)
+      else {
+        e.hp -= special ? a * 1.6 : a * 2.4;
+        if (Math.random() < .5) severZedPart(e, srcAng, Math.random() < .5 ? 'arm' : 'leg');
+        const ka = srcAng + rnd(-.18, .18), kk = special ? 55 : 170;         // knockback along the shot line (brutes barely move)
+        e.kbx = (e.kbx || 0) + Math.cos(ka) * kk; e.kby = (e.kby || 0) + Math.sin(ka) * kk;
+        e.slow = Math.max(e.slow || 0, special ? 1.0 : 2.2); e.hurt = 1;
+        if (!special && e.hp > 0 && Math.random() < .38) { e.down = rnd(1.0, 1.9); e.target = null; }   // knocked off its feet
+      }
     } else if (wc === 'vmg') {
       e.hp -= special ? a * 1.8 : a * 4.5;                                    // vehicle MG shreds a normal zombie in 1–2 rounds
       severZedPart(e, srcAng, Math.random() < .5 ? 'arm' : 'leg');           // and tears a limb off with every hit
     } else {                                                                  // assault rifle: random hit location
       const r = Math.random();
       // torso does at least a set fraction of max HP so a normal zombie always drops in ~3–5 body rounds (a stronger gun still counts for more)
-      const torso = Math.max(a, e.maxHp * (special ? .12 : .24));
+      const torso = Math.max(a, e.maxHp * (special ? .06 : .12));   // guaranteed body damage halved: with 2x HP a normal zombie now takes ~2x body rounds
       if (r < .16) { if (!special) e.hp = 0; else e.hp -= a * 2.5; }         // head — instant on a normal zombie
       else if (r < .66) e.hp -= torso;                                       // torso — takes 3–5 rounds
       else if (r < .84) { e.hp -= a * .35; severZedPart(e, srcAng, 'arm'); } // arm — dismember, disables its attack
@@ -4545,7 +4555,7 @@ function spawnUnit(t, x, y, silent) {
 
 function spawnZed(t, x, y) {
   const d = enemyDef(t);
-  const scale = (1 + G.wave * .035) * ((G.diff && G.diff.hpMul) || 1);   // difficulty scales enemy HP
+  const scale = (1 + G.wave * .035) * ((G.diff && G.diff.hpMul) || 1) * (d.med ? 1 : 2);   // difficulty scales enemy HP; the undead are twice as hard to put down (headshots still drop them)
   const hp = Math.round(d.hp * scale);
   const z = {
     id: G.uid++, kind: 'zed', t, def: d, med: !!d.med, x, y, vx: 0, vy: 0, r: d.r, ang: Math.PI,
@@ -7144,6 +7154,9 @@ function updateZeds(dt) {
     }
     if (z.def.struct) { updateConstruction(z, dtz, near); continue; }      // invader buildings: build progress + mustering
     if (z.def.worker) { updateWorker(z, dtz, near); continue; }            // unarmed levies: walk to the site and build
+    // knocked flat (shotgun): the zombie lies there, incapable, then scrambles back up
+    if (z.down > 0) { z.down -= dtz; z.lunge = 0; z.step = 0; if (z.down <= 0) z.getup = .55; continue; }
+    if (z.getup > 0) z.getup -= dtz;
     if (near && z.moan <= 0) { AU.groan(z.x, z.y); z.moan = rnd(5, 16); }
 
     if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside)) z.target = pickZedTarget(z);
@@ -7154,6 +7167,8 @@ function updateZeds(dt) {
     // a body missing legs does not move like one that still has them: one leg gone → 50%, both gone → a 5% crawl
     const legs = ((z.limbs & 4) ? 1 : 0) + ((z.limbs & 8) ? 1 : 0);
     z.spd = z.def.spd * nightSpd * (legs === 2 ? 1 : legs === 1 ? .5 : .05);
+    if (z.slow > 0) z.spd *= .5;                          // shotgun stagger / mortar concussion: slowed to a crawl
+    if (z.getup > 0) z.spd *= .28;                       // still getting to its feet
     // arms drive the bite: one arm gone → half attack speed, both gone → a feeble 5% cadence and a tenth of the damage
     const arms = ((z.limbs & 1) ? 1 : 0) + ((z.limbs & 2) ? 1 : 0);
     const atkRate = arms === 2 ? 1 : arms === 1 ? 2 : 20, atkDmg = arms >= 1 ? 1 : 0.1;
@@ -12158,7 +12173,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigure(x, gy + HORSE_SEAT, z, zz.ang, 0, S, { kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id }); }
         else if (zz.def.siege) { drawFigure(x, gy, z, zz.ang, zz.step || 0, S, { kind: 'med', mk: 'siege', gun: 'sword', scale: 1.0, limbs: zz.limbs, id: zz.id }); drawRam(x, gy, z, zz.ang, zz.def.r * K); }
         else drawFigure(x, gy, z, zz.ang, zz.step || 0, S, { kind: 'med', mk: zz.def.arrow ? 'archer' : 'infantry', gun: zz.def.arrow ? 'bow' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id });
-      } else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigure(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop }); }
+      } else if (zz.down > 0) { drawFigure(x, gy, z, zz.ang, 0, S, { kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
+      else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigure(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0 }); }
     }
     /* ---- corpses + wrecks ---- */
     const liveW = new Set();
@@ -12886,7 +12902,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b13';
+const BUILD_TAG = 'b14';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
