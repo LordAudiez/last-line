@@ -240,6 +240,96 @@ html,body{width:100%;height:100%;height:100dvh;position:relative;overflow:hidden
 #devbadge{position:absolute;left:12px;top:12px;display:none;font-size:11px;font-weight:800;letter-spacing:2px;
   color:#ffd28a;background:rgba(42,36,23,.9);border:1px solid #6b5620;border-radius:3px;padding:3px 8px;z-index:9}
 
+/* ---- dev panel: responsive + visionOS spawn menu ---- */
+#dev{box-sizing:border-box;max-height:calc(100dvh - 60px);overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:thin;scrollbar-color:rgba(141,255,190,.4) transparent;border-radius:18px}
+#dev::-webkit-scrollbar{width:7px}
+#dev::-webkit-scrollbar-thumb{background:rgba(141,255,190,.35);border-radius:8px}
+.dvbtn,.dvtog,.dvnum{transition:transform .16s cubic-bezier(.22,1,.36,1),border-color .16s ease,box-shadow .16s ease,background .16s ease,color .16s ease}
+.dvbtn:hover,.dvtog:hover{transform:translateY(-1px)}
+.dvbtn:active{transform:translateY(0) scale(.97)}
+.spawnbtn{color:#ffd9a6!important;border-color:#7a5f2a!important;background:linear-gradient(180deg,rgba(58,44,20,.92),rgba(32,24,10,.96))!important;letter-spacing:1.4px}
+.spawnbtn:hover{border-color:#ffbe63!important;color:#fff0cc!important;box-shadow:0 0 20px rgba(255,190,99,.32)}
+.dvview{display:flex;flex-direction:column;gap:6px}
+.dvview.vin{animation:dvIn .3s cubic-bezier(.22,1,.36,1)}
+@keyframes dvIn{from{opacity:0;transform:translateX(12px) scale(.985)}to{opacity:1;transform:none}}
+.spback{color:#9fe0c4!important;text-align:left;letter-spacing:1.4px}
+#dvSpList{display:flex;flex-direction:column;gap:5px}
+.spsec{font-size:9.5px;letter-spacing:2.4px;font-weight:800;text-transform:uppercase;color:#7fa593;
+  padding:6px 3px 2px;opacity:.85}
+.spgrp{border:1px solid rgba(120,150,135,.22);border-radius:12px;overflow:hidden;
+  background:rgba(14,22,19,.5);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:border-color .2s ease}
+.spgrp.open{border-color:rgba(141,255,190,.5);box-shadow:0 6px 20px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.05)}
+.sphead{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:10px 12px;background:transparent;border:0;cursor:pointer;font-family:inherit;font-size:12.5px;
+  font-weight:800;letter-spacing:.6px;color:#d7efe4;transition:background .18s ease,color .18s ease}
+.sphead:hover{background:rgba(141,255,190,.08);color:#eafff4}
+.spchev{font-size:11px;color:#8dffbe;transition:transform .28s cubic-bezier(.22,1,.36,1)}
+.spgrp.open .spchev{transform:rotate(90deg)}
+.spbody{display:flex;flex-direction:column;gap:4px;max-height:0;opacity:0;overflow:hidden;padding:0 8px;
+  transition:max-height .34s cubic-bezier(.22,1,.36,1),opacity .24s ease,padding .3s ease}
+.spgrp.open .spbody{max-height:560px;opacity:1;padding:2px 8px 9px}
+.spitem{text-align:left;padding:8px 11px;border-radius:9px;border:1px solid rgba(90,120,105,.28);
+  background:rgba(10,17,14,.66);color:#cfe6da;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;
+  transition:transform .16s cubic-bezier(.22,1,.36,1),border-color .16s ease,background .16s ease,color .16s ease,box-shadow .16s ease}
+.spitem:hover{transform:translateX(4px);border-color:#8dffbe;color:#eafff4;background:rgba(20,40,30,.8);box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.spitem.sel{border-color:#8dffbe;color:#04120b;background:linear-gradient(180deg,#8dffbe,#2ec46f);box-shadow:0 0 16px rgba(61,220,132,.4)}
+.spfoot{max-height:0;opacity:0;overflow:hidden;display:flex;flex-direction:column;gap:7px;
+  transition:max-height .32s cubic-bezier(.22,1,.36,1),opacity .26s ease,margin .3s ease,padding .3s ease}
+.spfoot.show{max-height:150px;opacity:1;margin-top:8px;padding:10px;border:1px solid rgba(141,255,190,.4);
+  border-radius:12px;background:rgba(14,24,19,.7);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.spfsel{font-size:12px;font-weight:800;letter-spacing:.5px;color:#ffd9a6;text-align:center}
+.spfrow{display:flex;align-items:center;gap:6px}
+.spfrow #spN{flex:1}
+.spawngo{flex:1.4}
+@media (pointer:coarse){
+  #dev{left:8px;top:52px;width:min(300px,88vw);max-height:calc(100dvh - 120px)}
+  #devtoggle{left:8px;top:52px}
+  .sphead{padding:12px 13px;font-size:13.5px}
+  .spitem{padding:11px 12px;font-size:12.5px}
+  .dvbtn{padding:11px 8px}
+  .dvtog{padding:10px 11px}
+}
+@media (pointer:coarse) and (max-width:560px){
+  #dev{width:min(290px,92vw);top:48px;max-height:calc(100dvh - 96px)}
+  #devtoggle{top:48px}
+}
+@media (pointer:coarse) and (orientation:portrait){
+  #dev{top:auto;bottom:calc(var(--cmdh,196px) + 8px);max-height:52dvh}
+  #devtoggle{top:auto;bottom:calc(var(--cmdh,196px) + 8px)}
+}
+
+/* ---------- dev PIN pad (visionOS) ---------- */
+#pinpad{position:absolute;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+  background:rgba(4,7,10,.55);-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);
+  animation:pinFade .28s ease}
+@keyframes pinFade{from{opacity:0}to{opacity:1}}
+.pinbox{pointer-events:auto;width:min(320px,86vw);padding:26px 24px 24px;border-radius:28px;text-align:center;
+  background:linear-gradient(180deg,rgba(24,30,36,.82),rgba(14,19,24,.9));border:1px solid rgba(255,255,255,.14);
+  -webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
+  box-shadow:0 40px 90px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12);
+  animation:pinPop .34s cubic-bezier(.22,1,.36,1)}
+@keyframes pinPop{from{opacity:0;transform:scale(.9) translateY(14px)}to{opacity:1;transform:none}}
+.pinbox.shake{animation:pinShake .42s cubic-bezier(.36,.07,.19,.97)}
+@keyframes pinShake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}
+.pintitle{font-size:13px;letter-spacing:4px;font-weight:800;color:#eaf2ff}
+.pinsub{font-size:11px;letter-spacing:1.4px;color:#8fa0b3;margin-top:4px}
+.pindots{display:flex;gap:13px;justify-content:center;margin:20px 0 6px}
+.pindots i{width:13px;height:13px;border-radius:50%;border:1.5px solid rgba(255,255,255,.4);background:transparent;transition:.18s cubic-bezier(.22,1,.36,1)}
+.pindots i.on{background:#eaf2ff;border-color:#eaf2ff;box-shadow:0 0 12px rgba(255,255,255,.55);transform:scale(1.08)}
+.pinmsg{height:16px;font-size:11.5px;letter-spacing:1px;font-weight:700;margin:6px 0 4px}
+.pinmsg.ok{color:#8dffbe}
+.pinmsg.bad{color:#ff8a7a}
+.pingrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px}
+.pingrid button{aspect-ratio:1;border-radius:50%;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.07);color:#f0f5fb;font-family:inherit;font-size:22px;font-weight:600;cursor:pointer;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  transition:transform .13s cubic-bezier(.22,1,.36,1),background .13s ease,box-shadow .13s ease}
+.pingrid button:hover{background:rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.pingrid button:active{transform:scale(.9);background:rgba(141,255,190,.28)}
+.pingrid .pinx,.pingrid .pinbk{font-size:17px;background:rgba(255,255,255,.03);color:#9fb0c2}
+@media (pointer:coarse){.pinbox{width:min(340px,90vw)}.pingrid button{font-size:24px}}
+
 /* ---------- overlays ---------- */
 #veil{position:absolute;inset:0;pointer-events:none;z-index:6;
   background:radial-gradient(ellipse at center,transparent 76%,rgba(0,0,0,.24) 100%)}
@@ -750,26 +840,43 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   <div id="devbadge">DEV MODE</div>
   <button id="devtoggle" title="Developer panel (`)">⚙</button>
   <div id="dev" class="pan">
-    <div class="dvhead"><span>⚙ Dev Mode</span><span id="dvclose" title="Hide (`)">✕</span></div>
-    <button class="dvbtn wide" id="dvres">+10 000 SUPPLY &amp; SCRAP</button>
-    <div class="dvtog" data-c="pop"><span>Unlimited population</span><i></i></div>
-    <div class="dvtog" data-c="recruit"><span>Instant recruit</span><i></i></div>
-    <div class="dvtog" data-c="build"><span>Instant build</span><i></i></div>
-    <div class="dvtog" data-c="research"><span>Instant research</span><i></i></div>
-    <div class="dvtog" data-c="god"><span>Infinite health (units + buildings)</span><i></i></div>
-    <div class="dvrow"><span class="dvlbl">Invaders</span>
-      <button class="dvbtn" id="dvIvMinus">−</button>
-      <input id="dvIvN" class="dvnum" value="30" inputmode="numeric">
-      <button class="dvbtn" id="dvIvPlus">+</button>
-      <button class="dvbtn" id="dvIvAdd" title="Spawn this many zombies">ADD ▾</button></div>
-    <div id="dvIvMenu"><button class="dvbtn wide" id="dvIvSurround">◎ SPAWN SURROUNDING BASE</button><button class="dvbtn wide" id="dvIvPlace">✛ PLACE ON MAP (click a spot)</button></div>
-    <div class="dvrow"><span class="dvlbl">Time</span>
-      <button class="dvbtn" data-time="day">☀ DAY</button>
-      <button class="dvbtn" data-time="night">☾ NIGHT</button></div>
-    <div class="dvrow"><span class="dvlbl">Wave</span>
-      <button class="dvbtn" data-wave="back" title="Step the counter down and launch that weaker wave now">◀ BACK</button>
-      <button class="dvbtn" data-wave="repeat" title="Launch the wave you just fought again">⟳ REPEAT</button>
-      <button class="dvbtn" data-wave="next" title="Skip the countdown and launch the next wave now">NEXT ▶</button></div>
+    <div class="dvhead"><span id="dvTitle">⚙ Dev Mode</span><span id="dvclose" title="Hide (`)">✕</span></div>
+    <div id="dvMain" class="dvview">
+      <button class="dvbtn wide spawnbtn" id="dvSpawnOpen">✛ SPAWN UNITS ▾</button>
+      <button class="dvbtn wide" id="dvres">+10 000 SUPPLY &amp; SCRAP</button>
+      <div class="dvtog" data-c="pop"><span>Unlimited population</span><i></i></div>
+      <div class="dvtog" data-c="recruit"><span>Instant recruit</span><i></i></div>
+      <div class="dvtog" data-c="build"><span>Instant build</span><i></i></div>
+      <div class="dvtog" data-c="research"><span>Instant research</span><i></i></div>
+      <div class="dvtog" data-c="god"><span>Infinite health (units + buildings)</span><i></i></div>
+      <div class="dvrow"><span class="dvlbl">Invaders</span>
+        <button class="dvbtn" id="dvIvMinus">−</button>
+        <input id="dvIvN" class="dvnum" value="30" inputmode="numeric">
+        <button class="dvbtn" id="dvIvPlus">+</button>
+        <button class="dvbtn" id="dvIvAdd" title="Spawn this many zombies">ADD ▾</button></div>
+      <div id="dvIvMenu"><button class="dvbtn wide" id="dvIvSurround">◎ SPAWN SURROUNDING BASE</button><button class="dvbtn wide" id="dvIvPlace">✛ PLACE ON MAP (click a spot)</button></div>
+      <div class="dvrow"><span class="dvlbl">Time</span>
+        <button class="dvbtn" data-time="day">☀ DAY</button>
+        <button class="dvbtn" data-time="night">☾ NIGHT</button></div>
+      <div class="dvrow"><span class="dvlbl">Wave</span>
+        <button class="dvbtn" data-wave="back" title="Step the counter down and launch that weaker wave now">◀ BACK</button>
+        <button class="dvbtn" data-wave="repeat" title="Launch the wave you just fought again">⟳ REPEAT</button>
+        <button class="dvbtn" data-wave="next" title="Skip the countdown and launch the next wave now">NEXT ▶</button></div>
+      <div class="dvrow"><span class="dvlbl">Weather</span>
+        <button class="dvbtn" data-wx="0" title="Clear skies">☀</button>
+        <button class="dvbtn" data-wx="0.5" title="Rain">🌧</button>
+        <button class="dvbtn" data-wx="1" title="Thunderstorm">⛈</button>
+        <button class="dvbtn" data-wx="auto" title="Back to automatic weather">⟲ AUTO</button></div>
+      <div class="dvrow"><span class="dvlbl">Wind</span>
+        <button class="dvbtn" id="dvWindMinus">−</button>
+        <input id="dvWindN" class="dvnum" value="40" inputmode="numeric" readonly>
+        <button class="dvbtn" id="dvWindPlus">+</button>
+        <button class="dvbtn" id="dvWindDir" title="Wind direction (cycles)">→</button></div>
+    </div>
+    <div id="dvSpawn" class="dvview" style="display:none">
+      <button class="dvbtn wide spback" id="dvSpBack">◀ BACK</button>
+      <div id="dvSpList"></div>
+    </div>
   </div>
   <div id="topbar" class="pan">
     <div class="cell"><span class="ico sup"></span><div><div class="res sup" id="rSup">0</div><div class="lbl">supply</div></div></div>
@@ -849,6 +956,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <div class="sc" style="margin-bottom:10px">Drop in a .wav/.mp3/.ogg to replace any weapon's sound for this session. Short single-shot clips work best.</div>
       <div id="sfxList"></div>
       <div class="rowb" style="margin-top:10px"><button class="mini" id="btnResetSfx">↺ Restore all default sounds</button></div>
+      <div class="rowb" id="devPinRow" style="margin-top:8px;display:none"><button class="mini" id="btnDevPin">Submit ▸</button></div>
       <div class="setmsg" id="sfxMsg"></div>
     </div>
 
@@ -862,6 +970,18 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     </div>
   </div>
 </div>
+<div id="pinpad"><div class="pinbox">
+  <div class="pintitle">ACCESS PIN</div>
+  <div class="pinsub">Marshal clearance required</div>
+  <div class="pindots"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="pinmsg" id="pinMsg"></div>
+  <div class="pingrid">
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <button class="pinx" data-k="x">✕</button><button data-k="0">0</button><button class="pinbk" data-k="b">⌫</button>
+  </div>
+</div></div>
 <div id="over"><h1>OVERRUN</h1><div id="overtxt" style="color:#ffb3a7;font-size:14px;letter-spacing:2px"></div><button id="play2" class="cbtn go" style="margin-top:12px;padding:13px 40px;font-size:15px">RETRY</button></div>
 <div id="menu">
   <div class="mtitle">LAST LINE</div>
@@ -5982,6 +6102,7 @@ function updateAmbient(dt) {
   w.t += dt;
   w.x = 16 + Math.sin(w.t * .13) * 26 + Math.sin(w.t * .41) * 7;
   w.y = -3 + Math.sin(w.t * .21) * 11;
+  if (G.windForce) { const gust = 1 + Math.sin(w.t * .5) * .12 + Math.sin(w.t * 1.7) * .05; w.x = Math.cos(G.windForce.dir) * G.windForce.spd * gust; w.y = Math.sin(G.windForce.dir) * G.windForce.spd * gust; }   // dev: forced wind speed + direction
 
   // expire old grass trample marks (they've fully regrown by now)
   G.grassPruneT -= dt;
@@ -6047,7 +6168,7 @@ function seedWorld(n) {
     if (!p) continue;
     if (dist2(p.x, p.y, bx, by) < 2200 * 2200) continue;    // give the player breathing room
     const r = Math.random();
-    const t = r < .58 ? 'walker' : r < .78 ? 'runner' : r < .9 ? 'spitter' : r < .97 ? 'bloater' : 'brute';
+    const t = r < .58 ? 'walker' : r < .78 ? 'runner' : r < .9 ? 'spitter' : (r < .97 && G.wave > 30) ? 'bloater' : 'brute';   // no blow-up zombies until after wave 30
     const z = spawnZed(t, p.x, p.y);
     z.mode = 'roam';
     made++;
@@ -6113,11 +6234,14 @@ function startWave() {
   if (horde) count = Math.round(count * .5);
   // normal pool: walkers, with runners mixed in from wave 2 (more of them as the waves climb)
   const norm = [['walker', 60], ['runner', w >= 2 ? Math.min(45, 20 + w * .5) : 0]];
-  // special pool: spitters / bloaters / brutes, weighted towards the heavy ones in elite columns
-  const specs = [['spitter', 40], ['bloater', elite ? 60 : 30], ['brute', elite ? 50 : 25]];
+  // special pool: spitters / brutes (bloaters are handled separately — see below)
+  const specs = [['spitter', 40], ['brute', elite ? 50 : 25]];
   const pick = opts => { let ws = 0; for (const o of opts) ws += o[1]; let r = Math.random() * ws; for (const o of opts) { r -= o[1]; if (r <= 0) return o[0]; } return opts[0][0]; };
   const list = [];
-  for (let i = 0; i < count && list.length < 600; i++) list.push(Math.random() < spec ? pick(specs) : pick(norm));
+  for (let i = 0; i < count && list.length < 600; i++) {
+    if (w > 30 && Math.random() < .05) { list.push('bloater'); continue; }   // blow-up zombies: only from wave 31 on, at a 5% rate
+    list.push(Math.random() < spec ? pick(specs) : pick(norm));
+  }
   let gap = clamp(1.6 / Math.sqrt(Math.max(1, list.length)), .03, .3);
   if (horde) {
     // the flood: one full minute of normal zombies at a fixed rate, interleaved with the regular column
@@ -9192,7 +9316,7 @@ function drawSearchlights(g) {
    streak texture scrolled in two parallax layers, the sky darkens and cools,
    drops splash tiny rings on the ground near the camera, and lightning
    throws a full-screen flash with rolling thunder a moment later. */
-const WX = { on: false, k: 0, t: 0, next: 140, flash: 0, thunderT: 0, boltT: 0 };
+const WX = { on: false, k: 0, t: 0, next: 140, flash: 0, thunderT: 0, boltT: 0, forced: null };
 let _rainTex = null;
 function rainTex() {
   if (_rainTex) return _rainTex;
@@ -9212,7 +9336,11 @@ function rainTex() {
 function updateWeather(dt) {
   if (G.mode === undefined) return;
   WX.t += dt;
-  if (!WX.on) {
+  if (WX.forced != null) {                                          // dev override: ease straight to the chosen intensity
+    WX.k += clamp(WX.forced - WX.k, -dt * .6, dt * .6);
+    WX.on = WX.forced > .05;
+    if (WX.on) { WX.boltT -= dt; if (WX.k > .5 && WX.boltT <= 0 && Math.random() < dt * .09) { WX.flash = 1; WX.boltT = rnd(4, 14); WX.thunderT = rnd(.4, 1.6); G.lights.push({ x: CAM.x + CAM.vw / 2, y: CAM.y + CAM.vh / 2, r: 4000, c: [220, 230, 255], i: 1 }); } }
+  } else if (!WX.on) {
     // the sky stays dry for the first week: no storm can start until day 7 or 8 has passed
     if ((G.days || 0) < (G.rainDay || 7)) { WX.t = 0; WX.next = rnd(40, 110); }
     if (WX.t > WX.next) { WX.on = true; WX.t = 0; WX.next = rnd(70, 160); alertMsg('Storm front moving in', ''); }
@@ -9593,7 +9721,7 @@ function drawMinimap() {
 }
 
 /* ============================ UI & INPUT ============================ */
-const UI = { place: null, attackMove: false, ghostTile: null, lastCard: '', hoverTip: null, cardBtns: [], queue: [], moving: null, moveTile: null, spawnPlace: 0 };
+const UI = { place: null, attackMove: false, ghostTile: null, lastCard: '', hoverTip: null, cardBtns: [], queue: [], moving: null, moveTile: null, spawnPlace: 0, spawnDrop: null };
 const IN = { mx: 960, my: 500, hasMouse: false, down: false, rdown: false, dragging: false, dx0: 0, dy0: 0, dragDist: 0, keys: {}, pan: false, panx: 0, pany: 0, lastClick: 0, lastSel: null, miniDrag: false };
 
 const $ = id => document.getElementById(id);
@@ -9673,7 +9801,7 @@ window.applyUIScale = applyUIScale;
 /* ---------------- floating placement Cancel/Confirm (mobile: the rest of the HUD is hidden while placing) ---------------- */
 (function () {
   const cancel = $('pbCancel'), confirm = $('pbConfirm');
-  const doCancel = () => { if (UI.moving && typeof cancelRelocate === 'function') cancelRelocate(); UI.place = null; if (UI.queue) UI.queue.length = 0; UI.spawnPlace = 0; refreshCard(true); AU.ui && AU.ui('no'); };
+  const doCancel = () => { if (UI.moving && typeof cancelRelocate === 'function') cancelRelocate(); if (UI.spawnDrop && typeof cancelSpawnDrop === 'function') cancelSpawnDrop(); UI.place = null; if (UI.queue) UI.queue.length = 0; UI.spawnPlace = 0; refreshCard(true); AU.ui && AU.ui('no'); };
   const doConfirm = () => { if (UI.queue && UI.queue.length && typeof commitQueue === 'function') commitQueue(); else { UI.place = null; refreshCard(true); } };
   const wire = (el, fn) => { if (!el) return; el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false }); el.addEventListener('click', e => { e.stopPropagation(); fn(); }); };
   wire(cancel, doCancel); wire(confirm, doConfirm);
@@ -9737,6 +9865,23 @@ for (const el of document.querySelectorAll('.dvtog')) el.onclick = e => {
 };
 for (const el of document.querySelectorAll('[data-time]')) el.onclick = e => { e.stopPropagation(); devTime(el.dataset.time); };
 for (const el of document.querySelectorAll('[data-wave]')) el.onclick = e => { e.stopPropagation(); devWave(el.dataset.wave); AU.ui('alarm'); };
+/* -------- dev weather + wind -------- */
+for (const el of document.querySelectorAll('[data-wx]')) el.onclick = e => {
+  e.stopPropagation();
+  const v = el.dataset.wx;
+  if (typeof WX !== 'undefined') WX.forced = (v === 'auto') ? null : parseFloat(v);
+  alertMsg('Weather: ' + (v === 'auto' ? 'automatic' : v === '0' ? 'clear' : v === '0.5' ? 'rain' : 'storm'), 'info');
+  AU.ui('ok');
+};
+let dvWindDir = 0; const DV_WDIRS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+function dvApplyWind() {
+  const spd = clamp(parseInt($('dvWindN').value, 10) || 0, 0, 200);
+  G.windForce = spd <= 0 ? null : { spd, dir: dvWindDir / 8 * TAU };
+  alertMsg(spd <= 0 ? 'Wind: calm (automatic)' : 'Wind ' + spd + ' ' + DV_WDIRS[dvWindDir], 'info'); AU.ui('ok');
+}
+if ($('dvWindMinus')) $('dvWindMinus').onclick = e => { e.stopPropagation(); $('dvWindN').value = clamp((parseInt($('dvWindN').value, 10) || 0) - 20, 0, 200); dvApplyWind(); };
+if ($('dvWindPlus')) $('dvWindPlus').onclick = e => { e.stopPropagation(); $('dvWindN').value = clamp((parseInt($('dvWindN').value, 10) || 0) + 20, 0, 200); dvApplyWind(); };
+if ($('dvWindDir')) $('dvWindDir').onclick = e => { e.stopPropagation(); dvWindDir = (dvWindDir + 1) % 8; $('dvWindDir').textContent = DV_WDIRS[dvWindDir]; dvApplyWind(); };
 $('dvclose').onclick = e => { e.stopPropagation(); toggleDevPanel(); };
 $('devtoggle').onclick = e => { e.stopPropagation(); toggleDevPanel(); };
 
@@ -9780,6 +9925,130 @@ $('dvIvPlace').onclick = e => {
   $('dvIvPlace').classList.add('arm');
   alertMsg('Click a spot on the map to drop ' + UI.spawnPlace + ' invaders', 'info'); AU.ui('ok');
 };
+
+/* -------- hierarchical unit spawner (dev cheat) -------- */
+const SP_CATS = [
+  { sec: 'PLAYER UNITS', groups: [
+    { id: 'inf', label: 'Infantry', icon: '🪖', side: 'player', list: ['engineer', 'rifleman', 'gunner', 'rocketeer', 'mortar', 'support', 'medic', 'marksman', 'sniper'] },
+    { id: 'veh', label: 'Vehicle', icon: '🛡️', side: 'player', list: ['humvee', 'stryker', 'abrams'] },
+    { id: 'air', label: 'Air', icon: '🚁', side: 'player', list: ['littlebird1', 'littlebird2', 'blackhawk', 'apache', 'ac130', 'f16'] }
+  ] },
+  { sec: 'ENEMY UNITS', groups: [
+    { id: 'zombie', label: 'Zombie', icon: '🧟', side: 'enemy', list: ['walker', 'runner', 'brute', 'bloater', 'spitter'] },
+    { id: 'medieval', label: 'Medieval', icon: '⚔️', side: 'enemy', list: ['infantry', 'cavalry', 'archer', 'siege', 'worker'] }
+  ] }
+];
+function spName(side, t) { const d = side === 'player' ? UDEF[t] : (ZDEF[t] || MDEF[t]); return (d && d.name) || t; }
+function spIcon(side, t, groupIcon) { const d = side === 'player' ? UDEF[t] : null; return (d && d.g) || groupIcon; }
+let spSel = null;                                                    // { side, t, label } currently chosen
+function buildSpawnMenu() {
+  const wrap = $('dvSpList'); if (!wrap) return;
+  let h = '';
+  for (const cat of SP_CATS) {
+    h += '<div class="spsec">' + cat.sec + '</div>';
+    for (const g of cat.groups) {
+      h += '<div class="spgrp" data-g="' + g.id + '">';
+      h += '<button class="sphead"><span>' + g.icon + ' ' + g.label + '</span><span class="spchev">▸</span></button>';
+      h += '<div class="spbody">';
+      for (const t of g.list) h += '<button class="spitem" data-side="' + g.side + '" data-t="' + t + '">' + spIcon(g.side, t, g.icon) + ' ' + spName(g.side, t) + '</button>';
+      h += '</div></div>';
+    }
+  }
+  h += '<div id="dvSpFoot" class="spfoot"><div class="spfsel" id="spFSel"></div>'
+    + '<div class="spfrow"><button class="dvbtn" id="spMinus">−</button><input id="spN" class="dvnum" value="1" inputmode="numeric"><button class="dvbtn" id="spPlus">+</button>'
+    + '<button class="dvbtn spawnbtn spawngo" id="spGo">SPAWN ▾</button></div></div>';
+  wrap.innerHTML = h;
+  // group accordion — opening one closes the others
+  for (const gh of wrap.querySelectorAll('.sphead')) gh.onclick = e => {
+    e.stopPropagation();
+    const grp = gh.parentElement, wasOpen = grp.classList.contains('open');
+    for (const gg of wrap.querySelectorAll('.spgrp')) gg.classList.remove('open');
+    if (!wasOpen) grp.classList.add('open');
+    AU.ui('ok');
+  };
+  // pick a unit → reveal the number + spawn footer
+  for (const it of wrap.querySelectorAll('.spitem')) it.onclick = e => {
+    e.stopPropagation();
+    for (const o of wrap.querySelectorAll('.spitem')) o.classList.remove('sel');
+    it.classList.add('sel');
+    spSel = { side: it.dataset.side, t: it.dataset.t, label: it.textContent.trim() };
+    $('spFSel').textContent = spSel.label;
+    $('dvSpFoot').classList.add('show');
+    AU.ui('ok');
+  };
+  const spN = () => clamp(parseInt($('spN').value, 10) || 0, 1, 500);
+  const spSet = n => { $('spN').value = clamp(n, 1, 500); };
+  $('spMinus').onclick = e => { e.stopPropagation(); spSet(spN() - (spN() > 20 ? 10 : 1)); };
+  $('spPlus').onclick = e => { e.stopPropagation(); spSet(spN() + (spN() >= 20 ? 10 : 1)); };
+  $('spGo').onclick = e => {
+    e.stopPropagation();
+    if (!spSel) return;
+    UI.spawnDrop = { side: spSel.side, t: spSel.t, n: spN(), label: spSel.label };
+    toggleDevPanel();                                               // tuck the panel away so the map is clear
+    alertMsg('Tap the map to drop ' + UI.spawnDrop.n + '× ' + spSel.label, 'info'); AU.ui('ok');
+  };
+}
+function showDevView(spawn) {
+  const m = $('dvMain'), s = $('dvSpawn'); if (!m || !s) return;
+  if (!s.dataset.built) { buildSpawnMenu(); s.dataset.built = '1'; }
+  m.style.display = spawn ? 'none' : 'flex';
+  s.style.display = spawn ? 'flex' : 'none';
+  s.classList.toggle('vin', spawn); m.classList.toggle('vin', !spawn);
+  $('dvTitle').textContent = spawn ? '✛ Spawn Units' : '⚙ Dev Mode';
+  AU.ui('ok');
+}
+function cancelSpawnDrop() { UI.spawnDrop = null; alertMsg('Spawn cancelled', ''); if (typeof AU !== 'undefined') AU.ui('no'); }
+function spawnDropAt(wx, wy) {
+  const d = UI.spawnDrop; if (!d) return 0;
+  const spread = 24 + d.n * 3.5; let made = 0;
+  for (let i = 0; i < d.n * 5 && made < d.n; i++) {
+    const a = rnd(TAU), r = rnd(0, spread);
+    const p = randomLandPoint(wx + Math.cos(a) * r, wy + Math.sin(a) * r, 0, 60) ||
+      (terrainAt(wx, wy) && !IMPASSABLE(terrainAt(wx, wy)) ? { x: wx + Math.cos(a) * r, y: wy + Math.sin(a) * r } : null);
+    if (!p) continue;
+    const x = clamp(p.x, 40, WW - 40), y = clamp(p.y, 40, WH - 40);
+    if (d.side === 'enemy') { const z = spawnZed(d.t, x, y); z.mode = 'hunt'; }
+    else spawnUnit(d.t, x, y, true);
+    made++;
+  }
+  alertMsg(made + '× ' + d.label + ' dropped here', 'good'); AU.ui(d.side === 'enemy' ? 'alarm' : 'ready');
+  UI.spawnDrop = null;
+  return made;
+}
+if ($('dvSpawnOpen')) $('dvSpawnOpen').onclick = e => { e.stopPropagation(); showDevView(true); };
+if ($('dvSpBack')) $('dvSpBack').onclick = e => { e.stopPropagation(); showDevView(false); };
+
+/* -------- secret dev unlock: drop the SFX slider to its lowest to reveal a Submit → PIN pad (522912) --------
+   Works in any mode, including multiplayer — dev is local to this client only, so it never touches other players. */
+(function initDevPin() {
+  const vol = $('volSfx'), row = $('devPinRow'), pad = $('pinpad'), btn = $('btnDevPin');
+  if (!vol || !row || !pad || !btn) return;
+  const syncRow = () => { row.style.display = (+vol.value === 0) ? 'flex' : 'none'; };
+  vol.addEventListener('input', syncRow); vol.addEventListener('change', syncRow); syncRow();
+  let buf = '';
+  const dots = () => { const ds = pad.querySelectorAll('.pindots i'); ds.forEach((d, i) => d.classList.toggle('on', i < buf.length)); };
+  const openPad = () => { buf = ''; dots(); $('pinMsg').textContent = ''; $('pinMsg').className = 'pinmsg'; pad.style.display = 'flex'; };
+  const closePad = () => { pad.style.display = 'none'; };
+  const key = k => {
+    if (k === 'x') { closePad(); AU.ui('no'); return; }
+    if (k === 'b') { buf = buf.slice(0, -1); dots(); return; }
+    if (buf.length >= 6) return;
+    buf += k; dots(); AU.ui('ok');
+    if (buf.length === 6) {
+      if (buf === '522912') {
+        $('pinMsg').textContent = 'Welcome back, Marshal'; $('pinMsg').className = 'pinmsg ok'; AU.ui('ready');
+        setTimeout(() => { closePad(); const sp = $('settings'); if (sp) sp.classList.remove('show'); openDev(true); alertMsg('Welcome back, Marshal — dev cheats unlocked', 'good'); }, 950);
+      } else {
+        $('pinMsg').textContent = 'Access denied'; $('pinMsg').className = 'pinmsg bad'; AU.ui('no');
+        const box = pad.querySelector('.pinbox'); box.classList.add('shake');
+        setTimeout(() => { buf = ''; dots(); box.classList.remove('shake'); }, 480);
+      }
+    }
+  };
+  for (const b of pad.querySelectorAll('.pingrid button')) b.onclick = e => { e.stopPropagation(); key(b.dataset.k); };
+  pad.addEventListener('mousedown', e => { if (e.target === pad) closePad(); });   // tap the backdrop to dismiss
+  btn.onclick = e => { e.stopPropagation(); openPad(); };
+})();
 
 function gameOver(reason) {
   G.over = true; $('over').style.display = 'flex';
@@ -10423,7 +10692,7 @@ function updateBuildPopup() {
    (CSS is scoped to html.touch, so toggling these classes is a no-op on desktop.) */
 function updateMobileChrome() {
   const root = document.documentElement;
-  const placing = !!(UI.place || UI.moving || UI.spawnPlace || (UI.queue && UI.queue.length));
+  const placing = !!(UI.place || UI.moving || UI.spawnPlace || UI.spawnDrop || (UI.queue && UI.queue.length));
   const selecting = !placing && G.sel && G.sel.length > 0;
   root.classList.toggle('placing', placing);
   root.classList.toggle('u-selected', !!selecting);
@@ -10522,6 +10791,7 @@ cv.addEventListener('mousedown', e => {
   const [x, y] = evPos(e); IN.mx = x; IN.my = y;
   AU.init();
   if (e.button === 0) {
+    if (UI.spawnDrop) { spawnDropAt(s2wx(x, y), s2wy(y, x)); return; }
     if (UI.spawnPlace) {
       const wx = s2wx(x, y), wy = s2wy(y, x);
       const made = ivSpawnAt(wx, wy, UI.spawnPlace, 200);
@@ -10534,6 +10804,7 @@ cv.addEventListener('mousedown', e => {
     if (UI.place) { tryPlace(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
     IN.down = true; IN.dragging = true; IN.dx0 = x; IN.dy0 = y; IN.dragDist = 0;
   } else if (e.button === 2) {
+    if (UI.spawnDrop) { cancelSpawnDrop(); return; }
     if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); alertMsg('Spawn placement cancelled', ''); return; }
     if (UI.moving) { cancelRelocate(); return; }
     if (UI.clearMode) { UI.clearMode = false; refreshCard(true); AU.ui('no'); return; }
@@ -10620,7 +10891,7 @@ window.addEventListener('keydown', e => {
   if (!G.started) return;
 
   if (e.code === 'Space') { focusHQ(); e.preventDefault(); return; }
-  if (k === 'escape') { if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.place = null; UI.tab = null; UI.attackMove = false; refreshCard(true); return; }
+  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.place = null; UI.tab = null; UI.attackMove = false; refreshCard(true); return; }
   if (k === 'enter') { commitQueue(); return; }
   if (k === 'p') { if (G.mp) { alertMsg('No pause in multiplayer', 'info'); return; } setSpeed(G.speed === 0 ? 1 : 0); alertMsg(G.speed === 0 ? 'PAUSED' : 'RESUMED', 'info'); return; }
   const bSel = G.sel.some(x => x.kind === 'build' && !x.dead);
@@ -13204,7 +13475,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b45';
+const BUILD_TAG = 'b48';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -13461,6 +13732,7 @@ function attachFirebaseIfPresent() {
     e.preventDefault(); AU.init(); IN.hasMouse = false;
     if (e.touches.length === 1) {
       const [x, y] = posT(e.touches[0]); IN.mx = x; IN.my = y; sx = x; sy = y; moved = false; startT = performance.now();
+      if (UI.spawnDrop) { mode = 'spawndrop'; return; }
       if (UI.spawnPlace) { mode = 'spawn'; return; }
       if (UI.moving) { mode = 'reloc'; return; }
       if (UI.clearMode) { mode = 'clear'; clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2); return; }
@@ -13508,7 +13780,8 @@ function attachFirebaseIfPresent() {
     e.preventDefault(); clearTimeout(lp);
     UI.wallAnchor = null; UI.wallLast = null;                     // end of a wall drag
     const x = IN.mx, y = IN.my;
-    if (mode === 'spawn') { const made = ivSpawnAt(s2wx(x, y), s2wy(y, x), UI.spawnPlace, 200); alertMsg(made + ' invaders dropped here', 'info'); AU.ui('alarm'); UI.spawnPlace = 0; const dp = $('dvIvPlace'); if (dp) dp.classList.remove('arm'); }
+    if (mode === 'spawndrop') { spawnDropAt(s2wx(x, y), s2wy(y, x)); }
+    else if (mode === 'spawn') { const made = ivSpawnAt(s2wx(x, y), s2wy(y, x), UI.spawnPlace, 200); alertMsg(made + ' invaders dropped here', 'info'); AU.ui('alarm'); UI.spawnPlace = 0; const dp = $('dvIvPlace'); if (dp) dp.classList.remove('arm'); }
     else if (mode === 'reloc') { finishRelocate(s2wx(x, y), s2wy(y, x)); }
     else if (mode === 'place') { /* placed on down/move */ }
     else if (mode === 'box') { if (IN.dragDist > 6) boxSelect(s2wx(IN.dx0, IN.dy0), s2wy(IN.dy0, IN.dx0), s2wx(x, y), s2wy(y, x), false); IN.boxArm = false; updateBoxBtn(); }
