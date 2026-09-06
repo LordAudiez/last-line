@@ -12366,16 +12366,16 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       bb(partsAdd, fx + wob, fgy + .32 * g, fz, .14 * fl, 1, .74, .28, .85 * g);
       bb(partsAdd, fx - wob * .6, fgy + .5 * g, fz, .08 * fl, 1, .93, .6, .6 * g);
       // tents: three olive A-frame ridge tents around the fire — compact, with CLOSED triangular gable ends so they read as solid tents
-      const lenF = 2.9 * g, half = 1.12 * g, ridgeH = 1.64 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half), panelTh = .09 * g;
+      const lenF = 2.32 * g, half = .9 * g, ridgeH = 1.31 * g, phi = Math.atan2(ridgeH, half), slant = Math.hypot(ridgeH, half), panelTh = .09 * g;
       const tents = c.tents || [{ x: c.x, y: c.y - c.r * .7, a: -Math.PI / 2 }];
       for (const tt of tents) {
         const tx = tt.x * K, tz = tt.y * K, tgy = groundY(tt.x, tt.y);
         const th = Math.PI / 2 - (tt.a || 0), cth = Math.cos(th), sth = Math.sin(th);               // yaw so the doorway faces the fire
         const RX = (lx, lz) => tx + lx * cth + lz * sth, RZ = (lx, lz) => tz - lx * sth + lz * cth;   // rotate a local offset into world by Ry(th)
-        // closed triangular gable end-walls (stepped strips), so you can't see straight through the tent
+        // closed SOLID triangular gable end-walls (densely overlapped strips), so you can't see through the tent
         for (const endz of [-1, 1]) {
-          const nS = 5, col = endz < 0 ? FLAP : OLIVE2;                                              // front gable a touch darker (the doorway side)
-          for (let s = 0; s < nS; s++) { const fr = (s + .5) / nS, w = half * (1 - fr) * 2; put(P.box, RX(0, endz * lenF * .5), tgy + ridgeH * fr, RZ(0, endz * lenF * .5), 0, th, 0, w, ridgeH / nS * 1.02, thin, col); }
+          const nS = 10, col = endz < 0 ? FLAP : OLIVE2;                                             // front gable a touch darker (the doorway side)
+          for (let s = 0; s < nS; s++) { const fr = (s + .5) / nS, w = half * (1 - fr) * 2 + .04; put(P.box, RX(0, endz * lenF * .5), tgy + ridgeH * fr, RZ(0, endz * lenF * .5), 0, th, 0, w, ridgeH / nS * 1.9, panelTh * .7, col); }
         }
         put(P.box, RX(half * .5, 0), tgy + ridgeH * .5, RZ(half * .5, 0), 0, th, -phi, slant * 1.05, panelTh, lenF, OLIVE);   // +X roof slope (lit)
         put(P.box, RX(-half * .5, 0), tgy + ridgeH * .5, RZ(-half * .5, 0), 0, th, phi, slant * 1.05, panelTh, lenF, OLIVE2); // -X roof slope (shaded)
@@ -13204,7 +13204,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b44';
+const BUILD_TAG = 'b45';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
