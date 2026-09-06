@@ -10816,9 +10816,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     metal: pool(BOXG, new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.panel, roughness: .32, metalness: .6 }), 3000, true),
     gore: pool(DODG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .35, metalness: .05 }), 3000, false), // meat, stumps
     trunk: pool(new THREE.CylinderGeometry(.06, .1, .6, 7), new THREE.MeshStandardMaterial({ color: lin('#6a4c30'), map: TEX.wood, bumpMap: TEX.wood, bumpScale: .03, roughness: .9 }), 3200, true),
-    canopy: pool(new THREE.IcosahedronGeometry(.42, 0), leafM, 7000, true),
-    cone: pool((() => { const g = new THREE.ConeGeometry(.5, 1, 9); g.translate(0, .5, 0); return g; })(), leafM, 9000, true),        // conifer tier (base at origin, unit height)
-    crown: pool(new THREE.IcosahedronGeometry(.42, 1), leafM, 5000, true),                                                          // rounder deciduous crown
+    canopy: pool(new THREE.IcosahedronGeometry(.42, 0), leafM, 9000, true),
+    cone: pool((() => { const g = new THREE.ConeGeometry(.5, 1, 9); g.translate(0, .5, 0); return g; })(), leafM, 16000, true),        // conifer tier (base at origin, unit height)
+    crown: pool(new THREE.IcosahedronGeometry(.42, 1), leafM, 12000, true),                                                          // rounder deciduous crown
     bush: pool(new THREE.IcosahedronGeometry(.24, 0), leafM, 3000, true),
     rock: pool(DODG, new THREE.MeshStandardMaterial({ color: lin('#f0ece4'), map: TEX.rock, roughness: 1, flatShading: true }), 2500, true),
     barrel: pool(new THREE.CylinderGeometry(.16, .16, .42, 9), new THREE.MeshStandardMaterial({ color: lin('#b03a2a'), map: TEX.panel, metalness: .3, roughness: .5 }), 400, true),
@@ -11921,7 +11921,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         const ps = chunkProps(a, b);
         for (let i = 0; i < ps.length; i++) { const q = ps[i]; if (G.deadProps.has(q.id) || underBuild(q.x, q.y)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
           if (q.s === 'tree') {
-            const sp = hash2(q.id, 13), con = sp < .55, birch = sp >= .62 && sp < .72, dead = sp >= .72 && sp < .77;
+            const sp = hash2(q.id, 13), con = sp < .55, birch = sp >= .62 && sp < .72, dead = false;   // bare snags removed — they read as a missing/glitched model
             if (birch) put(P.birch, x, y + .5 * sc, z, 0, q.a, 0, sc * .8, sc * 1.7, sc * .8, WHITE);
             else if (dead) { put(P.trunk, x, y + .48 * sc, z, .06, q.a, -.05, sc * .95, sc * 1.6, sc * .95, DEADC);                                     // a bare snag with three broken limbs
               for (let k = 0; k < 3; k++) { const an = q.a + k * 2.1 + hash2(q.id, 40 + k) * .8, hh = .55 + k * .18, L = (.5 + hash2(q.id, 50 + k) * .3) * sc, tilt = .9 + hash2(q.id, 60 + k) * .5; put(P.branch, x + Math.cos(an) * Math.sin(tilt) * L * .5, y + hh * sc + Math.cos(tilt) * L * .5, z + Math.sin(an) * Math.sin(tilt) * L * .5, 0, -an, -tilt, 1, L, 1, DEADC); } }
@@ -12886,7 +12886,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b12';
+const BUILD_TAG = 'b13';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
