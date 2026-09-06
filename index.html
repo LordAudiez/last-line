@@ -5924,7 +5924,7 @@ function blockedBy(e, x, y, friendly, heavy) {
 
 /* ==================== TIME, WAVES, AIRDROPS, WEATHER ==================== */
 function updateTime(dt) {
-  G.day += dt / G.dayLen;
+  G.day += dt / G.dayLen * ((G.day < .22 || G.day > .76) ? .5 : 1);   // night runs at half speed, so darkness lasts about twice as long as daylight
   if (G.day >= 1) { G.day -= 1; G.days = (G.days || 0) + 1; if (G.days === (G.rainDay || 7)) alertMsg('Day ' + G.days + ' — the weather is turning; rain is coming', 'info'); }
   const wasNight = G.night;
   G.night = (G.day < .22 || G.day > .76);
@@ -10562,7 +10562,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     (g, s) => { g.fillStyle = 'rgba(126,16,14,1)'; for (let k = 0; k < 26; k++) { const a = Math.random() * 6.3, r = s * (.2 + Math.random() * .3), rr = 1 + Math.random() * 3.5; g.beginPath(); g.ellipse(s / 2 + Math.cos(a) * r, s / 2 + Math.sin(a) * r, rr * 1.6, rr, a, 0, 6.3); g.fill(); } g.fillStyle = 'rgba(110,12,12,.8)'; for (let k = 0; k < 40; k++) { const a = Math.random() * 6.3, r = s * (.3 + Math.random() * .2); g.beginPath(); g.arc(s / 2 + Math.cos(a) * r, s / 2 + Math.sin(a) * r, .6 + Math.random() * 1.6, 0, 6.3); g.fill(); } }, { clamp: 1, srgb: 1 }));
   TEX.waterN = mkTex(256, (x, y) => { const h = (dx, dy) => fbm((x + dx) / 18, (y + dy) / 18, 3) * .7 + nz((x + dx) / 4, (y + dy) / 4) * .3; const gx = h(1, 0) - h(-1, 0), gy = h(0, 1) - h(0, -1); return [.5 - gx * 2.2, .5 - gy * 2.2, 1]; });
   TEX.cloud = mkTex(256, (x, y) => gray(fbm(x / 70, y / 70, 4) * .75 + fbm(x / 22 + 9, y / 22, 2) * .25));
-  TEX.beam = mkTex(128, (x, y, u, v) => { const lat = Math.abs(v - .5) * 2, hw = .12 + .88 * u, e = clamp(1 - (lat - hw * .35) / (hw * .65), 0, 1); const a = e * e * Math.pow(1 - u, .6) * clamp(u * 9 + .15, 0, 1); return [1, .93, .78, a]; }, null, { clamp: 1 });
+  TEX.beam = mkTex(128, (x, y, u, v) => { const lat = Math.abs(v - .5) * 2, hw = .1 + .9 * u; let e = clamp(1 - lat / hw, 0, 1); e = e * e * (3 - 2 * e); const ends = clamp(u / .14, 0, 1) * clamp((1 - u) / .3, 0, 1); const a = e * ends * .85; return [1, .93, .78, a]; }, null, { clamp: 1 });   // soft feathered edges all round, no hard border
   TEX.waterN.repeat.set(900, 900); TEX.bump.repeat.set(1, 1);
   /* drifting cloud shadows: every lit material samples one scrolling cloud map by world position */
   const CLOUD_U = { uTime: { value: 0 }, uCloud: { value: 0 }, tCloud: { value: TEX.cloud }, uOff: { value: new THREE.Vector2(0, 0) }, uOff2: { value: new THREE.Vector2(0, 0) } };
@@ -10974,6 +10974,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
 
   /* ======================= figures ======================= */
   const WHITE = new THREE.Color(1, 1, 1), GREENBLOOD = new THREE.Color(.35, 1.4, .3);
+  // cheap local smoke density (0..1) at a world point — used so a flashlight beam lights up when it hits actual smoke/dust
+  function smokeDensity(wx, wy) { let s2 = 0; const P2 = G.parts; for (let i = 0; i < P2.length; i++) { const q = P2[i]; const k = q.kind; if (k !== 'smoke' && k !== 'dust' && k !== 'fog') continue; const dx = q.x - wx, dy = q.y - wy; if (dx > -34 && dx < 34 && dy > -34 && dy < 34) { const d2 = dx * dx + dy * dy; if (d2 < 1156) s2 += (1 - d2 / 1156) * (q.a || .5); if (s2 > 1.2) break; } } return s2 > 1 ? 1 : s2; }
   const SKIN = col3('#c9a684'), STEEL = col3('#7c838e'), DKSTEEL = col3('#7a8088'), WOOD = col3('#6a4a2a'), BOOT = col3('#2a2622'), BLOOD = col3('#7a0f0f'), GBLOOD = col3('#6db52a'), HAIRS = ['#2a1e14', '#4a3520', '#1a1614', '#6a5030', '#8a8070'].map(col3);
   const REDCROSS = col3('#d92b2b'), GHILLIE = ['#4a5a2e', '#5c6a34', '#6a5a3a', '#3e4a28'].map(col3);
   const FS = .6;                                                     // figures are 60% of the first draft's size
@@ -12213,6 +12215,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const bx2 = x + ca * .18, bz2 = z + sa * .18;
           put(P.beam, bx2 + ca * L * .5, groundY((bx2 + ca * L * .5) / K, (bz2 + sa * L * .5) / K) + .05, bz2 + sa * L * .5, -HPI, -fa, 0, L, L * .52 * dk, 1, WHITE);
           bb(partsAdd, x + ca * .25, gy + .5, z + sa * .25, .18 * dk, 1, .96, .82, .85);            // muzzle-lamp glow at the barrel
+          // the beam catches airborne dust/smoke: a few faint raised additive puffs along it (brighter where smoke actually sits)
+          for (let s3 = 1; s3 <= 3; s3++) { const t3 = s3 / 3.5, hx = x + ca * L * t3, hz = z + sa * L * t3, sm = smokeDensity(hx / K, hz / K);
+            bb(partsAdd, hx, gy + .45 - t3 * .12, hz, (.22 + t3 * .5) * dk * (.5 + sm), 1, .95, .8, (.12 + sm * .5) * dk); }
         }
         if (u.sel) put(P.sel, x, gy + .04, z, -HPI, 0, 0, .5, .5, 1);
       }
@@ -12959,7 +12964,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b24';
+const BUILD_TAG = 'b25';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
