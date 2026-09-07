@@ -6299,8 +6299,8 @@ function updateAmbient(dt) {
 
   if (G.night) {
     // low ground fog + the occasional firefly
-    if (Math.random() < .55)
-      part('fog', px, py, w.x * .18, w.y * .18, rnd(6, 12), rnd(38, 84), 'rgba(150,168,186,1)',
+    if (Math.random() < .055)                                   // ground fog at 10% of its old amount; it is born moving with the wind and keeps following it
+      part('fog', px, py, w.x * .6, w.y * .6, rnd(6, 12), rnd(38, 84), 'rgba(150,168,186,1)',
         { grow: 14, z: rnd(0, 8), drag: 1, wind: 1 });
     else
       part('mote', px, py, rnd(-9, 9), rnd(-9, 9), rnd(2.5, 5), rnd(1.2, 2.1), '#b8ff9a',
@@ -12964,7 +12964,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     hemi.intensity = .018 + day * .62;
     envFade(day);                                                         // night: the sky reflection map goes dark with the sky hemi.color.setRGB(c[0] / 255 * .95, c[1] / 255 * .93, c[2] / 255 * .8).convertSRGBToLinear(); hemi.groundColor.setRGB(.36, .34, .18).convertSRGBToLinear();
     sun.position.set(cxw * K - 40, 70, cyw * K + 30); sun.target.position.set(cxw * K, 0, cyw * K);
-    scene3.fog.near = 60 + day * 40; scene3.fog.far = 200 + day * 80 - wx * 60;
+    { // distance haze at 10% of its old density (the old fully-fogged distance now carries only 10% haze), thinned further as the wind picks up
+      const fn = 60 + day * 40, far0 = 200 + day * 80 - wx * 60, wsp = Math.hypot(G.wind.x, G.wind.y);
+      scene3.fog.near = fn; scene3.fog.far = Math.min(880, fn + (far0 - fn) * 10 * (1 + Math.min(1, wsp / 50) * .5)); }
     CLOUD_U.uTime.value = G.t; CLOUD_U.uCloud.value = day * (.85 + wx * .25); cloudDrift(Math.min(.1, G.dt || .016));
     let n = 0; const dark = 1 - day, cand = [];
     for (let i = 0; i < G.lights.length; i++) { const L = G.lights[i]; cand.push([dist2(L.x, L.y, cxw, cyw), L.x, L.y, (L.z || 8) * K, L.r * K * 2.2, L.c, L.i * 3]); }
@@ -14159,7 +14161,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b72';
+const BUILD_TAG = 'b73';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
