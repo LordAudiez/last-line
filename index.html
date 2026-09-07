@@ -10070,7 +10070,12 @@ if ($('dvSpBack')) $('dvSpBack').onclick = e => { e.stopPropagation(); showDevVi
 (function initDevPin() {
   const vol = $('volSfx'), row = $('devPinRow'), pad = $('pinpad'), btn = $('btnDevPin');
   if (!vol || !row || !pad || !btn) return;
-  const syncRow = () => { row.style.display = (+vol.value === 0) ? 'flex' : 'none'; };
+  let grp = row; while (grp && !grp.classList.contains('grp')) grp = grp.parentElement;   // the collapsible Weapon SFX group the button lives in
+  const syncRow = () => {
+    const on = (+vol.value === 0);
+    row.style.display = on ? 'flex' : 'none';
+    if (on && grp) grp.classList.remove('closed');   // a collapsed group would hide the button via CSS !important — force it open when unlocked
+  };
   vol.addEventListener('input', syncRow); vol.addEventListener('change', syncRow); syncRow();
   let buf = '';
   const dots = () => { const ds = pad.querySelectorAll('.pindots i'); ds.forEach((d, i) => d.classList.toggle('on', i < buf.length)); };
@@ -12567,11 +12572,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           } else if (t === T_FOREST) {                                                           // fallen leaves under the canopy
             for (let k = 0; k < 3; k++) { const wx = (tx + hash2(tx * 6 + k, ty * 2 + k) ) * TS, wy = (ty + hash2(tx * 2 + k, ty * 6 + k)) * TS; put(P.leafLit, wx * K, groundY(wx, wy) + .006, wy * K, 0, hash2(tx + k, ty) * TAU, 0, 1, 1, 1, LITC[(tx + ty + k) & 3]); }
           }
-          if ((t === T_GRASS || t === T_FOREST) && hA < .16) {                                   // a wildflower head or two on a grass stem
-            const wx = (tx + .2 + hB * .6) * TS, wy = (ty + .2 + hC * .6) * TS, y0 = groundY(wx, wy), fl = grassFlat(wx, wy), hgt = .3 * (1 - fl * .8), ph = tt * 2.4 + wx * .02 + wy * .017, sway = wm * (.14 + Math.sin(ph) * .11);
-            put(P.reed, wx * K, y0, wy * K, wdz * sway, 0, -wdx * sway, .8, hgt, .8, REEDC[1]);
-            put(P.flower, wx * K + wdz * sway * hgt, y0 + hgt, wy * K - wdx * sway * hgt, 0, 0, 0, 1, .8, 1, FLOWERC[(tx * 3 + ty) % 5]);
-          }
+          // wildflower heads removed — the bright petal balls read as debris scattered on the grass
         }
         if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;
         for (let k = 0; k < per; k++) {
@@ -13521,7 +13522,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b58';
+const BUILD_TAG = 'b59';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
