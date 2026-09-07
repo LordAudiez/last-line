@@ -12505,7 +12505,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         else for (let t = 0; t < 4; t++) { const fr = t / 3, r = (.92 - fr * .28) * sc, an = t * 2.1 + f.a, off = (t ? .3 : 0) * sc; p = at((.95 + fr * .55) * sc); put(P.crown, p[0] + Math.cos(an) * off, p[1], p[2] + Math.sin(an) * off, 0, ry + an * .2, rz, r, r * .85, r, LEAF[(v + t) % 5]); }
       }
       /* ---- grass blades: they sway on the wind, and lie flat (then slowly stand back up) where troops and vehicles have run through ---- */
-      const gtx0 = Math.max(0, (vx0 / TS) | 0), gtx1 = Math.min(MW - 1, (vx1 / TS) | 0), gty0 = Math.max(0, (vy0 / TS) | 0), gty1 = Math.min(MH - 1, (vy1 / TS) | 0);
+      // grass + ground clutter use a tighter apron than the entity cull: far-edge blades aren't visible and regrow instantly on pan,
+      // so this keeps in-view detail identical while cutting the heaviest render work back for a smoother frame
+      const gmx = CAM.vw * .12, gmy = CAM.vh * .12, gvx0 = CAM.x - gmx, gvx1 = CAM.x + CAM.vw + gmx, gvy0 = CAM.y - gmy, gvy1 = CAM.y + CAM.vh + gmy;
+      const gtx0 = Math.max(0, (gvx0 / TS) | 0), gtx1 = Math.min(MW - 1, (gvx1 / TS) | 0), gty0 = Math.max(0, (gvy0 / TS) | 0), gty1 = Math.min(MH - 1, (gvy1 / TS) | 0);
       const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 2600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
       const per = dense ? QUAL.gd : QUAL.gs;
       const clutter = dense && QUAL.gd >= 5;                                                   // clutter only up close and above 'mobile'
@@ -13477,7 +13480,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b54';
+const BUILD_TAG = 'b55';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
