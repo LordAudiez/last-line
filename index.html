@@ -592,6 +592,13 @@ body:fullscreen #fsbtn,body:-webkit-full-screen #fsbtn{color:#ffd27a}
 #setbtn{position:absolute;top:56px;right:10px;pointer-events:auto;width:42px;height:38px;border:1px solid #2b4339;border-radius:4px;
   background:linear-gradient(180deg,#16261f,#0c1713);color:#a9cdbd;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
 #setbtn:hover{border-color:#8dffbe;color:#eafff4;background:linear-gradient(180deg,#1d3429,#12201a)}
+#uihide{position:absolute;top:100px;right:10px;pointer-events:auto;width:42px;height:38px;border:1px solid #2b4339;border-radius:4px;z-index:61;
+  background:linear-gradient(180deg,#16261f,#0c1713);color:#a9cdbd;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+#uihide:hover{border-color:#8dffbe;color:#eafff4;background:linear-gradient(180deg,#1d3429,#12201a)}
+html.touch #uihide{top:calc(100px + env(safe-area-inset-top,0px))}
+/* hide-all-UI: every HUD element goes, the 3D view stays; only the eye button remains (faded) to bring it back */
+html.uihide #hud > *:not(#uihide),html.uihide #fsbtn,html.uihide #devtoggle,html.uihide #devbadge,html.uihide #dev{display:none!important}
+html.uihide #uihide{opacity:.35}html.uihide #uihide:hover{opacity:1}
 #settings{position:absolute;inset:0;z-index:32;display:none;align-items:center;justify-content:center;background:rgba(6,10,9,.72);backdrop-filter:blur(3px)}
 #settings.show{display:flex}
 #setbox{pointer-events:auto;width:min(560px,94vw);max-height:88vh;overflow-y:auto;padding:20px 22px 22px;
@@ -635,6 +642,7 @@ body:fullscreen #fsbtn,body:-webkit-full-screen #fsbtn{color:#ffd27a}
 #topbar{transform:translateX(-50%) scale(var(--ui));transform-origin:top center}
 #speed{transform:scale(var(--ui));transform-origin:top right}
 #setbtn{transform:scale(var(--ui));transform-origin:top right}
+#uihide{transform:scale(var(--ui));transform-origin:top right}
 #fsbtn{transform:scale(var(--ui));transform-origin:top left}
 #sel{transform:scale(var(--ui));transform-origin:left bottom}
 #mtools{transform:translateY(-50%) scale(var(--ui));transform-origin:right center}
@@ -928,6 +936,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     </span>
   </div>
   <button id="setbtn" title="Settings (Esc)">⚙</button>
+  <button id="uihide" title="Hide all UI (press again to show)">👁</button>
   <button id="hudtog" title="Hide / show the minimap and control panels">▣</button>
   <div id="alerts"></div>
   <div id="hint"></div>
@@ -976,6 +985,12 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgFxFire" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Muzzle &amp; firing dust</span></label>
       <div class="sc" style="margin-top:6px">Mobile: no shadows, 60% render scale, sparse grass. High: full-resolution soft shadows and a dense grass carpet.</div>
       <div class="sc" style="margin-top:6px">Shrink the on-screen controls for more play space (great on phones). HD rendering auto-adjusts under heavy load; press <b>F1</b> to lock it.</div>
+    </div>
+
+    <div class="grp pinned">
+      <h3>Developer</h3>
+      <div class="rowb"><button class="mini" id="btnDevPin2">🔐 Enter dev PIN</button></div>
+      <div class="sc" style="margin-top:6px">Unlocks the cheat menu on this device only — works in every mode, including multiplayer (other players are not affected).</div>
     </div>
 
     <div class="grp">
@@ -10066,6 +10081,15 @@ window.applySmokeOp = applySmokeOp;
   const s = $('smokeOp'); if (s) s.addEventListener('input', () => applySmokeOp((+s.value || 0) / 100));
 })();
 
+/* ---------------- hide all UI (eye button under the settings gear; Ctrl+H too) ---------------- */
+(function () {
+  const b = $('uihide'); if (!b) return;
+  const toggle = () => { const on = document.documentElement.classList.toggle('uihide'); b.title = on ? 'Show UI' : 'Hide all UI (press again to show)'; AU.ui && AU.ui(on ? 'no' : 'ok'); };
+  b.addEventListener('click', e => { e.stopPropagation(); toggle(); });
+  b.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggle(); }, { passive: false });
+  addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); toggle(); } });
+})();
+
 /* ---------------- Super Resolution mode + VSync pacing (Settings › Display) ---------------- */
 (function () {
   const row = $('srRow'); if (row) {
@@ -10373,6 +10397,7 @@ if ($('dvSpBack')) $('dvSpBack').onclick = e => { e.stopPropagation(); showDevVi
   for (const b of pad.querySelectorAll('.pingrid button')) b.onclick = e => { e.stopPropagation(); key(b.dataset.k); };
   pad.addEventListener('mousedown', e => { if (e.target === pad) closePad(); });   // tap the backdrop to dismiss
   btn.onclick = e => { e.stopPropagation(); openPad(); };
+  const btn2 = $('btnDevPin2'); if (btn2) btn2.onclick = e => { e.stopPropagation(); openPad(); };   // the always-visible PIN button in Settings › Developer
 })();
 
 function gameOver(reason) {
@@ -14134,7 +14159,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b71';
+const BUILD_TAG = 'b72';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
