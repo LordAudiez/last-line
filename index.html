@@ -2852,10 +2852,12 @@ const UDEF = {
       // mounts are turret-relative pintles (tur) matching the 3D model: automatic remote weapon station on the −z side, commander's M2 (manned) on the +z cupola;
       // off = pintle → drawn muzzle (px), mz = barrel height in model units, so rounds and flash leave the visible barrel
       { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-12, -17], tur: true, off: 36, mz: 1.55, slew: .0009, sustain: true },   // automatic weapon station (slews a touch faster than a man)
-      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-14.6, 15.5], tur: true, off: 31, mz: 1.46, slew: .0012, sustain: true }
+      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-14.6, 15.5], tur: true, off: 31, mz: 1.46, slew: .0012, sustain: true },
+      // coaxial heavy MG beside the 120mm: fixed in the mantlet, so it points where the main gun points and works the main gun's target
+      { dmg: 14, rng: 24 * 32, cd: .1, spread: .05, spd: 1300, kind: 'bullet', sfx: 'mg', casings: 1, mag: 200, reload: 4.0, mount: [61.8, 9.7], tur: true, off: 0, mz: 1.02, coax: true, sustain: true, pierce: 1, pierceN: 3 }   // 40% slower than the roof guns, hits harder, and each round passes through up to three bodies
     ],
     mgs: [[-6, -9], [-6, 9]],
-    desc: '120mm HE main gun with a five-tile blast, plus a manned .50 on the commander\'s cupola and an automatic remote weapon station beside it, each slewing to its own target. Engages three separate targets at once and crushes whatever it drives over.'
+    desc: '120mm HE main gun with a five-tile blast, plus a coaxial heavy MG beside the main gun (slower-firing, hard-hitting, punches through three bodies), a manned .50 on the commander\'s cupola and an automatic remote weapon station, the last two slewing to their own targets. Engages three separate targets at once and crushes whatever it drives over.'
   }
 };
 
@@ -7462,6 +7464,22 @@ function updateWeapons(u, dt, order) {
       else if (w.mag && u.ammos[0] < w.mag * .4 && u.ammos[1] > 0 && u.cds[0] <= 0) { const near = findEnemy(u.x, u.y, u.def.side.close * 1.15, 0); if (near) { u.reloads[0] = w.reload; AU.reload(u.x, u.y, w.sfx); u.tacRel = 1; continue; } }
     }
     const rng = weapRange(u, w), r2 = rng * rng;
+    if (w.coax) {
+      /* coaxial gun: no search of its own — it is bolted beside the main gun, so it rides the main gun's aim and fires at
+         the main gun's target whenever the turret is laid on it and the target is in the coax's reach */
+      const t0 = u.tgts[0]; u.aims[i] = u.aims[0];
+      if (!t0 || t0.dead) { u.tgts[i] = null; continue; }
+      u.tgts[i] = t0;
+      const d2 = dist2(t0.x, t0.y, u.x, u.y); if (d2 > r2) continue;
+      const want = angTo(u.x, u.y, t0.x, t0.y); let da = want - u.aims[0]; da = Math.atan2(Math.sin(da), Math.cos(da)); if (Math.abs(da) > .12) continue;   // turret not on target yet
+      engaged = true;
+      if (u.cds[i] > 0) continue;
+      if (w.mag && u.ammos[i] <= 0) { u.reloads[i] = w.reload; AU.reload(u.x, u.y, w.sfx); continue; }
+      fire(u, t0, w, muzzleFor(u, i, w));
+      if (w.mag) u.ammos[i]--;
+      u.cds[i] = w.cd;
+      continue;
+    }
     let t = u.tgts[i];
     if (!(t && !t.dead && dist2(t.x, t.y, u.x, u.y) < r2 && taken.indexOf(t) < 0)) {
       const sr2 = i === 0 ? Math.max(rng, sr) : rng;
@@ -7573,7 +7591,7 @@ function fire(src, tgt, wep, muz) {
     G.bullets.push({
       x: m.x, y: m.y, px: m.x, py: m.y, ox: m.x, oy: m.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       dmg, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx,
-      ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0,
+      ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0, pn: wep.pierceN || 0,
       z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0
     });
   }
@@ -8007,7 +8025,11 @@ function updateBullets(dt) {
           if (z.dead) continue; const rr = z.r + 5;
           if (dist2(z.x, z.y, b.x, b.y) < rr * rr) {
             if (!b._hit) b._hit = {};
-            if (!b._hit[z.id]) { b._hit[z.id] = 1; damage(z, b.dmg, b.ang, { wc: b.wc }); fxSpark(b.x, b.y, b.ang + Math.PI, 3, '#ffe0a8'); }
+            if (!b._hit[z.id]) {
+              b._hit[z.id] = 1; b._hn = (b._hn || 0) + 1;
+              if (b.pn && b._hn >= b.pn) { hit = z; break; }                              // limited-penetration round: the last body it can pass stops it (hit handled below)
+              damage(z, b.dmg, b.ang, { wc: b.wc }); fxSpark(b.x, b.y, b.ang + Math.PI, 3, '#ffe0a8');
+            }
           }
         }
       } else {
@@ -12547,7 +12569,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       g.add(box(2.7, .4, 1.5, HULL, -.1, .62, 0)); g.add(box(.95, .34, 1.5, HULL, 1.3, .66, 0, 0, 0, -.45)); g.add(box(.7, .06, 1.3, TRACK, -1.0, .84, 0));
       tur.position.set(-.1, .82, 0);
       tur.add(box(1.5, .42, 1.3, HULL, 0, .21, 0)); tur.add(box(.55, .4, 1.1, HULL, .78, .2, 0, 0, 0, -.5)); tur.add(box(.55, .3, 1.3, SLAT, -.95, .3, 0));   // body, sloped front, bustle rack
-      tur.add(box(.34, .3, .42, HULL, .82, .2, 0)); tur.add(cyl(.065, .075, 2.2, BARREL, 1.85, .24, 0, 'x')); tur.add(cyl(.1, .1, .3, BARREL, 1.45, .24, 0, 'x'));   // bore ends exactly at the sim's 82 px muzzle      // mantlet, gun, bore evacuator
+      tur.add(box(.34, .3, .42, HULL, .82, .2, 0)); tur.add(cyl(.065, .075, 2.2, BARREL, 1.85, .24, 0, 'x')); tur.add(cyl(.1, .1, .3, BARREL, 1.45, .24, 0, 'x')); tur.add(cyl(.022, .022, .55, BARREL, 1.0, .2, .2, 'x')); tur.add(box(.08, .09, .09, TRACK, .96, .2, .2));   // coaxial 7.62 beside the main gun, fixed in the mantlet   // bore ends exactly at the sim's 82 px muzzle      // mantlet, gun, bore evacuator
       tur.add(cyl(.2, .2, .1, HULL, -.3, .47, .32, 'y')); tur.add(cyl(.17, .17, .08, HULL, -.25, .46, -.35, 'y'));                                                     // hatches
       /* the two roof machine guns each ride their own pintle group so they slew independently of the turret (sim: allWeps[1] loader side −z, allWeps[2] commander side +z).
          Commander's cupola: a soldier up in the hatch on an M2 .50 with its ammo can; loader's side: an automatic remote weapon station that slews on its own. */
@@ -14438,7 +14460,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b79';
+const BUILD_TAG = 'b80';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
