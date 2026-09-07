@@ -2849,13 +2849,13 @@ const UDEF = {
     // commander's and loader's .50 cals — each hunts its own target
     weps: [
       // coaxial-style 7.62 machine guns (same weapon family as the Humvee's, cycling faster)
-      // mounts are turret-relative pintles (tur) matching the 3D model: loader's M240 on the −z skate ring, commander's M2 on the +z cupola;
+      // mounts are turret-relative pintles (tur) matching the 3D model: automatic remote weapon station on the −z side, commander's M2 (manned) on the +z cupola;
       // off = pintle → drawn muzzle (px), mz = barrel height in model units, so rounds and flash leave the visible barrel
-      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-12, -17], tur: true, off: 27, mz: 1.43, slew: .0012, sustain: true },
+      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-12, -17], tur: true, off: 36, mz: 1.55, slew: .0009, sustain: true },   // automatic weapon station (slews a touch faster than a man)
       { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-14.6, 15.5], tur: true, off: 31, mz: 1.46, slew: .0012, sustain: true }
     ],
     mgs: [[-6, -9], [-6, 9]],
-    desc: '120mm HE main gun with a five-tile blast, plus a fast-cycling machine gun on each turret hatch. Engages three separate targets at once and crushes whatever it drives over.'
+    desc: '120mm HE main gun with a five-tile blast, plus a manned .50 on the commander\'s cupola and an automatic remote weapon station beside it, each slewing to its own target. Engages three separate targets at once and crushes whatever it drives over.'
   }
 };
 
@@ -12550,14 +12550,20 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       tur.add(box(.34, .3, .42, HULL, .82, .2, 0)); tur.add(cyl(.065, .075, 2.2, BARREL, 1.85, .24, 0, 'x')); tur.add(cyl(.1, .1, .3, BARREL, 1.45, .24, 0, 'x'));   // bore ends exactly at the sim's 82 px muzzle      // mantlet, gun, bore evacuator
       tur.add(cyl(.2, .2, .1, HULL, -.3, .47, .32, 'y')); tur.add(cyl(.17, .17, .08, HULL, -.25, .46, -.35, 'y'));                                                     // hatches
       /* the two roof machine guns each ride their own pintle group so they slew independently of the turret (sim: allWeps[1] loader side −z, allWeps[2] commander side +z).
-         Commander's cupola: a soldier up in the hatch on an M2 .50 with its ammo can; loader's skate ring: a second soldier on an M240 (Mk3: a remote weapon station instead). */
+         Commander's cupola: a soldier up in the hatch on an M2 .50 with its ammo can; loader's side: an automatic remote weapon station that slews on its own. */
       const pintle = (x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); tur.add(p); return p; };
       const cmdMG = pintle(-.3, .47, .32);
       cmdMG.add(cyl(.02, .02, .14, TRACK, 0, .07, 0, 'y')); cmdMG.add(box(.2, .1, .1, TRACK, .06, .16, 0)); cmdMG.add(cyl(.024, .024, .46, BARREL, .42, .17, 0, 'x')); cmdMG.add(cyl(.032, .032, .16, BARREL, .3, .17, 0, 'x'));   // pintle post, receiver, barrel + jacket
       cmdMG.add(box(.12, .1, .07, matFor('#4a5230', PANEL), -.02, .17, .1)); cmdMG.add(box(.16, .02, .06, BARREL, .1, .13, .07));                                                  // ammo can + feed tray
       gunnerFig(cmdMG, -.05, -.09, 0);                                                                                                                                              // the gunner faces where his gun points
       const ldrMG = pintle(-.25, .46, -.35);
-      if (tier < 3) { ldrMG.add(cyl(.018, .018, .12, TRACK, 0, .06, 0, 'y')); ldrMG.add(box(.16, .08, .08, TRACK, .05, .14, 0)); ldrMG.add(cyl(.016, .016, .4, BARREL, .36, .15, 0, 'x')); ldrMG.add(box(.06, .04, .04, TRACK, .34, .11, 0)); gunnerFig(ldrMG, -.05, -.1, 0); }   // M240 on the skate ring + loader
+      /* loader's side: an automatic remote weapon station (CROWS) — a slewing ring, armoured box with the gun, ammo box, sensor head, day/thermal sight */
+      { const RWS = matFor('#3a3f3c', PANEL), RWSD = matFor('#1a1c1e', { metalness: .5, roughness: .4 }), SENSB = matFor('#5ad0ff', { emissive: lin('#3ab0ff'), emissiveIntensity: tier >= 3 ? 1.4 : .9 });
+        ldrMG.add(cyl(.14, .15, .05, RWSD, 0, .025, 0, 'y')); ldrMG.add(cyl(.05, .05, .1, RWSD, 0, .1, 0, 'y'));                                    // slewing ring + pedestal
+        ldrMG.add(box(.26, .2, .22, RWS, .1, .22, 0)); ldrMG.add(box(.1, .1, .12, RWS, -.12, .26, .06));                                          // weapon cradle + ammo box
+        ldrMG.add(cyl(.022, .022, .5, BARREL, .5, .27, -.03, 'x')); ldrMG.add(cyl(.03, .03, .12, BARREL, .32, .27, -.03, 'x'));                      // gun barrel + jacket
+        ldrMG.add(box(.1, .12, .1, RWSD, .1, .38, .07)); ldrMG.add(sph(.035, SENSB, .16, .38, .07)); ldrMG.add(box(.06, .04, .05, RWSD, .12, .3, .1));   // sight head, sensor lens, laser rangefinder
+      }
       g.userData.mgs = [ldrMG, cmdMG];
       for (const s of [-1, 1]) for (let i = 0; i < 3; i++) tur.add(cyl(.03, .03, .1, TRACK, .5 - i * .08, .3, s * (.68 + i * .04), 'x'));                              // smoke launchers
       tur.add(cyl(.008, .008, 1.0, TRACK, -.6, .9, -.5, 'y'));
@@ -12700,7 +12706,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (spr === 'abrams') {
         for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) tur.add(box(.26, .22, .08, ERA, -.55 + i * .36, .2, sd * .68));                       // ERA tiles on the turret cheeks
         tur.add(box(.9, .03, .12, ACC, -.2, .43, -.45));                                                                                           // turret-roof ID stripe
-        if (t3) { for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) g.add(box(.42, .22, .06, ERA, -1.1 + i * .5, .5, sd * 1.09)); const rws = g.userData.mgs[0]; rws.add(cyl(.12, .12, .04, DKM, 0, .04, 0, 'y')); rws.add(box(.22, .24, .22, DKM, .15, .16, 0)); rws.add(cyl(.02, .02, .5, BARREL, .55, .26, 0, 'x')); rws.add(sph(.05, SENS, .3, .34, 0)); tur.add(box(.3, .1, .3, DKM, .2, .5, 0)); }   // TUSK skirts, remote weapon station on the loader's ring (slews on its own), commander's sight
+        if (t3) { for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) g.add(box(.42, .22, .06, ERA, -1.1 + i * .5, .5, sd * 1.09)); g.userData.mgs[0].add(box(.3, .16, .26, ERA, .1, .24, 0)); tur.add(box(.3, .1, .3, DKM, .2, .5, 0)); }   // TUSK skirts, armour plate on the weapon station, commander's sight
       } else if (spr === 'stryker') {
         for (let i = 0; i < 6; i++) for (const sd of [-1, 1]) g.add(box(.36, .3, .05, ERA, -1.15 + i * .42, .75, sd * .78));                      // slat / reactive armour panels along the hull sides
         g.add(box(1.6, .03, .12, ACC, -.3, 1.27, -.55));
@@ -14432,7 +14438,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b78';
+const BUILD_TAG = 'b79';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
