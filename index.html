@@ -6233,7 +6233,9 @@ function phaseBlocked(wx, wy) { const tx = (wx / TS) | 0, ty = (wy / TS) | 0; if
 function blockedBy(e, x, y, friendly, heavy) {
   if (friendly) return;
   const b = buildingAtTile((x / TS) | 0, (y / TS) | 0);
-  if (b && !b.dead && !b.def.flat) { if (!e.target || e.target.dead || e.target.kind !== 'build') e.target = b; }
+  // a zombie marching on a distant structure (the HQ) tears through whatever it bumps into on the way; one already
+  // fighting a unit keeps at the unit
+  if (b && !b.dead && !b.def.flat) { const t = e.target; if (!t || t.dead || (t.kind === 'build' && t !== b)) e.target = b; }
 }
 
 /* ==================== TIME, WAVES, AIRDROPS, WEATHER ==================== */
@@ -6439,7 +6441,7 @@ function startWave() {
     if (w > 30 && Math.random() < .05) { list.push('bloater'); continue; }   // blow-up zombies: only from wave 31 on, at a 5% rate
     list.push(Math.random() < spec ? pick(specs) : pick(norm));
   }
-  let gap = clamp(1.6 / Math.sqrt(Math.max(1, list.length)), .03, .3);
+  let gap = 0;                                              // a regular wave arrives all at once — one body, one direction
   if (horde) {
     // the flood: one full minute of normal zombies at a fixed rate, interleaved with the regular column
     const rate = w > 100 ? 5 : 3, n = rate * HORDE_SPAWN_T;   // pours in for 40 s, then the alarm waits on the last body
@@ -6455,8 +6457,9 @@ function startWave() {
   // every column brings a few levy builders to raise camps in the field
   const nw = Math.min(6, 1 + ((w / 4) | 0)); for (let i = 0; i < nw; i++) list.push('worker');
   G.waveQueue = { list, t: 0, gap };
+  G.waveOrigin = waveOrigin(list.length);                   // every contact of this wave comes from the same spot
   G.waveT = horde ? clamp(120 - w * .4, 90, 120) : clamp(70 - w * 1.1, 34, 70);
-  if (horde) { alertMsg('⚠ HORDE — WAVE ' + w + ': ' + list.length + ' pouring in for ' + HORDE_SPAWN_T + ' seconds', 'bad'); AU.ui('alarm'); G.hordeAlert = true; G.hordeWave = w; G.sirenT = 0; }
+  if (horde) { alertMsg('⚠ HORDE — WAVE ' + w + ': ' + list.length + ' gathering for ' + HORDE_SPAWN_T + ' seconds, then they come together', 'bad'); AU.ui('alarm'); G.hordeAlert = true; G.hordeWave = w; G.sirenT = 0; }
   else if (elite) { alertMsg('☠ ELITE WAVE ' + w + ' — ' + list.length + ' contacts, heavy on brutes and bloaters', 'bad'); AU.ui('alarm'); }
   else { alertMsg('WAVE ' + w + ' — ' + list.length + ' contacts converging on the base', ''); AU.ui('alarm'); }
 }
@@ -6483,8 +6486,9 @@ function hordeEdgePoint(dir) {
 }
 function startHordeEvent(dir) {
   dir = HORDE_DIR_NAME[dir] ? dir : 'N';
-  G.hordeEv = { dir, t: 0, next: 0, n: 0 }; G.hordeAlert = true; G.hordeWave = G.wave; G.peace = false;
-  alertMsg('⚠ HORDE from the ' + HORDE_DIR_NAME[dir] + ' — pouring in for ' + HORDE_SPAWN_T + ' seconds', 'bad'); AU.ui('alarm');
+  const o = hordeEdgePoint(dir); if (!o) { alertMsg('No open ground on that edge', 'info'); return; }
+  G.hordeEv = { dir, t: 0, next: 0, n: 0, origin: { x: o.x, y: o.y, r: TS * 7 } }; G.hordeAlert = true; G.hordeWave = G.wave; G.peace = false;
+  alertMsg('⚠ HORDE from the ' + HORDE_DIR_NAME[dir] + ' — gathering for ' + HORDE_SPAWN_T + ' seconds, then they come together', 'bad'); AU.ui('alarm');
 }
 function stopHordeEvent() {
   G.hordeEv = null; G.hordeAlert = false; G.sirenT = 0; for (const z of G.zeds) z.horde = false;
@@ -6499,11 +6503,11 @@ function updateHordeEvent(dt) {
     const w = Math.max(1, G.wave), per = 1 + Math.min(4, (w / 8) | 0);
     for (let i = 0; i < per; i++) {
       if (G.zeds.length >= MAXZ || h.n >= 260) break;
-      const p = hordeEdgePoint(h.dir); if (!p) break;
+      const p = nearPoint(h.origin, h.origin.r);
       const r = Math.random();
       const t = (w > 30 && r < .05) ? 'bloater' : (w > 50 && r < .18) ? (Math.random() < .5 ? 'spitter' : 'brute') : (w >= 2 && r < .4) ? 'runner' : 'walker';
       const z = spawnZed(t, p.x, p.y); if (!z) continue;
-      z.mode = 'hunt'; z.horde = true; h.n++;
+      z.mode = 'hunt'; z.horde = true; z.assembly = h.origin; h.n++;
     }
   }
 }
@@ -6575,12 +6579,26 @@ function spawnWaveContact(t) {
   const base = hqs.length ? hqs[(Math.random() * hqs.length) | 0] : (G.hq && !G.hq.dead ? G.hq : null);
   const bx = base ? base.x : BASE_X, by = base ? base.y : BASE_Y;
   let p, hunt;
-  if (Math.random() < .68) { p = randomLandPoint(bx, by, 1900, 3400); hunt = true; }
+  const o = G.waveOrigin;
+  if (o) { p = nearPoint(o, o.r); hunt = true; }                                     // the whole wave forms up around its origin and comes on as one
+  else if (Math.random() < .68) { p = randomLandPoint(bx, by, 1900, 3400); hunt = true; }
   else { p = randomLandPoint(); hunt = false; }
   if (!p) return;
   const z = spawnZed(t, p.x, p.y);
   z.mode = hunt ? 'hunt' : 'roam';
+  if (o && G.hordeAlert && G.wave === G.hordeWave) z.assembly = o;                  // a horde wave waits at its origin for the last body before it moves
   return z;
+}
+/* where this wave comes from: one spot on open land 60-105 tiles from a player's post (co-op: a random player's), with a
+   crowd radius that grows with the head-count so a big wave has room to form up */
+function waveOrigin(n) {
+  const hqs = G.builds.filter(b => !b.dead && b.t === 'hq' && b.owner !== 'invader');
+  const base = hqs.length ? hqs[(Math.random() * hqs.length) | 0] : (G.hq && !G.hq.dead ? G.hq : null);
+  const bx = base ? base.x : BASE_X, by = base ? base.y : BASE_Y;
+  let p = randomLandPoint(bx, by, 1900, 3400);
+  for (let a = 0; a < 20 && p && !clearOfBuildings(p.x, p.y, TS * 6); a++) p = randomLandPoint(bx, by, 1900, 3400);
+  if (!p) return null;
+  return { x: p.x, y: p.y, r: TS * (2.5 + Math.sqrt(Math.max(1, n)) * .55) };
 }
 
 /* an edge of the map — invaders march in from the borders of the world */
@@ -7612,11 +7630,33 @@ function pickZedTarget(z) {
     if (d < bd) { bd = d; best = u; }
   }
   if (best) return best;
+  /* no troops in sight: the horde's standing objective is the player's command post — a hunting zombie marches on the
+     nearest HQ from anywhere on the map (anything it bumps into on the way is attacked: see blockedBy). Only a structure
+     right beside it (within 4 tiles of its edge) takes precedence, so a zombie doesn't walk past the wall it's touching.
+     Roaming world zombies still only bother with structures they happen to be next to. */
+  const nb = nearestBuilding(z.x, z.y, 1);
+  if (nb && dist2(nb.x, nb.y, z.x, z.y) < (4 * TS + Math.max(nb.w, nb.h) * TS * .5) ** 2) return nb;
+  if (z.mode === 'hunt' && z.mission !== 'capture') { const hq = nearestHQ(z.x, z.y); if (hq) return hq; }
   const b = nearestBuilding(z.x, z.y, z.mode === 'hunt' ? 40 : 2);
   if (!b) return null;
   const far = dist2(b.x, b.y, z.x, z.y);
   if (z.mode === 'hunt' || far < (R * 2.4) * (R * 2.4)) return b;
   return null;
+}
+function nearestHQ(x, y) {
+  let best = null, bd = Infinity;
+  for (const b of G.builds) { if (b.dead || b.t !== 'hq' || b.owner === 'invader') continue; const d = dist2(b.x, b.y, x, y); if (d < bd) { bd = d; best = b; } }
+  return best;
+}
+/* ---- horde assembly: a horde gathers at its entry point until the last body has arrived, then moves off together ---- */
+function hordeAssembling() {
+  if (G.hordeEv) return G.hordeEv.t < HORDE_SPAWN_T;
+  return !!(G.hordeAlert && G.waveQueue && G.wave === G.hordeWave && G.waveQueue.list.length > 0);
+}
+/* a spawn spot in the crowd around an assembly point: passable ground within `rad` px of it */
+function nearPoint(o, rad) {
+  for (let a = 0; a < 12; a++) { const an = rnd(TAU), r = rnd(0, rad); const x = clamp(o.x + Math.cos(an) * r, TS * 2, WW - TS * 2), y = clamp(o.y + Math.sin(an) * r, TS * 2, WH - TS * 2); if (!IMPASSABLE(terrainAt(x, y)) && !solidAt(x, y, false)) return { x, y }; }
+  return { x: o.x, y: o.y };
 }
 
 function updateZeds(dt) {
@@ -7659,7 +7699,34 @@ function updateZeds(dt) {
     if (z.getup > 0) z.getup -= dtz;
     if (near && z.moan <= 0) { AU.groan(z.x, z.y); z.moan = rnd(5, 16); }
 
+    /* ---- horde assembly: gather at the entry point and mill about until the whole horde has arrived, then advance together.
+       Troops that come within sight are still fought on the spot. */
+    if (z.assembly) {
+      if (!hordeAssembling()) { z.assembly = null; z.target = null; }
+      else {
+        if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
+          const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+          z.target = best;
+        }
+        if (!z.target) {
+          const A = z.assembly;
+          z.wT -= dtz;
+          if (z.wT <= 0 || (z.wx === 0 && z.wy === 0)) { const an = rnd(TAU), r = rnd(0, A.r); z.wx = A.x + Math.cos(an) * r; z.wy = A.y + Math.sin(an) * r; z.wT = rnd(2, 6); }
+          z.spd = z.def.spd * .45 * (z.slow > 0 ? .5 : 1);
+          if (steer(z, dtz, z.wx, z.wy, false, 24)) z.wT = 0;
+          z.bob += dtz * 4; z.lunge = Math.max(0, z.lunge - dtz);
+          if (solidAt(z.x, z.y, false)) unstick(z, false);
+          continue;
+        }
+      }
+    }
     if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside)) z.target = pickZedTarget(z);
+    else if (z.target.kind === 'build' && ((i + G.frame) % 20) === 0) {                 // marching on a structure: troops that come into sight take priority — twice a second, look for one
+      const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
+      for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+      if (best) z.target = best;
+    }
     if (z.target && z.mode === 'roam') z.mode = 'hunt';
     // capture mission fulfilled or void → switch to seek-and-destroy
     if (z.mission === 'capture' && (!z.missionTarget || z.missionTarget.dead || z.missionTarget.owner === 'invader')) z.mission = 'raid';
@@ -10294,7 +10361,7 @@ function dvHordeSync() {
   const on = $('dvHordeOn'), st = $('dvHordeSt'); if (!on || !st) return;
   const h = G.hordeEv, alarm = !!G.hordeAlert;
   on.classList.toggle('live', alarm);
-  if (h) { const left = Math.max(0, HORDE_SPAWN_T - h.t); let n = 0; for (const z of G.zeds) if (!z.dead && z.horde) n++; st.textContent = (left > 0 ? ('from ' + h.dir + ' · ' + Math.ceil(left) + 's') : (n + ' left')); }
+  if (h) { const left = Math.max(0, HORDE_SPAWN_T - h.t); let n = 0; for (const z of G.zeds) if (!z.dead && z.horde) n++; st.textContent = (left > 0 ? ('gathering ' + h.dir + ' · ' + Math.ceil(left) + 's') : (n + ' left')); }
   else st.textContent = alarm ? 'wave horde' : '';
 }
 if ($('dvHordeOn')) $('dvHordeOn').onclick = e => { e.stopPropagation(); const d = $('dvHordeDir'); d.classList.toggle('show'); AU.ui('ok'); };
@@ -13421,7 +13488,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         F.g.position.set(x, .02, z); F.g.rotation.y = -ang; F.forks.position.y = lift; F.load.visible = loaded;
       } if (b.sel) put(P.sel, b.x * K, groundY(b.x, b.y) + .04, b.y * K, -HPI, 0, 0, Math.max(b.w, b.h) * .7, Math.max(b.w, b.h) * .7, 1);
       drawDamageState(b, g.position.x, g.position.y, g.position.z, b.w * .5, b.h * .5, (b.def.hgt || 30) * K * (g.userData.bs || 1));
-      if (G.hordeAlert && b.done && !b.def.flat && !b.def.lamp && b.owner !== 'invader') {     // horde siren: a red rotating beacon on the roof of every building
+      if (G.hordeAlert && b.done && !b.def.flat && !b.def.lamp && b.owner !== 'invader' && (b.def.cat !== 'def' || b.t === 'turret' || b.t === 'tower')) {     // horde siren: a red rotating beacon on every base building; of the defences only the MG nest and watch tower carry one (not walls, fences, gates, pits, traps)
         const bs = g.userData.bs || 1, top = g.position.y + (b.def.hgt || 30) * K * bs + .22, bx0 = g.position.x, bz0 = g.position.z;
         const rot = G.t * 5.2 + b.id * .7, pulse = .55 + .45 * Math.abs(Math.sin(G.t * 5.2 + b.id * .7));
         put(P.box, bx0, top - .12, bz0, 0, 0, 0, .22, .1, .22, SIREN_BASE);                        // housing
@@ -13807,7 +13874,7 @@ function newGame(opts) {
   if (opts.size) setMapSize(opts.size.w, opts.size.h);
   if (opts.seed != null) WSEED = opts.seed;
   G.diff = DIFFS[opts.diff] || DIFFS.normal; G.diffName = opts.diff || 'normal';
-  G.mode = opts.mode || 'defense'; G.villages = []; G.camps = []; G.fieldCamps = []; G.bonus = 0; G.cutscene = null;
+  G.mode = opts.mode || 'defense'; G.villages = []; G.camps = []; G.fieldCamps = []; G.waveOrigin = null; G.bonus = 0; G.cutscene = null;
   G.topples = []; G.fuses = [];
   // the world grid is sized to the map — reallocate it when the size changes
   if (G.gridB.length !== MW * MH) G.gridB = new Int32Array(MW * MH); else G.gridB.fill(0);
@@ -14365,7 +14432,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b76';
+const BUILD_TAG = 'b77';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
