@@ -610,8 +610,8 @@ body:fullscreen #fsbtn,body:-webkit-full-screen #fsbtn{color:#ffd27a}
 #setbox .grp.pinned>*:not(h3){display:revert!important}
 #setbox .grp{transition:background .12s}
 #setbox .grp:not(.closed){background:rgba(14,24,20,.7);border-color:#2f4a3e}
-#setbox #gfxRow button.sx{min-width:0;flex:1 1 0;padding:7px 4px;font-size:12px}
-#setbox #gfxRow button.sx.on{background:linear-gradient(180deg,#1f6b45,#155234);border-color:#8dffbe;color:#eafff3}
+#setbox #gfxRow button.sx,#setbox #srRow button.sx{min-width:0;flex:1 1 0;padding:7px 4px;font-size:12px}
+#setbox #gfxRow button.sx.on,#setbox #srRow button.sx.on{background:linear-gradient(180deg,#1f6b45,#155234);border-color:#8dffbe;color:#eafff3}
 #setbox .rowb{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:4px}
 #setbox button.sx{flex:1;min-width:120px;border:1px solid #2b4339;background:linear-gradient(180deg,#16261f,#0c1713);color:#cdeadd;
   font-family:inherit;font-size:13px;font-weight:600;padding:10px;border-radius:7px;cursor:pointer;transition:.12s}
@@ -694,7 +694,7 @@ html,body{font-family:var(--sans)}
 .sbtn:hover,#selall button:hover,#mzoom button:hover,.cbtn:hover,.segb button:hover,.numb button:hover,#setbox button.sx:hover,#setbox .mini:hover,#setbox label.upl:hover,#placebar button:hover,#setbtn:hover,.dvbtn:hover,.mback:hover{
   background:var(--gl3);border-color:rgba(255,255,255,.28);color:#fff;transform:translateY(-1px) scale(1.03);box-shadow:inset 0 1px 0 var(--hl),0 8px 22px rgba(0,0,0,.35)}
 .sbtn:active,#selall button:active,#mzoom button:active,.cbtn:active,.segb button:active{transform:scale(.94)}
-.sbtn.on,.segb button.on,#setbox #gfxRow button.sx.on{background:linear-gradient(180deg,#a5ffcf,#4fd88c);border-color:transparent;color:#06120c;box-shadow:0 6px 20px rgba(120,255,190,.35),inset 0 1px 0 rgba(255,255,255,.5)}
+.sbtn.on,.segb button.on,#setbox #gfxRow button.sx.on,#setbox #srRow button.sx.on{background:linear-gradient(180deg,#a5ffcf,#4fd88c);border-color:transparent;color:#06120c;box-shadow:0 6px 20px rgba(120,255,190,.35),inset 0 1px 0 rgba(255,255,255,.5)}
 .sbtn.pz.on{background:linear-gradient(180deg,#ffd89a,#f0a63a);color:#1a1004}
 #speed{padding:6px;border-radius:999px;gap:5px}
 #speedbtns{gap:5px}
@@ -14018,7 +14018,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b68';
+const BUILD_TAG = 'b69';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
