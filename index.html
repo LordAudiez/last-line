@@ -6316,7 +6316,7 @@ function updateAmbient(dt) {
 
   if (G.night) {
     // low ground fog + the occasional firefly
-    if (Math.random() < .055)                                   // ground fog at 10% of its old amount; it is born moving with the wind and keeps following it
+    if (Math.random() < .018)                                   // ground fog: just a few wisps now (a third of the old 10%); it is born moving with the wind and keeps following it
       part('fog', px, py, w.x * .6, w.y * .6, rnd(6, 12), rnd(38, 84), 'rgba(150,168,186,1)',
         { grow: 14, z: rnd(0, 8), drag: 1, wind: 1 });
     else
@@ -13245,7 +13245,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     sun.position.set(cxw * K - 40, 70, cyw * K + 30); sun.target.position.set(cxw * K, 0, cyw * K);
     { // distance haze at 10% of its old density (the old fully-fogged distance now carries only 10% haze), thinned further as the wind picks up
       const fn = 60 + day * 40, far0 = 200 + day * 80 - wx * 60, wsp = Math.hypot(G.wind.x, G.wind.y);
-      scene3.fog.near = fn; scene3.fog.far = Math.min(880, fn + (far0 - fn) * 10 * (1 + Math.min(1, wsp / 50) * .5)); }
+      scene3.fog.near = fn; scene3.fog.far = Math.min(1400, fn + (far0 - fn) * 30 * (1 + Math.min(1, wsp / 50) * .5)); }   // only a trace of haze now (a third of the previous 10%)
     CLOUD_U.uTime.value = G.t; CLOUD_U.uCloud.value = day * (.85 + wx * .25); cloudDrift(Math.min(.1, G.dt || .016));
     let n = 0; const dark = 1 - day, cand = [];
     for (let i = 0; i < G.lights.length; i++) { const L = G.lights[i]; cand.push([dist2(L.x, L.y, cxw, cyw), L.x, L.y, (L.z || 8) * K, L.r * K * 2.2, L.c, L.i * 3]); }
@@ -13275,7 +13275,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const drift = t * (3 + h3 * 4), px = (gx + h1) * CELL + ((drift + G.wind.x * t * .12) % CELL + CELL) % CELL - CELL * .5, py = (gy + h2) * CELL + Math.sin(t * .2 + i) * 30;
       if (px < 0 || py < 0 || px >= WW || py >= WH) continue;
       const tl = MAP.t[tileIdx((px / TS) | 0, (py / TS) | 0)]; const wet = (tl === T_SWAMP || WATER(tl)) ? .7 : 0;
-      const a = (mistK + wet) * (.05 + h3 * .05) * (.7 + .3 * Math.sin(t * .5 + i * 1.7)); if (a < .012) continue;
+      const a = (mistK + wet) * (.05 + h3 * .05) * (.7 + .3 * Math.sin(t * .5 + i * 1.7)) * .35; if (a < .012) continue;   // mist wisps thinned to a few
       bb(partsNoise, px * K, groundY(px, py) + .18 + h3 * .25, py * K, 3.5 + h2 * 4.5, .8, .84, .9, a * 1.6, h1);
     }
     // sun motes: pollen and dust hanging in the light on a clear day
@@ -14432,7 +14432,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b77';
+const BUILD_TAG = 'b78';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
