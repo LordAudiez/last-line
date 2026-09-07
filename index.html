@@ -6107,20 +6107,30 @@ function steer(e, dt, tx, ty, friendly, arrive) {
   const phasing = e.phaseT > 0, ghost = e.def && e.def.ghost;
   // desired heading toward the goal, deflected around obstacles
   let ax, ay;
+  // the horde's obstacle deflection and crowd separation change smoothly tick to tick, so a zombie reuses last tick's
+  // vectors on alternate ticks (its position still integrates every tick). Only when last tick's result exists — a
+  // throttled far zombie always recomputes. Friendly units are never staggered.
+  const alt = !friendly && ((G.frame + (e.id | 0)) & 1) === 1 && e._stF === G.frame - 1;
   if (phasing || ghost) { ax = dx / d; ay = dy / d; }
   else if (e._sideT > 0) {                                   // sidestep: hung up on something for 2s → walk mostly left/right to slide off it
     e._sideT -= dt; const s = e._sideSign || 1;
     ax = dx / d * .3 - dy / d * s; ay = dy / d * .3 + dx / d * s;
-  } else [ax, ay] = avoid(e, dt, dx / d, dy / d, friendly);
+  } else if (alt) { ax = e._ax; ay = e._ay; }
+  else { [ax, ay] = avoid(e, dt, dx / d, dy / d, friendly); if (!friendly) { e._ax = ax; e._ay = ay; } }
 
   // separation from same-team neighbours, softened and capped so bodies settle
-  const list = friendly ? G.hUnits.near(e.x, e.y, 46, _q) : G.hZeds.near(e.x, e.y, 40, _q);
-  let sx = 0, sy = 0, n = 0;
-  for (let i = 0; i < list.length; i++) {
-    const o = list[i]; if (o === e || o.dead) continue;
-    const dd = dist2(o.x, o.y, e.x, e.y), rr = (e.r + o.r);
-    if (dd < rr * rr * 2.2 && dd > .01) { const q = Math.sqrt(dd); sx += (e.x - o.x) / q; sy += (e.y - o.y) / q; n++; }
+  let list = _q, sx = 0, sy = 0, n = 0;
+  if (alt) { sx = e._sx; sy = e._sy; n = e._sn; }
+  else {
+    list = friendly ? G.hUnits.near(e.x, e.y, 46, _q) : G.hZeds.near(e.x, e.y, 40, _q);
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i]; if (o === e || o.dead) continue;
+      const dd = dist2(o.x, o.y, e.x, e.y), rr = (e.r + o.r);
+      if (dd < rr * rr * 2.2 && dd > .01) { const q = Math.sqrt(dd); sx += (e.x - o.x) / q; sy += (e.y - o.y) / q; n++; }
+    }
+    if (!friendly) { e._sx = sx; e._sy = sy; e._sn = n; }
   }
+  if (!friendly) e._stF = G.frame;
   if (n && !phasing) {
     // fade the push as we near the goal so a crowd stops instead of jostling
     const w = clamp(d / 60, .15, 1) * (friendly ? .8 : .7);
@@ -7974,6 +7984,7 @@ function updateItems(dt) {
   for (let i = G.texts.length - 1; i >= 0; i--) { const t = G.texts[i]; t.life -= dt; t.y -= dt * 26; if (t.life <= 0) G.texts.splice(i, 1); }
 }
 
+const hStir = new Hash(), _qp = [];
 function updateParticles(dt) {
   const wx = G.wind.x, wy = G.wind.y;
   // things that stir the smoke this frame: moving units/vehicles (their wake) and bullets in flight (their draft).
@@ -7987,23 +7998,29 @@ function updateParticles(dt) {
     for (const z of G.zeds) { if (z.dead || z.def.struct) continue; const sv = (z.vx || 0) * (z.vx || 0) + (z.vy || 0) * (z.vy || 0); if (sv > 900) SMOV.push(z); }   // fast movers (runners) stir it too
     SBUL = G.bullets;
   }
-  for (let i = G.parts.length - 1; i >= 0; i--) {
-    const p = G.parts[i];
+  // movers and bullets that can stir smoke go into a per-frame spatial hash, so each puff only looks at what is actually near it
+  // (was: every puff against every fast mover and every bullet — hundreds of thousands of checks a frame in a big fight)
+  let stir = false;
+  if (SMOV && (SMOV.length || SBUL.length)) { hStir.clear(); for (let m = 0; m < SMOV.length; m++) hStir.add(SMOV[m]); for (let m = 0; m < SBUL.length; m++) { const b = SBUL[m]; if (b.team === 1 || b.team === 2) hStir.add(b); } stir = hStir.m.size > 0; }
+  const dt60 = dt * 60, PARTS = G.parts, n0 = PARTS.length; let w = 0;
+  for (let i = 0; i < n0; i++) {
+    const p = PARTS[i];
     p.life -= dt;
-    if (p.life <= 0) { G.parts.splice(i, 1); continue; }
+    if (p.life <= 0) continue;                                                                    // dropped: the survivors are compacted in place below (no splice)
+    PARTS[w++] = p;
     // smoke/dust reacts to movement through it: a unit's wake drags it along, a bullet's draft streaks it — aerodynamic disturbance
     if (SMOV && (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog')) {
-      for (let m = 0; m < SMOV.length; m++) { const u = SMOV[m], dx = p.x - u.x, dy = p.y - u.y, R = u.r * 2.4 + 22, d2 = dx * dx + dy * dy;
-        if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, push = f * f * (u.def && u.def.veh ? 2.4 : 1.2);
-          p.vx += (u.vx || 0) * push * dt; p.vy += (u.vy || 0) * push * dt;                       // dragged along the direction of travel
-          const sx = -(u.vy || 0), sy = (u.vx || 0); p.vx += sx * f * .3 * dt; p.vy += sy * f * .3 * dt;     // curl to the side (wake swirl)
-          if (f > .3) p.life = Math.min(p.life, .5 + f * .5);                                     // smoke stirred by a passing unit wisps away fast instead of trailing thick behind it
+      if (stir) { const nb = hStir.near(p.x, p.y, 80, _qp);
+        for (let m = 0; m < nb.length; m++) { const u = nb[m], dx = p.x - u.x, dy = p.y - u.y;
+          if (u.def) { const R = u.r * 2.4 + 22, d2 = dx * dx + dy * dy;
+            if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, push = f * f * (u.def.veh ? 2.4 : 1.2);
+              p.vx += (u.vx || 0) * push * dt; p.vy += (u.vy || 0) * push * dt;                   // dragged along the direction of travel
+              const sx = -(u.vy || 0), sy = (u.vx || 0); p.vx += sx * f * .3 * dt; p.vy += sy * f * .3 * dt;   // curl to the side (wake swirl)
+              if (f > .3) p.life = Math.min(p.life, .5 + f * .5);                                 // stirred smoke wisps away instead of trailing thick
+            }
+          } else if (dx > -26 && dx < 26 && dy > -26 && dy < 26) { const d2 = dx * dx + dy * dy; if (d2 < 676) { const bl = Math.hypot(u.vx, u.vy) || 1, f = 1 - Math.sqrt(d2) / 26;
+            p.vx += u.vx / bl * f * 140 * dt; p.vy += u.vy / bl * f * 140 * dt; } }              // punched along the round's path (smoke trace)
         }
-      }
-      for (let m = 0; m < SBUL.length; m++) { const b = SBUL[m]; if (b.team !== 1 && b.team !== 2) continue; const dx = p.x - b.x, dy = p.y - b.y;
-        if (dx > -26 && dx < 26 && dy > -26 && dy < 26) { const d2 = dx * dx + dy * dy; if (d2 < 676) { const bl = Math.hypot(b.vx, b.vy) || 1, f = 1 - Math.sqrt(d2) / 26;
-          p.vx += b.vx / bl * f * 140 * dt; p.vy += b.vy / bl * f * 140 * dt;                      // punched along the round's path (smoke trace)
-        } }
       }
       for (let m = 0; m < SDOWN.length; m++) { const h = SDOWN[m], dx = p.x - h.x, dy = p.y - h.y, R = h.r * 5 + 40, d2 = dx * dx + dy * dy;
         if (d2 < R * R) { const d = Math.sqrt(d2) || 1, f = 1 - d / R, k = (h.landed ? 1 : (0.32 - h.altK) / 0.32);   // strongest on the ground, fading as it climbs
@@ -8012,7 +8029,7 @@ function updateParticles(dt) {
       }
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
-    const dr = Math.pow(p.drag, dt * 60);
+    const dr = dt60 === 1 ? p.drag : Math.pow(p.drag, dt60);
     if (p.wind) {
       // aerodynamic: drag acts on the velocity RELATIVE to the air, so a puff decelerates into the wind stream
       // and is carried along it; light smoke/dust follows the air almost fully, heavier debris only partly
@@ -8045,6 +8062,8 @@ function updateParticles(dt) {
     if (p.grow) p.r += p.grow * dt;
     p.a = p.life / p.max;
   }
+  // compact: survivors already sit in [0, w); anything spawned during this pass (flare trails) sits past n0 and is pulled down
+  const nl = PARTS.length; for (let i = n0; i < nl; i++) PARTS[w++] = PARTS[i]; PARTS.length = w;
 }
 
 /* ==================== CAMP (infantry field camp) ====================
@@ -8201,19 +8220,20 @@ function step(dt) {
   G.lights.length = 0;
   if (!G.flareDecoys) G.flareDecoys = [];
   G.flareDecoys.length = 0;                          // rebuilt by flaring aircraft in updateUnits
-  rebuildHashes();
+  const SP = G.prof ? (n => { const t = performance.now(); (G.stepProf || (G.stepProf = {}))[n] = +(t - G._spT).toFixed(2); G._spT = t; }) : null; if (SP) { G._spT = performance.now(); G.stepProf = {}; }
+  rebuildHashes(); if (SP) SP('hashes');
   updateTime(dt);
-  updateAmbient(dt);
-  assignCoverGroups(dt);
-  updateUnits(dt);
-  deOverlapUnits(dt);
-  updateZeds(dt);
+  updateAmbient(dt); if (SP) SP('time_ambient');
+  assignCoverGroups(dt); if (SP) SP('cover');
+  updateUnits(dt); if (SP) SP('units');
+  deOverlapUnits(dt); if (SP) SP('deoverlap');
+  updateZeds(dt); if (SP) SP('zeds');
   updateBuildings(dt);
-  updateCamps(dt);
-  updateBullets(dt);
+  updateCamps(dt); if (SP) SP('buildings_camps');
+  updateBullets(dt); if (SP) SP('bullets');
   updateItems(dt);
-  updateProps(dt);
-  updateParticles(dt);
+  updateProps(dt); if (SP) SP('items_props');
+  updateParticles(dt); if (SP) SP('particles');
   if (G.mode === 'invaders') updateVillages(dt);
   if (typeof updateWeather === 'function') updateWeather(dt);
   G.shake *= Math.pow(.02, dt);
@@ -11711,10 +11731,27 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   function resetWorld() { for (const m of chunks3.values()) { scene3.remove(m); m.geometry.dispose(); } chunks3.clear(); for (const s of structMeshes.values()) scene3.remove(s); structMeshes.clear(); for (const s of buildMeshes.values()) scene3.remove(s.g); buildMeshes.clear(); for (const s of unitMeshes.values()) scene3.remove(s.g); unitMeshes.clear(); for (const s of wreckMeshes.values()) scene3.remove(s); wreckMeshes.clear(); for (const s of ebMeshes.values()) scene3.remove(s); ebMeshes.clear(); CRAT = null; CRW = null; decalList.length = 0; }
 
   /* ======================= instanced pools ======================= */
-  function pool(geo, material, n, shadow) { const im = new THREE.InstancedMesh(geo, material, n); im.count = 0; im.frustumCulled = false; im.castShadow = !!shadow; im.receiveShadow = !!shadow; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3); im.instanceColor.setUsage(THREE.DynamicDrawUsage); scene3.add(im); return im; }   // every pool carries instance colours from the start (r128 caches the program per material)
+  function pool(geo, material, n, shadow) { const im = new THREE.InstancedMesh(geo, material, n); im.count = 0; im.frustumCulled = false; im.matrixAutoUpdate = false; im.castShadow = !!shadow; im.receiveShadow = !!shadow; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3); im.instanceColor.setUsage(THREE.DynamicDrawUsage); scene3.add(im); return im; }   // every pool carries instance colours from the start (r128 caches the program per material)
   const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _qq = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();
-  const put = (im, x, y, z, rx, ry, rz, sx, sy, sz, col) => { if (im.count >= im.instanceMatrix.count) { im._over = true; return; } _e.set(rx, ry, rz, 'YXZ'); _qq.setFromEuler(_e); _p.set(x, y, z); _s.set(sx, sy, sz); _m.compose(_p, _qq, _s); im.setMatrixAt(im.count, _m); if (col) im.setColorAt(im.count, col); im.count++; };
-  const flush = im => { const n = Math.max(1, im.count); im.instanceMatrix.updateRange.offset = 0; im.instanceMatrix.updateRange.count = n * 16; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) { im.instanceColor.updateRange.offset = 0; im.instanceColor.updateRange.count = n * 3; im.instanceColor.needsUpdate = true; } };   // upload only the instances in use
+  /* put(): writes the YXZ-euler transform straight into the instance buffer — bit-identical to Euler→Quaternion→compose→
+     setMatrixAt, without the intermediate objects and copy. When a figure is being recorded (see the pose cache below)
+     every part it emits is noted so the figure can be replayed on later frames without re-running its assembly logic. */
+  const _qr = [];   // scratch for spatial-hash queries made by the renderer
+  const recPools = [], recIdx = new Int32Array(512); let recN = 0, figRec = false;
+  const put = (im, x, y, z, rx, ry, rz, sx, sy, sz, col) => {
+    if (im.count >= im.instanceMatrix.count) { im._over = true; return; }
+    const a = im.instanceMatrix.array, o = im.count * 16;
+    const cx = Math.cos(rx), sxr = Math.sin(rx), cy = Math.cos(ry), syr = Math.sin(ry), cz = Math.cos(rz), szr = Math.sin(rz);
+    const ce = cy * cz, cf = cy * szr, de = syr * cz, df = syr * szr;
+    a[o] = (ce + df * sxr) * sx;   a[o + 1] = (cx * szr) * sx;  a[o + 2] = (cf * sxr - de) * sx;  a[o + 3] = 0;
+    a[o + 4] = (de * sxr - cf) * sy; a[o + 5] = (cx * cz) * sy; a[o + 6] = (df + ce * sxr) * sy; a[o + 7] = 0;
+    a[o + 8] = (cx * syr) * sz;    a[o + 9] = -sxr * sz;        a[o + 10] = (cx * cy) * sz;       a[o + 11] = 0;
+    a[o + 12] = x; a[o + 13] = y; a[o + 14] = z; a[o + 15] = 1;
+    if (col) { const c = im.instanceColor.array, q = im.count * 3; c[q] = col.r; c[q + 1] = col.g; c[q + 2] = col.b; }
+    if (figRec && recN < 512) { recPools[recN] = im; recIdx[recN] = im.count; recN++; }
+    im.count++;
+  };
+  const flush = im => { im.visible = im.count > 0; if (!im.count) return; const n = im.count; im.instanceMatrix.updateRange.offset = 0; im.instanceMatrix.updateRange.count = n * 16; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) { im.instanceColor.updateRange.offset = 0; im.instanceColor.updateRange.count = n * 3; im.instanceColor.needsUpdate = true; } };   // empty pools are invisible: the renderer never binds them   // upload only the instances in use
   const BOXG = new THREE.BoxGeometry(1, 1, 1), SPHG = new THREE.SphereGeometry(1, 9, 7), HELMG = new THREE.SphereGeometry(1, 10, 6, 0, TAU, 0, HPI * 1.15), CYLG = new THREE.CylinderGeometry(1, 1, 1, 8), DODG = new THREE.DodecahedronGeometry(1, 0);
   const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .85, flatShading: true });
   TEX.leaf.repeat.set(3.2, 3.2);                                     // finer, denser leaf clusters on the crowns
@@ -11792,6 +11829,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
      derives "how flat" itself — no per-frame CPU or GPU decay work. Visually identical to the CPU carpet; the
      per-frame CPU cost drops from ~48k matrix writes + a multi-MB upload to a handful of uniforms and a few dozen
      chunk lookups. The CPU path stays intact behind G.gpuGrass=false (and is used automatically on WebGL1). */
+  /* section profiler: G.prof = true fills G.renderProf with ms per render section */
+  let pfT = 0; const PF = name => { if (!G.prof) return; const t = performance.now(); if (name !== 'props_begin') (G.renderProf || (G.renderProf = {}))[name] = +(t - pfT).toFixed(2); pfT = t; };
   const GPU_GRASS_OK = !!(renderer.capabilities && renderer.capabilities.isWebGL2);
   const GU = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3(1, 0, 0) }, uTr: { value: null }, uTrInv: { value: new THREE.Vector2(1, 1) }, uTS: { value: TS }, uCell: { value: GRASS_CELL } };
   const GRASS_PROJECT = [
@@ -11953,6 +11992,65 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   /* a limb box hanging from a pivot (shoulder / hip), swung fore-aft by rz */
   function limb(pool3, sx, sy, sz, cx, cz, L, W, ry, rz, col, D) { const s = Math.sin(rz), c = Math.cos(rz); put(pool3, sx + cx * s * L / 2, sy - c * L / 2, sz + cz * s * L / 2, 0, ry, rz, D || W, L, W, col); }
   /* rig from the 2D kit spec S (MODEL[t].S): uni/helm/trouser/sleeve/gear/shoulder/pack/visor/wep + proportions */
+  /* ======================= figure pose cache =======================
+     drawFigure assembles 30-60 parts per body from a lot of per-kind logic. Its OUTPUT for a figure only changes when the
+     walk phase or a discrete state (limbs, stance, weapon, reload…) changes; position and heading changes are a rigid
+     transform of the same parts. So each figure's last assembled pose is kept (matrices + colours per part) and on frames
+     where the figure is not due for a rebuild it is replayed: every cached part is rotated by the heading delta and moved by
+     the position delta — exact, ~20 flops a part instead of the full assembly. Corpses never change, so they replay forever.
+     The rebuild schedule is adaptive: every frame while few figures are on screen, staggered 2-4 ways under load, so the
+     limb pose is at most 1-3 frames old only when the scene is heavy. Nothing about the figure itself is reduced. */
+  const FIG = new Map(), SIGK = new Map(); let figDrawn = 0, figStagger = 1, figReplayed = 0;
+  const sigId = v => { if (v == null) return 0; let k = SIGK.get(v); if (k === undefined) { k = SIGK.size + 1; SIGK.set(v, k); } return k; };
+  function figSig(S, o) {                                            // discrete state that changes the assembled parts
+    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0);
+    h = h * 131 + sigId(o.gun); h = h * 131 + sigId(o.ut); h = h * 131 + sigId(o.mk); h = h * 131 + sigId(o.zt); h = h * 131 + sigId(o.kind);
+    h = h * 131 + ((S.tier || 0) | 0); h = h * 131 + sigId(o.idle && o.idle.act);
+    if (o.dead) h = h * 131 + Math.round((o.tilt || 0) * 200);       // air-tumbling corpses change their tilt → rebuild
+    return h;
+  }
+  function drawFigureC(x, y, z, ang, walk, S, o) {
+    const ck = o.ck; if (!ck || G.figCache === false) { drawFigure(x, y, z, ang, walk, S, o); return; }
+    figDrawn++;
+    let c = FIG.get(ck); const sig = figSig(S, o), dead = !!o.dead;
+    let fresh = !c || c.sig !== sig || c.S !== S || c.walk === undefined;
+    if (!fresh && !dead) {
+      if ((o.rc || 0) > 0 || (o.reload || 0) > 0 || o.work) fresh = true;                       // firing / reloading / hammering: exact every frame
+      else { const st = G.figStaggerForce || figStagger; if (st <= 1 || ((G.frame + (c.k | 0)) % st) === 0) fresh = true; }   // this figure's turn on the stagger
+    }
+    if (fresh) {
+      if (!c) { c = { sig, S, x, y, z, ang, walk, n: 0, k: FIG.size & 7, pools: [], mats: new Float32Array(64 * 16), cols: new Float32Array(64 * 3) }; FIG.set(ck, c); }
+      figRec = true; recN = 0; drawFigure(x, y, z, ang, walk, S, o); figRec = false;
+      if (recN * 16 > c.mats.length) { c.mats = new Float32Array(recN * 16); c.cols = new Float32Array(recN * 3); }
+      const M = c.mats, C = c.cols;
+      for (let i = 0; i < recN; i++) { const im = recPools[i], src = im.instanceMatrix.array, o16 = recIdx[i] * 16, sc = im.instanceColor.array, o3 = recIdx[i] * 3; c.pools[i] = im;
+        for (let j = 0; j < 16; j++) M[i * 16 + j] = src[o16 + j]; C[i * 3] = sc[o3]; C[i * 3 + 1] = sc[o3 + 1]; C[i * 3 + 2] = sc[o3 + 2]; }
+      c.n = recN; c.sig = sig; c.S = S; c.x = x; c.y = y; c.z = z; c.ang = ang; c.walk = walk; c.frame = G.frame;
+      return;
+    }
+    // replay: rigid transform of the cached parts (heading delta about the figure's pivot + position delta)
+    figReplayed++; c.frame = G.frame;
+    const d = ang - c.ang, cd = Math.cos(d), sd = Math.sin(d), px = c.x, py = c.y, pz = c.z, M = c.mats, C = c.cols, n = c.n;
+    for (let i = 0; i < n; i++) {
+      const im = c.pools[i]; if (im.count >= im.instanceMatrix.count) { im._over = true; continue; }
+      const a = im.instanceMatrix.array, o = im.count * 16, b = i * 16;
+      // rotation columns rotate with the heading; the translation rotates about the old pivot then lands on the new one
+      let vx = M[b], vz = M[b + 2];       a[o] = vx * cd - vz * sd;      a[o + 1] = M[b + 1];  a[o + 2] = vx * sd + vz * cd;       a[o + 3] = 0;
+      vx = M[b + 4]; vz = M[b + 6];       a[o + 4] = vx * cd - vz * sd;  a[o + 5] = M[b + 5];  a[o + 6] = vx * sd + vz * cd;       a[o + 7] = 0;
+      vx = M[b + 8]; vz = M[b + 10];      a[o + 8] = vx * cd - vz * sd;  a[o + 9] = M[b + 9];  a[o + 10] = vx * sd + vz * cd;      a[o + 11] = 0;
+      const rx = M[b + 12] - px, rz = M[b + 14] - pz;
+      a[o + 12] = x + rx * cd - rz * sd; a[o + 13] = y + (M[b + 13] - py); a[o + 14] = z + rx * sd + rz * cd; a[o + 15] = 1;
+      const cc = im.instanceColor.array, q = im.count * 3; cc[q] = C[i * 3]; cc[q + 1] = C[i * 3 + 1]; cc[q + 2] = C[i * 3 + 2];
+      im.count++;
+    }
+  }
+  function figFrameEnd() {                                            // adaptive stagger + forget figures that stopped being drawn
+    const n = figDrawn; figStagger = n < 90 ? 1 : n < 220 ? 2 : n < 450 ? 3 : 4;
+    G.figStats = { drawn: n, replayed: figReplayed, stagger: figStagger, cached: FIG.size };
+    figDrawn = 0; figReplayed = 0;
+    if ((G.frame & 63) === 0) for (const [k, c] of FIG) if (G.frame - c.frame > 600 && !(c.sig & 1)) FIG.delete(k);   // live figures unseen for 10 s
+    if ((G.frame & 255) === 0) for (const [k, c] of FIG) if (G.frame - c.frame > 3600) FIG.delete(k);                // corpses long gone
+  }
   function drawFigure(x, y, z, ang, walk, S, o) {
     const sc = (o.scale || 1) * .034 * FS, kind = o.kind || 'mil', zed = kind === 'zed', med = kind === 'med', lm = o.limbs === undefined ? 15 : o.limbs;
     // idle fidgets: whole-body offsets (a squat/push-up dip, a dance sway, a weapon check that lifts the muzzle)
@@ -12934,6 +13032,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     { const _n = performance.now() / 1000; const _d = render._t ? Math.min(.1, _n - render._t) : 0; render._t = _n; if (G.started && !G.paused && G.speed > 0) healCraters(_d); }
     SHX = G.shake ? rnd(-G.shake, G.shake) : 0; SHY = G.shake ? rnd(-G.shake, G.shake) : 0;
     updateSun();
+    PF('props_begin'); if (G.prof) G.renderProf = {};
     CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
     const cxw = CAM.x + CAM.vw / 2, cyw = CAM.y + CAM.vh / 2;
     const dist = (CAM.vw * K) / (2 * Math.tan(cam3.fov * Math.PI / 360) * cam3.aspect);
@@ -12947,6 +13046,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
     if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
 
+    PF('props_begin');
     /* ---- props: static parts (trunks, rocks, barrels, wrecks) refreshed when the camera moves; canopies + bushes every frame so they sway on the wind ---- */
     if (Math.abs(cxw - lastPX) > 48 || Math.abs(cyw - lastPY) > 48 || G.frame % 30 === 0 || lastNB !== G.builds.length) {
       lastNB = G.builds.length;
@@ -13058,8 +13158,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         }
       }
     }
+    PF('props_grass');
     /* ---- POI structures + invader camps/villages ---- */
     if (MAP.structs) for (let i = 0; i < MAP.structs.length; i++) { const s = MAP.structs[i]; const vis = s.x > vx0 - 200 && s.x < vx1 + 200 && s.y > vy0 - 200 && s.y < vy1 + 200; let m = structMeshes.get(s.id); if (vis && !m) { m = mkStruct(s); structMeshes.set(s.id, m); } if (m) { m.visible = vis; if (s.dead && !m.userData.dead) { m.userData.dead = 1; m.scale.set(1, .25, 1); m.rotation.z = .08; } } }
+    PF('poi');
     /* ---- buildings ---- */
     for (const b of G.builds) { let bm = buildMeshes.get(b.id); if (b.dead) { if (bm) { scene3.remove(bm.g); buildMeshes.delete(b.id); } continue; }
       // a wall whose neighbours changed, or a building that reached a new tier, is rebuilt so its shape reflects the new state
@@ -13141,6 +13243,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         }
       } }
     for (const [id, bm] of buildMeshes) if (!G.builds.some(b => b.id === id)) { scene3.remove(bm.g); buildMeshes.delete(id); }
+    PF('buildings');
     /* ---- field camps: campfire + tent ---- */
     if (G.fieldCamps) for (const c of G.fieldCamps) {
       const g = c.grow || 0; if (g < .02) continue;
@@ -13181,6 +13284,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         }
       }
     }
+    PF('camps');
     /* ---- units ---- */
     const live = new Set();
     for (const u of G.units) {
@@ -13227,7 +13331,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bud = { x: b.x * K - Math.sin(b.ang) * rt, y: groundY(b.x, b.y) + bodyH * hMul, z: b.y * K + Math.cos(b.ang) * rt };
           }
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
-          drawFigure(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
+          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 7.5, dk = .5 + (1 - dayNow) * .5;
@@ -13239,7 +13343,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 5.0, dk = .45 + (1 - dayNow) * .55, Lw = L / K;
           // occlusion: a body or wall standing ahead stops the light short
           let blk = Lw;
-          for (let zi = 0; zi < G.zeds.length; zi++) { const zz = G.zeds[zi]; if (zz.dead) continue; const dx = zz.x - u.x, dy = zz.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca); const hw = 10 + t * .3; if (pp < zz.r + hw * .4) blk = t; }
+          { const zl = G.hZeds.near(u.x + ca * blk * .5, u.y + sa * blk * .5, blk * .5 + 24, _qr); for (let zi = 0; zi < zl.length; zi++) { const zz = zl[zi]; if (zz.dead) continue; const dx = zz.x - u.x, dy = zz.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca); const hw = 10 + t * .3; if (pp < zz.r + hw * .4) blk = t; } }
           for (let bi = 0; bi < G.builds.length; bi++) { const bb2 = G.builds[bi]; if (bb2.dead || bb2.def.flat) continue; const dx = bb2.x - u.x, dy = bb2.y - u.y, t = dx * ca + dy * sa; if (t <= 8 || t >= blk) continue; const pp = Math.abs(-dx * sa + dy * ca), br = Math.max(bb2.w, bb2.h) * TS * .5; if (pp < br) blk = t; }
           const Le = Math.min(L, blk * K + .1), ex2 = x + ca * Le, ez2 = z + sa * Le, gye = groundY(ex2 / K, ez2 / K);
           const R = Le * .5;                                                                       // pool radius grows with how far the light reaches
@@ -13253,6 +13357,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       }
     }
     for (const [id, um] of unitMeshes) if (!live.has(id)) { scene3.remove(um.g); unitMeshes.delete(id); }
+    PF('units');
     /* ---- zombies / invaders ---- */
     // enemies are drawn only when the camera is actually on them: the view plus a thin 8% edge margin (and the far reach the
     // tilted camera sees at the top of the screen). Figures are instanced per frame, so they appear the instant they enter.
@@ -13263,14 +13368,15 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const M = MODEL[zz._mk] || MODEL[zz.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' };
       const push = zz.lunge > 0 ? zz.lunge * .5 : 0, x = (zz.x + Math.cos(zz.ang) * push * TS) * K, z = (zz.y + Math.sin(zz.ang) * push * TS) * K, gy = groundY(zz.x, zz.y);
       if (zz.def.struct) { drawEB(zz, x, gy, z); continue; }
-      if (zz.def.worker) { drawFigure(x, gy, z, zz.ang, zz.step || 0, S, { kind: 'med', mk: 'worker', gun: 'mallet', scale: .88, limbs: 15, id: zz.id, work: zz.work || 0 }); continue; }
+      if (zz.def.worker) { drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: 'worker', gun: 'mallet', scale: .88, limbs: 15, id: zz.id, work: zz.work || 0 }); continue; }
       if (zz.med) {
-        if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigure(x, gy + HORSE_SEAT, z, zz.ang, 0, S, { kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id }); }
-        else if (zz.def.siege) { drawFigure(x, gy, z, zz.ang, zz.step || 0, S, { kind: 'med', mk: 'siege', gun: 'sword', scale: 1.0, limbs: zz.limbs, id: zz.id }); drawRam(x, gy, z, zz.ang, zz.def.r * K); }
-        else drawFigure(x, gy, z, zz.ang, zz.step || 0, S, { kind: 'med', mk: zz.def.arrow ? 'archer' : 'infantry', gun: zz.def.arrow ? 'bow' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id });
-      } else if (zz.down > 0) { drawFigure(x, gy, z, zz.ang, 0, S, { kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
-      else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigure(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0 }); }
+        if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigureC(x, gy + HORSE_SEAT, z, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id }); }
+        else if (zz.def.siege) { drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'sword', scale: 1.0, limbs: zz.limbs, id: zz.id }); drawRam(x, gy, z, zz.ang, zz.def.r * K); }
+        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : 'infantry', gun: zz.def.arrow ? 'bow' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id });
+      } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
+      else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0 }); }
     }
+    PF('zeds');
     /* ---- corpses + wrecks ---- */
     const liveW = new Set();
     for (const c of G.corpses) {
@@ -13280,11 +13386,12 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else {
         const M = MODEL[c.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' }; const isZed = !!ZDEF[c.t], isMed = !!MDEF[c.t];
         if (!c._bp) { c._bp = 1; if (!c.air) { const v = rgbOf(S.blood || '#5a0e0e'); decalList.push({ k: (Math.random() * 4) | 0, x: (c.x + Math.cos(c.a) * 6) * K, y: (c.y + Math.sin(c.a) * 6) * K, r: rnd(.5, .7), rot: rnd(TAU), c: v[1] > v[0] ? GREENBLOOD : WHITE }); bloodDecal(c.x, c.y, 3, S.blood || '#5a0e0e'); } }
-        drawFigure(x, gy, z, c.a, 0, S, { kind: isZed ? 'zed' : isMed ? 'med' : 'mil', dead: 1, tilt: c.air ? (c.rot - c.a) : 0, scale: .9, limbs: c.limbs, id: c.x | 0 });
+        drawFigureC(x, gy, z, c.a, 0, S, { ck: c, kind: isZed ? 'zed' : isMed ? 'med' : 'mil', dead: 1, tilt: c.air ? (c.rot - c.a) : 0, scale: .9, limbs: c.limbs, id: c.x | 0 });
       }
     }
     for (const [key, wm] of wreckMeshes) if (!liveW.has(key)) { scene3.remove(wm); wreckMeshes.delete(key); }
     for (const [id, g] of ebMeshes) { if (g.userData.live !== G.frame) { const zz = G.zeds.find(q => q.id === id); if (!zz || zz.dead) { scene3.remove(g); ebMeshes.delete(id); } else g.visible = false; } }
+    PF('corpses');
     /* ---- supply crates / scrap pickups / toppling trees ---- */
     for (const c of G.crates) {
       if (c.x < vx0 || c.x > vx1 || c.y < vy0 || c.y > vy1) continue;
@@ -13317,6 +13424,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     }
     for (const p of G.pickups) { if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue; put(P.metal, p.x * K, groundY(p.x, p.y) + .1 + Math.sin(p.bob) * .03, p.y * K, .3, p.bob, .2, .18, .12, .16, SCRAP); }
     if (G.topples) for (const T of G.topples) { if (T.x < vx0 || T.x > vx1 || T.y < vy0 || T.y > vy1) continue; const k = Math.min(1, (T.t || 0) / (T.dur || 1)), x = T.x * K, z = T.y * K, y = groundY(T.x, T.y), sc = T.sc || 1, dir = T.dir || 0, fall = k * k * 1.45; put(P.cyl, x + Math.cos(dir) * Math.sin(fall) * .3 * sc, y + Math.cos(fall) * .3 * sc, z + Math.sin(dir) * Math.sin(fall) * .3 * sc, Math.sin(dir) * fall, 0, -Math.cos(dir) * fall, .08 * sc, .6 * sc, .08 * sc, WOOD); put(P.canopy, x + Math.cos(dir) * Math.sin(fall) * .85 * sc, y + Math.cos(fall) * .85 * sc, z + Math.sin(dir) * Math.sin(fall) * .85 * sc, Math.sin(dir) * fall, 0, -Math.cos(dir) * fall, sc, sc * .85, sc, LEAF[0]); }
+    PF('crates');
     /* ---- bullets ---- */
     for (const b of G.bullets) {
       if (b.x < vx0 || b.x > vx1 || b.y < vy0 || b.y > vy1) continue;
@@ -13343,6 +13451,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (b.kind === 'rocket') bb(partsAdd, x, y, z, .35, 1, .75, .4, .9);
       if (b.kind === 'acid') bb(partsAdd, x, y, z, .28, .6, .95, .25, .9);
     }
+    PF('bullets');
     /* ---- particles from G.parts: wind / gravity / bounces already applied by the sim ---- */
     const smK = (G.smokeOp !== undefined ? G.smokeOp : 1);   // Combat-smoke opacity scale (1 = default), applied to firing/explosion smoke & dust
     for (const p of G.parts) {
@@ -13365,8 +13474,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (k === 'debris' || k === 'leaf') put(P.box, x, y, z, p.rot * 1.4, p.rot, p.rot * .5, r * 1.3, r * .3, r * .9, col3(p.col || '#4a423a'));
       else bb(partsAlpha, x, y, z, Math.max(.05, r * 1.4), c[0], c[1], c[2], Math.min(1, a * 2));
     }
+    PF('particles');
     /* ---- ground decals: scorch marks on crater floors, blood splatter ---- */
     for (let i = decalList.length - 1; i >= 0; i--) { const dl = decalList[i]; if (dl.x < vx0 * K || dl.x > vx1 * K || dl.y < vy0 * K || dl.y > vy1 * K) continue; const gy = groundY(dl.x / K, dl.y / K) + .02; if (dl.k < 0) put(P.scorch, dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, WHITE); else put(P.splat[dl.k], dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, dl.c); }
+    PF('decals');
     /* ---- placement ghosts ---- */
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
     ghostBegin();
@@ -13376,14 +13487,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     if (UI.queue) for (const q of UI.queue) ghost3(q.tx, q.ty, BDEF[q.t], true, true);
     ghostEnd();
     if (G._r3d && G._r3d.skip) for (const im of PER_FRAME.concat(PROPS)) if (G._r3d.skip.has(im)) im.count = 0;
+    PF('overlay');
+    figFrameEnd();
     for (const im of PER_FRAME) flush(im);
     atmosphereFX(dayNow);
     bbFlush(partsAdd); bbFlush(partsAlpha); bbFlush(partsNoise);
     if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; partsNoise.geo.instanceCount = 0; }
-    renderFrame(dayNow);
+    PF('flush'); renderFrame(dayNow); PF('three_render');
     for (const im of PER_FRAME) im.count = 0;
     growPools();                                                     // any pool that ran dry this frame (huge waves) gets a bigger buffer for the next one
 
+    PF('ghosts');
     /* ---- 2D overlay: HUD-ish things drawn in screen space over the 3D frame ---- */
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.lineWidth = 1;
@@ -13447,7 +13561,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     gh.g.position.set(wx * K, gy, wy * K);
   }
   postFX = function () { };                 // the 2D post pass is not used here
-  G._r3d = { P, PER_FRAME, PROPS, decals: decalList, crat: () => CRAT, crw: () => CRW, groundY, chunks: chunks3, renderer, scene3, unitMeshes, structMeshes, buildMeshes, wreckMeshes };
+  G._r3d = { P, PER_FRAME, PROPS, drawFigure, drawFigureC, FIG, MODEL, decals: decalList, crat: () => CRAT, crw: () => CRW, groundY, chunks: chunks3, renderer, scene3, unitMeshes, structMeshes, buildMeshes, wreckMeshes };
 })();
 
 /* ============================ BOOT & LOOP ============================ */
@@ -14020,7 +14134,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b70';
+const BUILD_TAG = 'b71';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
