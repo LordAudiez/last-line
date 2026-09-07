@@ -11625,7 +11625,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const m = new THREE.Mesh(geo, terrMat); m.position.set(cx * CT3 + CT3 / 2, 0, cy * CT3 + CT3 / 2); m.receiveShadow = true; m.frustumCulled = true;
     scene3.add(m); return m;
   }
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: lin(0x2b6684), transparent: true, opacity: .74, roughness: .18, metalness: .3, normalMap: TEX.waterN, normalScale: new THREE.Vector2(.5, .5) }));
+  // water sits low enough that the tallest wave crest (+.094) never breaches land at elevation 0, and carries a polygon
+  // offset so it always loses depth ties against near-coplanar shore ground — no blue flicker through the map
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: lin(0x2b6684), transparent: true, opacity: .74, roughness: .18, metalness: .3, normalMap: TEX.waterN, normalScale: new THREE.Vector2(.5, .5), polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 2 }));
   water.geometry.dispose(); water.geometry = new THREE.PlaneGeometry(4000, 4000, 180, 180);           // enough vertices to carry a real swell
   water.material.envMapIntensity = 1.4;
   const WATER_U = { uWT: { value: 0 } };
@@ -11637,7 +11639,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n{ float crest = smoothstep(0.05, 0.09, vWv); gl_FragColor.rgb += crest * 0.10; }');   // faint foam on the crests
   };
   water.material.needsUpdate = true;
-  water.rotation.x = -HPI; water.position.y = -.06; scene3.add(water);
+  water.rotation.x = -HPI; water.position.y = -.15; scene3.add(water);
   function updateTerrain(cx0, cy0, cx1, cy1) {
     let made = 0;
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
@@ -14018,7 +14020,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b69';
+const BUILD_TAG = 'b70';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
