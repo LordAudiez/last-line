@@ -39,6 +39,17 @@ html,body{width:100%;height:100%;height:100dvh;position:relative;overflow:hidden
 #wavefill{height:100%;width:0;background:linear-gradient(90deg,#ff9a3d,#ff3b3b);transition:width .2s}
 #wavetxt{font-size:12px;color:#9fbfb2;font-weight:600}
 #wavebox.horde{animation:hordeBox 1s steps(1,end) infinite;border-radius:6px}
+#rallyPill{position:absolute;left:50%;top:92px;transform:translateX(-50%) scale(var(--ui));transform-origin:top center;display:none;align-items:center;gap:10px;padding:9px 16px 9px 12px;border-radius:999px;pointer-events:none;z-index:23;
+  background:linear-gradient(180deg,rgba(90,22,18,.55),rgba(40,10,8,.62));border:1px solid rgba(255,120,100,.45);
+  -webkit-backdrop-filter:blur(22px) saturate(170%);backdrop-filter:blur(22px) saturate(170%);
+  box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.14),0 0 0 0 rgba(255,90,72,.35);animation:rallyGlow 1.2s ease-in-out infinite}
+#rallyPill.show{display:flex}
+#rallyPill .rp-dot{width:9px;height:9px;border-radius:50%;background:#ff5a48;box-shadow:0 0 10px #ff5a48;animation:rallyDot .6s steps(1,end) infinite}
+#rallyPill .rp-txt{font:800 11.5px/1.2 var(--sans);letter-spacing:.14em;color:#ffd7d0;text-transform:uppercase;white-space:nowrap}
+#rallyPill .rp-n{font:600 11px/1.2 var(--sans);letter-spacing:.06em;color:rgba(255,215,208,.75);white-space:nowrap;padding-left:10px;border-left:1px solid rgba(255,140,120,.35)}
+@keyframes rallyGlow{0%,100%{box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.14),0 0 0 0 rgba(255,90,72,.35)}50%{box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.14),0 0 22px 4px rgba(255,90,72,.35)}}
+@keyframes rallyDot{50%{opacity:.25}}
+html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 #hordeAlert{font-size:11px;font-weight:800;letter-spacing:.08em;color:#ff5a48;text-transform:uppercase;white-space:nowrap;animation:hordeTxt .5s steps(1,end) infinite;margin-left:8px}
 @keyframes hordeBox{0%,49%{box-shadow:inset 0 0 0 1px #ff3a2a,0 0 14px rgba(255,50,30,.55);background:rgba(120,20,12,.35)}50%,100%{box-shadow:inset 0 0 0 1px rgba(255,58,42,.35);background:rgba(120,20,12,.12)}}
 @keyframes hordeTxt{0%,49%{opacity:1}50%,100%{opacity:.25}}
@@ -696,7 +707,7 @@ html,body{font-family:var(--sans)}
 #wavefill{border-radius:999px}
 #wavebox.horde{border-radius:999px}
 /* pills */
-.sbtn,#selall button,#mzoom button,.cbtn,.segb button,.numb button,#setbox button.sx,#setbox .mini,#setbox label.upl,#setbox .closex,#placebar button,#setbtn,#hudtog,#fsbtn,.dvbtn,.mback,.mbtn{
+.sbtn,#selall button,#mzoom button,.cbtn,.segb button,.numb button,#setbox button.sx,#setbox .mini,#setbox label.upl,#setbox .closex,#placebar button,#setbtn,#uihide,#hudtog,#fsbtn,.dvbtn,.mback,.mbtn{
   font-family:var(--sans);border-radius:999px;border:1px solid var(--ln);background:var(--gl2);color:#e9f3ee;
   box-shadow:inset 0 1px 0 var(--hl);transition:transform .3s var(--ease),background .25s ease,border-color .25s ease,color .25s ease,box-shadow .3s ease;letter-spacing:.02em}
 .sbtn:hover,#selall button:hover,#mzoom button:hover,.cbtn:hover,.segb button:hover,.numb button:hover,#setbox button.sx:hover,#setbox .mini:hover,#setbox label.upl:hover,#placebar button:hover,#setbtn:hover,.dvbtn:hover,.mback:hover{
@@ -708,6 +719,7 @@ html,body{font-family:var(--sans)}
 #speedbtns{gap:5px}
 .sbtn{min-width:44px;height:40px;font-weight:600;font-size:13px}
 #setbtn{width:44px;height:40px;border-radius:999px}
+#uihide{width:44px;height:40px;border-radius:999px}
 /* command card */
 #cmd{padding:12px;gap:8px;border-radius:var(--r)}
 #cmdtitle{font-family:var(--sans);letter-spacing:.16em;color:rgba(230,240,235,.6);font-weight:600;padding:2px 4px 0}
@@ -938,6 +950,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   <button id="setbtn" title="Settings (Esc)">⚙</button>
   <button id="uihide" title="Hide all UI (press again to show)">👁</button>
   <button id="hudtog" title="Hide / show the minimap and control panels">▣</button>
+  <div id="rallyPill"><span class="rp-dot"></span><span class="rp-txt">ALARM · RALLY TO COMMAND POST</span><span class="rp-n" id="rallyN"></span></div>
   <div id="alerts"></div>
   <div id="hint"></div>
   <div id="confirm" class="pan">
@@ -6492,6 +6505,50 @@ function updateHordeEvent(dt) {
     }
   }
 }
+/* ---- HQ alarm rally: the siren button on the command post calls every unit you own back to a defensive ring
+   5 tiles out from the post's edge. Each unit gets its own slot on the circle, walks there, then holds facing outward
+   (hold stance, so it engages what comes at the ring instead of chasing). Switching the alarm off releases them. */
+const RALLY_TILES = 5;
+function rallySlots(hq, n) {
+  const R = Math.max(hq.w, hq.h) * TS * .5 + RALLY_TILES * TS, out = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU - Math.PI / 2; let x = hq.x + Math.cos(a) * R, y = hq.y + Math.sin(a) * R;
+    x = clamp(x, TS * 2, WW - TS * 2); y = clamp(y, TS * 2, WH - TS * 2);
+    if (typeof solidAt === 'function' && solidAt(x, y, true)) { const f = typeof freeSpot === 'function' ? freeSpot(x, y, 10, true) : null; if (f) { x = f.x; y = f.y; } }
+    out.push({ x, y, a });
+  }
+  return out;
+}
+function hqRally(hq, on) {
+  if (!hq || hq.dead) return;
+  hq.alarmRally = !!on;
+  const mine = G.units.filter(u => !u.dead && !u.inside && isMine(u) && !(u.def.fly && u.landed));
+  if (on) {
+    const slots = rallySlots(hq, Math.max(1, mine.length));
+    // hand out slots nearest-first so the ring fills without units crossing each other
+    const free = slots.slice();
+    for (const u of mine) {
+      let bi = 0, bd = 1e18; for (let i = 0; i < free.length; i++) { const d = dist2(u.x, u.y, free[i].x, free[i].y); if (d < bd) { bd = d; bi = i; } }
+      const sl = free.splice(bi, 1)[0];
+      u.rallyPt = sl; u.rallyHeld = false; u.camp = null; u.campRole = null; u.sitting = false;
+      u.order = { type: 'move', x: sl.x, y: sl.y }; u.stance = 'aggr'; u.guardX = undefined; u.guardY = undefined;
+    }
+    alertMsg('⚠ ALARM — all units rally to the command post (' + mine.length + ')', 'bad'); AU.ui('alarm');
+  } else {
+    for (const u of G.units) if (u.rallyPt) { u.rallyPt = null; u.rallyHeld = false; if (u.stance === 'hold') { u.stance = 'aggr'; u.guardX = undefined; u.guardY = undefined; } }
+    alertMsg('Alarm stood down — units released', 'info'); AU.ui('ok');
+  }
+}
+function updateRally(hq) {
+  if ((G.frame % 6) !== 0) return;
+  for (const u of G.units) {
+    const sl = u.rallyPt; if (!sl || u.dead || u.rallyHeld) continue;
+    if (u.order && u.order.type === 'move' && (u.order.x !== sl.x || u.order.y !== sl.y)) { u.rallyPt = null; continue; }   // the player gave a new order: that unit leaves the ring
+    if (!u.order || dist2(u.x, u.y, sl.x, sl.y) < 22 * 22) {                                                              // in position: hold the ring, face outward
+      u.order = null; u.rallyHeld = true; u.stance = 'hold'; u.guardX = u.x; u.guardY = u.y; u.ang = sl.a; if (u.aimT !== undefined) u.aimT = sl.a;
+    }
+  }
+}
 function updateSiren(dt) {
   const hq = G.hq && !G.hq.dead ? G.hq : null;                        // my own command post
   if (hq && (G.frame % 6) === 0) {                                    // under attack = any hostile inside the footprint + 2 tiles; clears itself when they're gone
@@ -6500,7 +6557,8 @@ function updateSiren(dt) {
     G.hqAttack = att;
   }
   if (!hq) G.hqAttack = false;
-  const want = !!hq && !hq.sirenOff && !!G.started && !G.showcase && !!(G.hordeAlert || G.hqAttack);
+  const want = !!hq && !!G.started && !G.showcase && ((!hq.sirenOff && !!(G.hordeAlert || G.hqAttack)) || !!hq.alarmRally);
+  if (hq && hq.alarmRally) updateRally(hq);
   if (want !== !!G.sirenOn) { G.sirenOn = want; if (AU.sirenSet) AU.sirenSet(want); }
   if (want && AU._sirenSynth) { G.sirenT = (G.sirenT || 0) - dt; if (G.sirenT <= 0) { G.sirenT = 3.2; AU.siren(); } }   // no sample decoded: synth wail
 }
@@ -10788,6 +10846,11 @@ function cardFor() {
         fn: () => { if (!me.unlim.sup && me.sup < 50) { AU.ui('no'); return; } if (!me.unlim.sup) me.sup -= 50; me.scr += 10; popText((G.hq || bld).x, (G.hq || bld).y - 18, '+10 ◆', '#9fe6c0'); AU.ui('ok'); refreshCard(true); }
       });
       btns.push({
+        g: '📣', n: bld.alarmRally ? 'Stand Down' : 'Alarm: Rally', k: 'R', act: !!bld.alarmRally,
+        tip: 'Sound the siren and recall every unit you own to a defensive ring 5 tiles around the command post; they hold there facing outward. Press again to stand down.',
+        fn: () => { hqRally(bld, !bld.alarmRally); refreshCard(true); }
+      });
+      btns.push({
         g: bld.sirenOff ? '🔕' : '🔔', n: bld.sirenOff ? 'Siren: OFF' : 'Siren: ON', k: 'N',
         tip: 'Base air-raid siren. Sounds for a horde and whenever a hostile is inside the command post area (2 tiles), and stops by itself once that area is clear. Only your own post — other players keep their own setting.',
         fn: () => { bld.sirenOff = !bld.sirenOff; alertMsg(bld.sirenOff ? 'Siren disabled for this command post' : 'Siren enabled', 'info'); AU.ui(bld.sirenOff ? 'no' : 'ok'); refreshCard(true); }
@@ -11068,6 +11131,8 @@ function updateHUD(dt) {
   const f = G.waveQueue ? 1 : clamp(1 - G.waveT / (G.waveTMax || 60), 0, 1);
   $('wavefill').style.width = (f * 100) + '%';
   $('wavetxt').textContent = G.waveAlive > 0 ? G.waveAlive + ' hostiles' : (G.waveT < 12 ? 'imminent' : Math.ceil(G.waveT) + 's');
+  { const rp = $('rallyPill'); if (rp) { const on = !!(G.hq && !G.hq.dead && G.hq.alarmRally); if (rp.classList.contains('show') !== on) rp.classList.toggle('show', on);
+      if (on && (G.frame % 10) === 0) { let n = 0, h = 0; for (const u of G.units) if (!u.dead && u.rallyPt) { n++; if (u.rallyHeld) h++; } $('rallyN').textContent = h + ' / ' + n + ' in position'; } } }
   const wb = $('wavebox'), hz = G.hordeAlert ? 1 : 0;                                   // horde siren: the wave cell flashes red until the horde is broken
   if ((wb.dataset.horde | 0) !== hz) { wb.dataset.horde = hz; wb.classList.toggle('horde', !!hz); let ha = $('hordeAlert'); if (hz && !ha) { ha = document.createElement('div'); ha.id = 'hordeAlert'; ha.textContent = '⚠ HORDE ALERT'; wb.appendChild(ha); } else if (!hz && ha) ha.remove(); }
   if (hz) { let n = 0; for (const z of G.zeds) if (!z.dead && z.horde) n++; const ha = $('hordeAlert'); if (ha) ha.textContent = '⚠ HORDE ALERT · ' + n + ' left'; }
@@ -14161,7 +14226,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b73';
+const BUILD_TAG = 'b74';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
