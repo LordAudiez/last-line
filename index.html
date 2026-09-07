@@ -308,6 +308,8 @@ html,body{width:100%;height:100%;height:100dvh;position:relative;overflow:hidden
 }
 
 /* ---------- dev PIN pad (visionOS) ---------- */
+#btnDevPin.pinpulse{animation:pinBtnPulse 1.4s ease-in-out infinite;border-color:#8dffbe!important;color:#eafff4!important}
+@keyframes pinBtnPulse{0%,100%{box-shadow:0 0 0 0 rgba(141,255,190,.5)}50%{box-shadow:0 0 14px 3px rgba(141,255,190,.55)}}
 #pinpad{position:absolute;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
   background:rgba(4,7,10,.55);-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);
   animation:pinFade .28s ease}
@@ -10101,10 +10103,17 @@ if ($('dvSpBack')) $('dvSpBack').onclick = e => { e.stopPropagation(); showDevVi
   const vol = $('volSfx'), row = $('devPinRow'), pad = $('pinpad'), btn = $('btnDevPin');
   if (!vol || !row || !pad || !btn) return;
   let grp = row; while (grp && !grp.classList.contains('grp')) grp = grp.parentElement;   // the collapsible Weapon SFX group the button lives in
+  let wasOn = false;
   const syncRow = () => {
     const on = (+vol.value === 0);
     row.style.display = on ? 'flex' : 'none';
     if (on && grp) grp.classList.remove('closed');   // a collapsed group would hide the button via CSS !important — force it open when unlocked
+    if (on && !wasOn) {                              // just unlocked: the button sits low in a long panel — pull it into view so it's actually seen
+      btn.classList.add('pinpulse');
+      try { setTimeout(() => row.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); } catch (e) { try { row.scrollIntoView(); } catch (e2) {} }
+    }
+    if (!on) btn.classList.remove('pinpulse');
+    wasOn = on;
   };
   vol.addEventListener('input', syncRow); vol.addEventListener('change', syncRow); syncRow();
   let buf = '';
@@ -11473,7 +11482,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     return g;
   })();
   const GRASSG = GRASST;
-  P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .92, side: THREE.DoubleSide, vertexColors: true, envMapIntensity: .25 }), 40000, false);
+  P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .92, side: THREE.DoubleSide, vertexColors: true, envMapIntensity: .25 }), 48000, false);
   P.grass.receiveShadow = true; GRASS_POOL = P.grass; P.grass.castShadow = !!(QUAL_DEF[QUAL.level] || {}).shadow && QUAL.gs >= 5;                                     // tufts sit in tree and building shadow; on High they also throw their own
   const GRASSC = [lin('#5f8a3a'), lin('#4c7430'), lin('#6b9440')];
   /* ground clutter: wildflower heads in the meadows, pebbles on dirt and sand, cattail reeds in the swamp and along the shore,
@@ -12583,11 +12592,15 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       /* ---- grass blades: they sway on the wind, and lie flat (then slowly stand back up) where troops and vehicles have run through ---- */
       // grass + ground clutter use a tighter apron than the entity cull: far-edge blades aren't visible and regrow instantly on pan,
       // so this keeps in-view detail identical while cutting the heaviest render work back for a smoother frame
-      const gmx = CAM.vw * .12, gmy = CAM.vh * .12, gvx0 = CAM.x - gmx, gvx1 = CAM.x + CAM.vw + gmx, gvy0 = CAM.y - gmy, gvy1 = CAM.y + CAM.vh + gmy;
+      // cover the FULL tilted view: the far edge of the screen sees ground up to ~300 world units above the camera target
+      // (same extent the terrain/entity cull uses), so the grass carpet must reach that far or the top strip renders bare.
+      const gmx = CAM.vw * .16, gvx0 = CAM.x - gmx, gvx1 = CAM.x + CAM.vw + gmx;
+      const gvy0 = CAM.y - Math.max(300, CAM.vh * .3), gvy1 = CAM.y + CAM.vh + CAM.vh * .16;
       const gtx0 = Math.max(0, (gvx0 / TS) | 0), gtx1 = Math.min(MW - 1, (gvx1 / TS) | 0), gty0 = Math.max(0, (gvy0 / TS) | 0), gty1 = Math.min(MH - 1, (gvy1 / TS) | 0);
-      const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 2600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
+      const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 3600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
       const per = dense ? QUAL.gd : QUAL.gs;
       const clutter = dense && QUAL.gd >= 5;                                                   // clutter only up close and above 'mobile'
+      const swayBase = tt * 2.4, swayKx = TS * .02, swayKy = TS * .017;                        // wind sway is computed once per tile (not per blade) — one Math.sin instead of thousands, identical-looking ripple
       outer: for (let ty = gty0; ty <= gty1; ty++) for (let tx = gtx0; tx <= gtx1; tx++) {
         const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
         if (clutter) {
@@ -12605,8 +12618,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           // wildflower heads removed — the bright petal balls read as debris scattered on the grass
         }
         if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;
+        const tsway = wm * (.2 + Math.sin(swayBase + tx * swayKx + ty * swayKy) * .14);          // one wind value for the whole tuft-tile — the ripple still travels tile-to-tile
+        const trx = wdz * tsway, trz = -wdx * tsway;
         for (let k = 0; k < per; k++) {
-          if (P.grass.count >= 39000) break outer;
+          if (P.grass.count >= 46000) break outer;
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
           const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;   // spread the tufts across the tile
           const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS, flat = grassFlat(wx, wy);
@@ -12614,7 +12629,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
           let rx, rz;
           if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran/landed through
-          else { const ph = tt * 2.4 + wx * .02 + wy * .017, sway = wm * (.2 + Math.sin(ph) * .14); rx = wdz * sway; rz = -wdx * sway; }   // lean into the wind, harder as it gusts
+          else { rx = trx; rz = trz; }   // lean into the wind, harder as it gusts
           put(P.grass, wx * K, groundY(wx, wy), wy * K, rx, h2 * TAU, rz, thick, bh, thick, GRASSC[(tx + ty + k) % 3]);
         }
       }
@@ -13553,7 +13568,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b60';
+const BUILD_TAG = 'b61';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
