@@ -968,6 +968,9 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgFlash" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Unit flashlights &amp; headlights (night)</span></label>
       <div class="slid" style="margin-top:10px"><label>UI size</label><input type="range" id="uiScale" min="45" max="120" step="1"><span class="v" id="uiScaleV">100%</span></div>
       <div class="slid" style="margin-top:8px"><label>Graphics</label><div class="rowb" id="gfxRow" style="flex:1;margin:0"><button class="sx" data-q="mobile">📱 Mobile</button><button class="sx" data-q="low">Low</button><button class="sx" data-q="medium">Medium</button><button class="sx" data-q="high">High</button></div></div>
+      <div class="slid" style="margin-top:8px"><label>Super Res</label><div class="rowb" id="srRow" style="flex:1;margin:0"><button class="sx" data-sr="auto">Auto</button><button class="sx" data-sr="quality">Quality</button><button class="sx" data-sr="balanced">Balanced</button><button class="sx" data-sr="perf">Performance</button><button class="sx" data-sr="off">Off</button></div></div>
+      <div class="sc" style="margin-top:4px">DLSS-style upscaling: the scene renders at a lower internal resolution and is rebuilt to full size with edge-aware upscaling and adaptive sharpening. Auto holds your display's refresh rate.</div>
+      <label class="sfxrow" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="tgVsync" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">VSync auto pacing (steady half-rate instead of stutter when overloaded)</span></label>
       <div class="slid" style="margin-top:8px"><label>Combat smoke</label><input type="range" id="smokeOp" min="0" max="100" step="5"><span class="v" id="smokeOpV">100%</span></div>
       <label class="sfxrow" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="tgFxExpl" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Explosion smoke &amp; dust</span></label>
       <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgFxFire" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Muzzle &amp; firing dust</span></label>
@@ -4706,20 +4709,48 @@ function fxGroundBurst(x, y, r) {
   }
   G._fx = _fx;
 }
+/* Blast pressure wave as DUST, not a drawn line: puffs evenly around the circle all launched at the same speed, so they
+   expand as one coherent ring-shaped front (a "wave line" made of dust), with a thinner trailing band behind it for body.
+   The front decelerates on drag like a real shock front and fades as a unit, low to the ground and riding the wind. */
+function fxDustWave(x, y, r, k) {
+  k = k || 1;
+  if (G.parts.length > PMAX * .92) return;
+  const n = clamp(Math.round(r * .9 * k), 28, 64), sp = r * 3.4 * k, life = .95, r0 = r * .28;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + rnd(-.04, .04), v = sp * rnd(.96, 1.04);
+    part('dust', x + Math.cos(a) * r0, y + Math.sin(a) * r0 * .82, Math.cos(a) * v, Math.sin(a) * v * .8, life + rnd(-.05, .05), rnd(r * .2, r * .28),
+      i % 3 ? 'rgba(184,170,144,1)' : 'rgba(206,194,170,1)', { z: rnd(0, 3), vz: rnd(2, 10), g: 4, grow: r * .5, drag: .87, wind: 1 });
+  }
+  const m = Math.round(n * .55), sp2 = sp * .66;                                          // trailing band: slower, a touch darker
+  for (let i = 0; i < m; i++) {
+    const a = (i / m) * TAU + rnd(-.06, .06), v = sp2 * rnd(.95, 1.05);
+    part('dust', x + Math.cos(a) * r0 * .7, y + Math.sin(a) * r0 * .6, Math.cos(a) * v, Math.sin(a) * v * .8, life * 1.15, rnd(r * .18, r * .26),
+      'rgba(160,148,124,1)', { z: rnd(0, 2), vz: rnd(1, 6), g: 3, grow: r * .42, drag: .88, wind: 1 });
+  }
+  // second ring: once the inner front has reached its full spread (~0.3 s), a wider, lighter wind-like ring launches from the
+  // centre and overtakes it — the blast's outer wind impact
+  if (!G.later) G.later = [];
+  G.later.push({ t: .32, fn: () => fxDustWaveOuter(x, y, r, k) });
+}
+function fxDustWaveOuter(x, y, r, k) {
+  if (G.parts.length > PMAX * .94) return;
+  const _fx = G._fx; G._fx = 2;                                                            // still explosion dust for the smoke slider / toggle
+  const n = clamp(Math.round(r * .7 * k), 22, 48), sp = r * 4.8 * k, life = 1.25, r0 = r * .35;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + rnd(-.05, .05), v = sp * rnd(.97, 1.03);
+    part('dust', x + Math.cos(a) * r0, y + Math.sin(a) * r0 * .82, Math.cos(a) * v, Math.sin(a) * v * .8, life + rnd(-.06, .06), rnd(r * .22, r * .3),
+      i % 2 ? 'rgba(206,196,176,1)' : 'rgba(222,214,196,1)', { z: rnd(0, 4), vz: rnd(2, 8), g: 2, grow: r * .7, drag: .91, wind: 1, am: .62 });   // paler, thinner, travels farther
+  }
+  G._fx = _fx;
+}
 function fxExplosion(x, y, r, colA, colB, snd) {
   const _fx = G._fx; G._fx = 2;                     // explosion
   colA = colA || '#ffd27a'; colB = colB || '#ff7a2e';
   const big = G.parts.length < PMAX * .7;      // richer layering while there's particle budget
   // 1. hot core: a white flash that swells and dies in a few frames
   part('fire', x, y, 0, 0, .12, r * .55, '#fff6e0', { grow: r * 2.2, glow: 1, z: 8, drag: 1 });
-  // 2. shockwave: a fast bright ring, then a slower dusty pressure ring
-  part('ring', x, y, 0, 0, .22, r * .3, '#ffe0a8', { grow: r * 1.7 / .22, glow: 1 });
-  // the pressure wave is DUST, not a drawn ring: a full circle of low puffs blasted outward that thin as they spread,
-  // then hang and drift on the wind (rendered through the noisy billboard so the wave has ragged texture)
-  { const n = big ? 26 : 16; for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + rnd(-.12, .12), sp = rnd(r * 2.6, r * 4.2), tk = rnd(.9, 1.6);
-      part('dust', x + Math.cos(a) * r * .25, y + Math.sin(a) * r * .18, Math.cos(a) * sp, Math.sin(a) * sp * .75, tk, rnd(r * .22, r * .38), i % 3 ? 'rgba(172,158,132,1)' : 'rgba(205,192,168,1)',
-        { z: rnd(0, 4), vz: rnd(4, 18), g: 6, grow: r * .55, drag: .86, wind: 1 }); } }
+  // 2. shockwave: a ring-shaped DUST wave front expanding outward (no drawn line) — see fxDustWave
+  fxDustWave(x, y, r, big ? 1 : .8);
   // 3. fireball: mushrooming tongues of flame that rise and cool through orange to red
   for (let i = 0; i < (big ? 18 : 12); i++) {
     const a = rnd(TAU), s = rnd(20, r * 4.5), k = Math.random();
@@ -4813,6 +4844,9 @@ function spawnZed(t, x, y) {
   };
   if (d.struct) { z.prog = 0; z.done = false; z.hp = Math.round(hp * .15); z.spawnCd = d.spawnT; z.ang = 0; z.limbs = 0; }
   if (d.worker) z.limbs = 0;                          // no dismemberment on the levies (they die simply)
+  // hard cap: never more than MAXZ enemies alive on the whole map. Over the cap the object is handed back detached and
+  // already dead, so every spawn path (waves, hordes, invaders, camps, dev spawns, saves) stays safe without a null check.
+  if (G.zeds.length >= MAXZ) { let alive = 0; for (const q of G.zeds) if (!q.dead) alive++; if (alive >= MAXZ) { z.dead = true; z.capped = true; return z; } }
   G.zeds.push(z); if (!d.struct && !d.worker) G.waveAlive++;
   return z;
 }
@@ -5115,8 +5149,7 @@ function bloaterShock(src, r) {
 /* ---------------- mortar impact: big ground-hugging blast ---------------- */
 function fxMortar(x, y, r, big) {
   const _fx = G._fx; G._fx = 2;                     // explosion
-  part('ring', x, y, 0, 0, .42, r * .28, '#ffe9c0', { grow: r * 1.9 / .42, glow: 1 });
-  part('ring', x, y, 0, 0, .75, r * .5, '#c9d6e0', { grow: r * 2.6 / .75, glow: 1 });
+  fxDustWave(x, y, r, big ? 1.15 : .95);                                                // the impact's pressure wave, as a dust ring front
   for (let i = 0; i < (big ? 26 : 16); i++) {
     const a = rnd(TAU), s = rnd(30, r * 3.4);
     part('fire', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.25, .6), rnd(r * .16, r * .34),
@@ -5276,6 +5309,7 @@ function blastProps(x, y, r) {
 function updateProps(dt) {
   if (G.deadProps.size) for (const [id, t] of G.deadProps) if (G.t >= t) G.deadProps.delete(id);   // regrow
   // burning barrels waiting to cook off
+  if (G.later && G.later.length) for (let i = G.later.length - 1; i >= 0; i--) { const l = G.later[i]; l.t -= dt; if (l.t <= 0) { G.later.splice(i, 1); try { l.fn(); } catch (e) {} } }
   if (G.fuses && G.fuses.length) for (let i = G.fuses.length - 1; i >= 0; i--) {
     const f = G.fuses[i]; f.t -= dt;
     if (Math.random() < dt * 30) part('fire', f.x + rnd(-4, 4), f.y + rnd(-3, 3), rnd(-6, 6), rnd(-6, 6), rnd(.2, .45), rnd(3, 6), '#ffa030', { glow: 1, z: rnd(6, 16), vz: rnd(40, 90), g: -40 });
@@ -6200,12 +6234,32 @@ function updateTime(dt) {
 }
 
 /* drifting wind plus the ambient particle bed that sells the environment */
+/* Natural wind is a heading plus a speed, not two wobbling axes:
+     • the heading holds for 3 minutes, then swings to a new one — and swings smoothly (≤ 9°/s), never snapping;
+     • the speed drifts toward a new target every 25–50 s at one scale step (20) per second, so climbing from
+       20 to 60 takes ~2 s and a lull never arrives as a jump;
+     • on top of that only a gentle, smooth gust modulation (±12 %), so grass and smoke breathe without jitter. */
+const WIND_DIR_HOLD = 180, WIND_TURN_RATE = 9 * Math.PI / 180, WIND_STEP = 20;
 function updateAmbient(dt) {
   const w = G.wind;
   w.t += dt;
-  w.x = 16 + Math.sin(w.t * .13) * 26 + Math.sin(w.t * .41) * 7;
-  w.y = -3 + Math.sin(w.t * .21) * 11;
-  if (G.windForce) { w.x = Math.cos(G.windForce.dir) * G.windForce.spd; w.y = Math.sin(G.windForce.dir) * G.windForce.spd; }   // dev: steady forced wind — locked speed AND direction, no random drift or gusting
+  if (w.dir === undefined) {                                             // first tick: seed the model from the current vector
+    w.dir = Math.atan2(w.y || -4, w.x || 14); w.dirTarget = w.dir; w.dirT = WIND_DIR_HOLD;
+    w.spd = Math.hypot(w.x || 14, w.y || -4); w.spdTarget = w.spd; w.spdT = rnd(25, 50);
+  }
+  // heading: hold, then pick a new target and turn toward it along the short arc at a limited rate
+  w.dirT -= dt;
+  if (w.dirT <= 0) { w.dirT = WIND_DIR_HOLD; w.dirTarget = w.dir + (Math.random() < .5 ? -1 : 1) * rnd(Math.PI * .25, Math.PI); }
+  let dd = w.dirTarget - w.dir; dd = Math.atan2(Math.sin(dd), Math.cos(dd));
+  const step = WIND_TURN_RATE * dt; w.dir += Math.abs(dd) <= step ? dd : Math.sign(dd) * step;
+  // speed: new target now and then; approach it at WIND_STEP units per second
+  w.spdT -= dt;
+  if (w.spdT <= 0) { w.spdT = rnd(25, 50); const r = Math.random(); w.spdTarget = r < .15 ? rnd(4, 12) : r < .85 ? rnd(14, 40) : rnd(40, 62); }
+  const ds = w.spdTarget - w.spd, sstep = WIND_STEP * dt; w.spd += Math.abs(ds) <= sstep ? ds : Math.sign(ds) * sstep;
+  const gust = 1 + .09 * Math.sin(w.t * .9) + .03 * Math.sin(w.t * 2.3 + 1.7);   // smooth breathing, no jumps
+  const s = w.spd * gust;
+  w.x = Math.cos(w.dir) * s; w.y = Math.sin(w.dir) * s;
+  if (G.windForce) { w.x = Math.cos(G.windForce.dir) * G.windForce.spd; w.y = Math.sin(G.windForce.dir) * G.windForce.spd; w.dir = G.windForce.dir; w.dirTarget = w.dir; w.spd = w.spdTarget = G.windForce.spd; }   // dev: steady forced wind — locked speed AND direction; the natural model resumes from it when released
 
   // expire old grass trample marks (they've fully regrown by now)
   G.grassPruneT -= dt;
@@ -6237,7 +6291,7 @@ function updateAmbient(dt) {
 }
 
 /* ---------------- open-world spawning ---------------- */
-const MAXZ = 900;
+const MAXZ = 1000;   // enemy cap for the entire map
 function randomLandPoint(cx, cy, minR, maxR) {
   for (let a = 0; a < 60; a++) {
     let x, y;
@@ -9992,6 +10046,21 @@ window.applySmokeOp = applySmokeOp;
   const s = $('smokeOp'); if (s) s.addEventListener('input', () => applySmokeOp((+s.value || 0) / 100));
 })();
 
+/* ---------------- Super Resolution mode + VSync pacing (Settings › Display) ---------------- */
+(function () {
+  const row = $('srRow'); if (row) {
+    const sync = () => row.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.sr === (G.srMode || 'auto')));
+    let saved = 'auto'; try { saved = localStorage.getItem('ll_sr') || 'auto'; } catch (e) {}
+    G.srMode = saved; sync();
+    row.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { G.srMode = b.dataset.sr; try { localStorage.setItem('ll_sr', G.srMode); } catch (e) {} sync(); alertMsg('Super Resolution: ' + b.textContent, 'info'); AU.ui && AU.ui('ok'); }));
+  }
+  const tv = $('tgVsync'); if (tv) {
+    let v = true; try { const raw = localStorage.getItem('ll_vsync'); if (raw != null) v = raw === '1'; } catch (e) {}
+    tv.checked = v; G.vsyncAuto = v;
+    tv.addEventListener('change', () => { G.vsyncAuto = tv.checked; try { localStorage.setItem('ll_vsync', tv.checked ? '1' : '0'); } catch (e) {} });
+  }
+})();
+
 /* ---------------- Combat FX toggles: disable explosion / firing smoke & dust independently ---------------- */
 (function () {
   const wireFx = (id, key, set) => {
@@ -11347,6 +11416,66 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       ' gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }'].join('\n'),
       { tex: { value: null }, bloom: { value: null }, rays: { value: null }, kb: { value: .85 }, kr: { value: .55 }, uT: { value: 0 } })
   };
+  /* ======================= Super Resolution (DLSS-class spatial upscaling) =======================
+     The scene is rendered into the SAME full-size offscreen target but only into a sub-rectangle (a reduced viewport +
+     scissor), so changing the render scale never reallocates anything — no glitch. An edge-preserving Catmull-Rom
+     upscale then rebuilds a full-resolution image from that sub-rect, and a contrast-adaptive sharpen (RCAS-style)
+     restores crispness in the composite. Presets mirror DLSS: Quality .77, Balanced .67, Performance .58; Auto steers
+     the scale from measured frame time toward the display's refresh interval. */
+  const SR = { mode: 'auto', scale: 1, target: 1, min: .5, rtU: null, dwell: 0, lastDropEma: 0, cpuHold: 0, sharp: .55 };
+  const SR_PRESET = { quality: .77, balanced: .67, perf: .58 };
+  FXM.upscale = fxMat(['uniform sampler2D tex; uniform vec2 uScale, uTexel; varying vec2 vUv;',
+    'vec3 T(vec2 p, vec2 lo, vec2 hi){ return texture2D(tex, clamp(p, lo, hi)).rgb; }',
+    'void main(){',
+    ' vec2 texSize = 1.0 / uTexel; vec2 lo = uTexel * .5, hi = uScale - uTexel * .5;',
+    ' vec2 sp = vUv * uScale * texSize; vec2 tc = floor(sp - .5) + .5; vec2 f = sp - tc;',
+    ' vec2 w0 = f * (-.5 + f * (1.0 - .5 * f)); vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f); vec2 w2 = f * (.5 + f * (2.0 - 1.5 * f)); vec2 w3 = f * f * (-.5 + .5 * f);',
+    ' vec2 w12 = w1 + w2; vec2 o12 = w2 / w12;',
+    ' vec2 t0 = (tc - 1.0) * uTexel, t3 = (tc + 2.0) * uTexel, t12 = (tc + o12) * uTexel;',
+    ' vec3 r = T(vec2(t0.x, t0.y), lo, hi) * w0.x * w0.y + T(vec2(t12.x, t0.y), lo, hi) * w12.x * w0.y + T(vec2(t3.x, t0.y), lo, hi) * w3.x * w0.y',
+    '        + T(vec2(t0.x, t12.y), lo, hi) * w0.x * w12.y + T(vec2(t12.x, t12.y), lo, hi) * w12.x * w12.y + T(vec2(t3.x, t12.y), lo, hi) * w3.x * w12.y',
+    '        + T(vec2(t0.x, t3.y), lo, hi) * w0.x * w3.y + T(vec2(t12.x, t3.y), lo, hi) * w12.x * w3.y + T(vec2(t3.x, t3.y), lo, hi) * w3.x * w3.y;',
+    ' gl_FragColor = vec4(max(r, 0.0), 1.0); }'].join('\n'),
+    { tex: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1, 1) } });
+  // contrast-adaptive sharpen, shared by the composite and the plain output: 5 taps at output resolution
+  const SR_CAS = [
+    'uniform float uSharp; uniform vec2 uTexelO;',
+    'vec3 cas(sampler2D t, vec2 uv){ vec3 c = texture2D(t, uv).rgb; if (uSharp <= 0.0) return c;',
+    ' vec3 n = texture2D(t, uv + vec2(0.0, -uTexelO.y)).rgb, s = texture2D(t, uv + vec2(0.0, uTexelO.y)).rgb, w = texture2D(t, uv + vec2(-uTexelO.x, 0.0)).rgb, e = texture2D(t, uv + vec2(uTexelO.x, 0.0)).rgb;',
+    ' vec3 mn = min(c, min(min(n, s), min(w, e))), mx = max(c, max(max(n, s), max(w, e)));',
+    ' vec3 amp = clamp(min(mn, 2.0 - mx) / max(mx, 1e-4), 0.0, 1.0); amp = sqrt(amp);',
+    ' vec3 k = -amp / mix(8.0, 5.0, uSharp);',
+    ' return max((k * (n + s + w + e) + c) / (4.0 * k + 1.0), 0.0); }'].join('\n');
+  // composite gains the sharpen (reads the upscaled scene when SR is active)
+  FXM.comp.fragmentShader = FXM.comp.fragmentShader
+    .replace('varying vec2 vUv;', 'varying vec2 vUv;\n' + SR_CAS)
+    .replace('vec3 c = texture2D(tex, vUv).rgb;', 'vec3 c = cas(tex, vUv);');
+  FXM.comp.uniforms.uSharp = { value: 0 }; FXM.comp.uniforms.uTexelO = { value: new THREE.Vector2(1, 1) };
+  FXM.comp.needsUpdate = true;
+  // plain output for quality levels without bloom: sharpen + linear → sRGB, nothing else
+  FXM.srOut = fxMat(['uniform sampler2D tex; varying vec2 vUv;', SR_CAS,
+    'void main(){ vec3 c = cas(tex, vUv); gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }'].join('\n'),
+    { tex: { value: null }, uSharp: { value: 0 }, uTexelO: { value: new THREE.Vector2(1, 1) } });
+  function srResolveMode() { const m = G.srMode || 'auto'; return SR_PRESET[m] !== undefined ? m : (m === 'off' ? 'off' : 'auto'); }
+  function srUpdate() {                                                                 // per frame: pick the render scale
+    const mode = srResolveMode(); SR.mode = mode;
+    if (mode === 'off') { SR.target = 1; }
+    else if (SR_PRESET[mode] !== undefined) { SR.target = SR_PRESET[mode]; }
+    else {                                                                              // auto: hold the display refresh; only turn the scale, never reallocate
+      const ms = G.frameMs || 16.7, vs = G.vsyncMs || 16.7;
+      if (SR.cpuHold > 0) SR.cpuHold--;
+      if (--SR.dwell <= 0) {
+        if (ms > vs * 1.08 && SR.target > SR.min && SR.cpuHold <= 0) {
+          if (SR.lastDropEma && ms > SR.lastDropEma * .96) SR.cpuHold = 240;           // the last drop bought nothing: we're CPU-bound, stop lowering
+          else { SR.lastDropEma = ms; SR.target = Math.max(SR.min, SR.target - .05); }
+          SR.dwell = 30;
+        } else if (ms < vs * .74 && SR.target < 1) { SR.target = Math.min(1, SR.target + .05); SR.lastDropEma = 0; SR.dwell = 120; }
+      }
+    }
+    SR.scale += (SR.target - SR.scale) * .15; if (Math.abs(SR.target - SR.scale) < .004) SR.scale = SR.target;
+    G.srScale = SR.scale;
+  }
+  window.getSR = () => ({ mode: SR.mode, scale: SR.scale });
   FX.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), FXM.comp); FX.quad.frustumCulled = false;
   const FX_SCENE = new THREE.Scene(); FX_SCENE.add(FX.quad);
   function fxResize() {
@@ -11358,13 +11487,31 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     FX.rt.samples = 0;
     const qw = Math.max(1, w >> 2), qh = Math.max(1, h >> 2), o = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: false, stencilBuffer: false };
     FX.rtA = new THREE.WebGLRenderTarget(qw, qh, o); FX.rtB = new THREE.WebGLRenderTarget(qw, qh, o); FX.rtR = new THREE.WebGLRenderTarget(qw, qh, o);
+    if (SR.rtU) SR.rtU.dispose(); SR.rtU = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: false, stencilBuffer: false });
   }
   const fxPass = (mat, target) => { FX.quad.material = mat; renderer.setRenderTarget(target); renderer.render(FX_SCENE, FX.cam); };
   const _sunV = new THREE.Vector3();
   function renderFrame(day) {
-    if (!FX.on || !FX.rt) { renderer.setRenderTarget(null); renderer.render(scene3, cam3); return; }
+    srUpdate();
+    const useSR = SR.mode !== 'off' && SR.scale < .995;
+    if (!FX.on && !useSR) { renderer.setRenderTarget(null); renderer.render(scene3, cam3); return; }
+    if (!FX.rt || FX.w !== Math.floor(renderer.domElement.width) || FX.h !== Math.floor(renderer.domElement.height)) fxResize();
+    // scene into the offscreen target — into a reduced sub-rectangle when Super Resolution is active
+    const sw = useSR ? Math.max(8, Math.round(FX.w * SR.scale)) : FX.w, sh = useSR ? Math.max(8, Math.round(FX.h * SR.scale)) : FX.h;
+    FX.rt.viewport.set(0, 0, sw, sh); FX.rt.scissor.set(0, 0, sw, sh); FX.rt.scissorTest = useSR;
     renderer.setRenderTarget(FX.rt); renderer.render(scene3, cam3);
-    const rt = FX.rt, qw = FX.rtA.width, qh = FX.rtA.height;
+    let sceneTex = FX.rt.texture, sharp = 0;
+    if (useSR) {                                                                       // rebuild full resolution from the sub-rect
+      FXM.upscale.uniforms.tex.value = FX.rt.texture; FXM.upscale.uniforms.uScale.value.set(sw / FX.w, sh / FX.h); FXM.upscale.uniforms.uTexel.value.set(1 / FX.w, 1 / FX.h);
+      fxPass(FXM.upscale, SR.rtU); sceneTex = SR.rtU.texture;
+      sharp = SR.sharp * Math.min(1, (1 - SR.scale) * 2.6 + .35);                     // sharpen harder the more we upscale
+    }
+    if (!FX.on) {                                                                      // no bloom on this quality level: sharpen + output
+      FXM.srOut.uniforms.tex.value = sceneTex; FXM.srOut.uniforms.uSharp.value = sharp; FXM.srOut.uniforms.uTexelO.value.set(1 / FX.w, 1 / FX.h);
+      fxPass(FXM.srOut, null); renderer.setRenderTarget(null); return;
+    }
+    const rt = { texture: sceneTex }, qw = FX.rtA.width, qh = FX.rtA.height;
+    FXM.comp.uniforms.uSharp.value = sharp; FXM.comp.uniforms.uTexelO.value.set(1 / FX.w, 1 / FX.h);
     FXM.bright.uniforms.tex.value = rt.texture; fxPass(FXM.bright, FX.rtA);
     for (let i = 0; i < 2; i++) {
       FXM.blur.uniforms.tex.value = FX.rtA.texture; FXM.blur.uniforms.dir.value.set(1 / qw, 0); fxPass(FXM.blur, FX.rtB);
@@ -13105,8 +13252,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     }
     for (const [id, um] of unitMeshes) if (!live.has(id)) { scene3.remove(um.g); unitMeshes.delete(id); }
     /* ---- zombies / invaders ---- */
+    // enemies are drawn only when the camera is actually on them: the view plus a thin 8% edge margin (and the far reach the
+    // tilted camera sees at the top of the screen). Figures are instanced per frame, so they appear the instant they enter.
+    const ezx0 = CAM.x - CAM.vw * .08, ezx1 = CAM.x + CAM.vw * 1.08, ezy0 = CAM.y - Math.max(300, CAM.vh * .3), ezy1 = CAM.y + CAM.vh * 1.08;
     for (const zz of G.zeds) {
-      if (zz.dead || zz.x < vx0 || zz.x > vx1 || zz.y < vy0 || zz.y > vy1) continue;
+      if (zz.dead || zz.x < ezx0 || zz.x > ezx1 || zz.y < ezy0 || zz.y > ezy1) continue;
       if (zz._mk === undefined) { const n = (typeof ZVARS !== 'undefined' && ZVARS[zz.t]) || 1; const v = (hash2(zz.id, 5) * n) | 0; zz._mk = v ? zz.t + v : zz.t; }
       const M = MODEL[zz._mk] || MODEL[zz.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' };
       const push = zz.lunge > 0 ? zz.lunge * .5 : 0, x = (zz.x + Math.cos(zz.ang) * push * TS) * K, z = (zz.y + Math.sin(zz.ang) * push * TS) * K, gy = groundY(zz.x, zz.y);
@@ -13202,8 +13352,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
       else if (k === 'flare') { const fl = .75 + .25 * Math.sin(G.t * 40 + p.x); bb(partsAdd, x, y, z, r * 7 * fl, 1, .55, .22, a * .55); bb(partsAdd, x, y, z, r * 3 * fl, 1, .85, .5, a * .9); bb(partsAdd, x, y, z, r * 1.3, 1, 1, .95, a); }   // orange halo, hot amber body, white core
       else if (k === 'ring') put(P.ring, x, gy + .06, z, -HPI, 0, 0, r, r, 1);
-      else if (k === 'smoke') { let sa = a * .15; if (p.fx === 1) { if (G.fxFire === false) continue; sa *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; sa *= smK; } bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], sa, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
-      else if (k === 'dust' || k === 'fog') { let da = a * .22; if (p.fx === 1) { if (G.fxFire === false) continue; da *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; da *= smK; } bb(partsNoise, x, y + .02, z, r * 2.1, c[0], c[1], c[2], da, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
+      else if (k === 'smoke') { let sa = a * .15 * (p.am || 1); if (p.fx === 1) { if (G.fxFire === false) continue; sa *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; sa *= smK; } bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], sa, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
+      else if (k === 'dust' || k === 'fog') { let da = a * .22 * (p.am || 1); if (p.fx === 1) { if (G.fxFire === false) continue; da *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; da *= smK; } bb(partsNoise, x, y + .02, z, r * 2.1, c[0], c[1], c[2], da, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
       else if (k === 'blood') { bb(partsAlpha, x, y, z, Math.max(.06, r * 1.7), c[0] * .55, c[1] * .3, c[2] * .3, Math.min(1, a * 1.5)); if (p.z > 1) bb(partsAlpha, x, y - r * .6, z, Math.max(.04, r * .9), c[0] * .5, c[1] * .25, c[2] * .25, Math.min(1, a)); }
       else if (k === 'gib') drawGib(p, x, gy + (p.z || 0) * K, z);
       else if (k === 'chunk') { if (p.col && MEAT(p.col)) { const v = rgbOf(p.col); if (v[1] > v[0] * 1.6) continue; put(P.gore, x, y, z, p.rot * 1.3, p.rot, p.rot * .7, r * .9, r * .7, r * .8, col3(p.col)); } else put(P.box, x, y, z, p.rot * 1.1, p.rot, p.rot * .6, r * 1.2, r * .6, r * .9, col3(p.col || '#5a4028')); }
@@ -13428,16 +13578,41 @@ function returnToMenu() {
 }
 
 let last = 0, acc = 0, fpsT = 0, frames = 0, fps = 0;
+/* VSync auto pacing. requestAnimationFrame is already locked to the display's vertical sync; what this adds is
+   (1) detecting the refresh rate from the frame timestamps (60 / 75 / 90 / 120 / 144 / 165 / 240) so the Super-Resolution
+   scaler knows the interval it has to hold, and (2) when a frame can't hold that interval even at minimum render scale,
+   presenting every second vblank instead of stuttering between one and two — an even 60 on a 120 Hz panel, 72 on 144,
+   30 on 60 — which reads far smoother than an uneven 45. Recovers by itself when headroom returns. */
+const VS = { hz: 60, ms: 1000 / 60, hist: [], ema: 0, div: 1, over: 0, under: 0, tick: 0 };
+const VS_RATES = [60, 75, 90, 100, 120, 144, 165, 240];
+function vsyncSample(rawDt) {
+  const ms = rawDt * 1000;
+  VS.hist.push(ms); if (VS.hist.length > 90) VS.hist.shift();
+  if (VS.hist.length >= 30 && (VS.tick & 31) === 0) {                                  // refresh rate = the fastest interval we ever sustain (median of the quickest third)
+    const q = [...VS.hist].sort((a, b) => a - b), fast = q.slice(0, Math.max(5, q.length / 3 | 0)), med = fast[fast.length >> 1];
+    let best = 60, bd = 1e9; for (const r of VS_RATES) { const d = Math.abs(1000 / r - med); if (d < bd) { bd = d; best = r; } }
+    if (bd < 1000 / best * .18) { VS.hz = best; VS.ms = 1000 / best; }
+  }
+  VS.ema = VS.ema ? VS.ema + (ms - VS.ema) * .08 : ms;
+  G.frameMs = VS.ema; G.vsyncMs = VS.ms * VS.div; G.vsyncHz = VS.hz;
+  if (G.vsyncAuto === false) { VS.div = 1; return; }
+  const srMin = !G.srScale || G.srScale <= .52 || (G.srMode && G.srMode !== 'auto');   // only halve once the resolution scaler has nothing left to give
+  if (VS.div === 1) { if (VS.ema > VS.ms * 1.2 && srMin) { if (++VS.over > 60) { VS.div = 2; VS.over = 0; VS.under = 0; } } else VS.over = 0; }
+  else { if (VS.ema < VS.ms * VS.div * .5) { if (++VS.under > 240) { VS.div = 1; VS.under = 0; } } else VS.under = 0; }
+}
 function loop(ts) {
   requestAnimationFrame(loop);
   if (!last) last = ts;
   let dt = (ts - last) / 1000; last = ts;
   if (dt > .25) dt = .25;
+  VS.tick++; vsyncSample(dt);
+  const present = VS.div === 1 || (VS.tick % VS.div) === 0;                              // half-rate pacing: simulate every tick, draw every second one
 
   frames++; fpsT += dt;
   if (fpsT >= .5) {
     fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
-    $('fps').textContent = fps + ' fps · ' + G.zeds.length + 'z ' + G.units.length + 'u' + (PIX <= 1 ? ' · HD' : '');
+    const srI = (typeof getSR === 'function') ? getSR() : null, srTxt = srI && srI.mode !== 'off' && srI.scale < .995 ? ' · SR ' + Math.round(srI.scale * 100) + '%' : '';
+    $('fps').textContent = fps + ' fps · ' + G.zeds.length + 'z ' + G.units.length + 'u' + (PIX <= 1 ? ' · HD' : '') + srTxt + (VS.div > 1 ? ' · vsync ½' : '');
     // adaptive resolution is disabled: the graphics never auto-change mid-game (avoids the resolution-swap glitch).
     // Quality stays exactly where the player set it; F1 still toggles HD/performance manually.
   }
@@ -13460,7 +13635,7 @@ function loop(ts) {
       if (acc > .5) acc = 0;
     }
   }
-  render();
+  if (present) render();
   if (typeof AU !== 'undefined' && AU.heliTick) AU.heliTick();
   if (G.started) updateHUD(dt);
 }
@@ -13843,7 +14018,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b63';
+const BUILD_TAG = 'b68';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
