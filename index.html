@@ -6665,8 +6665,25 @@ function unitRange(u) {
 /* Bodies never occupy the same space: a positional relaxation pass that pushes any two overlapping friendly
    foot-soldiers apart. Min spacing is a little under the sum of radii so cover poses can stand touching
    shoulder-to-shoulder, but never clip a body through another. Vehicles/aircraft/garrisoned excluded. */
+/* a vehicle's hull is solid ground to infantry: any foot soldier inside the oriented hull box is pushed out through the
+   nearest side (the vehicle never moves), so troops walk around vehicles — or get shoved aside when one drives through */
+function vehicleHullPush(a, near) {
+  for (let k = 0; k < near.length; k++) {
+    const v = near[k]; if (v === a || v.dead || v.inside || !v.def || !v.def.veh || v.def.fly) continue;
+    const ca = Math.cos(v.ang), sa = Math.sin(v.ang), dx = a.x - v.x, dy = a.y - v.y;
+    const fw = dx * ca + dy * sa, rt = -dx * sa + dy * ca;                        // in the hull's frame: forward / right
+    const hl = v.r * 1.15 + a.r * .6, hw = v.r * .78 + a.r * .6;
+    if (Math.abs(fw) >= hl || Math.abs(rt) >= hw) continue;
+    const pf = hl - Math.abs(fw), pr = hw - Math.abs(rt);                          // depth to each pair of faces: leave through the nearest
+    let ox, oy;
+    if (pr <= pf) { const s = rt < 0 ? -1 : 1; ox = -sa * s * pr; oy = ca * s * pr; } else { const s = fw < 0 ? -1 : 1; ox = ca * s * pf; oy = sa * s * pf; }
+    const nx = a.x + ox * 1.02, ny = a.y + oy * 1.02;
+    if (!solidAt(nx, ny, true)) { a.x = nx; a.y = ny; }
+  }
+}
 function deOverlapUnits(dt) {
   const _o = _q4;
+  for (let i = 0; i < G.units.length; i++) { const a = G.units[i]; if (a.dead || a.inside || a.roping > 0 || (a.def && (a.def.veh || a.def.fly))) continue; vehicleHullPush(a, G.hUnits.near(a.x, a.y, 64, _o)); }
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < G.units.length; i++) {
       const a = G.units[i];
@@ -7073,7 +7090,8 @@ function updateUnits(dt) {
     if (!u.def.fly && (G.mp || (u.x > CAM.x - 120 && u.x < CAM.x + CAM.vw + 120 && u.y > CAM.y - 120 && u.y < CAM.y + CAM.vh + 160))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
       if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        grassStamp(u.x, u.y, u.def.veh ? u.r * 1.3 : u.r);
+        if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r * .95); }   // the whole hull flattens the grass, not just its centre
+        else grassStamp(u.x, u.y, u.r);
         if (u.def.veh) {
           const moved = Math.hypot(u.x - (u._lx != null ? u._lx : u.x), u.y - (u._ly != null ? u._ly : u.y));
           u._lx = u.x; u._ly = u.y;
@@ -10591,6 +10609,32 @@ function issueOrder(wx, wy, shift, fast) {
   }
   if (!done) {
     const n = units.length, shape = UI.formation || 'free';
+    const gveh = units.filter(u => u.def.veh && !u.def.fly), foot = units.filter(u => !u.def.veh && !u.def.fly), air = units.filter(u => u.def.fly);
+    if (gveh.length && foot.length) {
+      /* CONVOY: a mixed group of vehicles and infantry always travels as a convoy — the lead vehicle at the front
+         (priority Abrams > Bradley > Humvee; any other vehicles line up beside it), the infantry behind it in double
+         columns of at most 6 per column, the two columns kept balanced, and the whole convoy paced to its slowest member. */
+      const PRI = { abrams: 3, stryker: 2, humvee: 1 };
+      gveh.sort((a, b) => (PRI[b.t] || 0) - (PRI[a.t] || 0));
+      let cx = 0, cy = 0, minS = 1e9; for (const u of units) { cx += u.x; cy += u.y; minS = Math.min(minS, u.spd); } cx /= n; cy /= n;
+      const fa = Math.atan2(wy - cy, wx - cx), cf = Math.cos(fa), sf = Math.sin(fa);
+      const slot = (f, l) => ({ x: clamp(wx + f * cf - l * sf, 10, WW - 10), y: clamp(wy + f * sf + l * cf, 10, WH - 10) });
+      const give = (u, sl) => { u.order = { type: UI.attackMove ? 'amove' : 'move', x: sl.x, y: sl.y, fast: !!fast, capSpd: minS }; };
+      // vehicles: the leader dead centre, the rest fanning out beside it in priority order (2nd right, 3rd left, …)
+      const vsp = Math.max(...gveh.map(v => v.r)) * 2.6, lead = gveh[0];
+      gveh.forEach((v, i) => { const k = i === 0 ? 0 : (i % 2 ? Math.ceil(i / 2) : -Math.ceil(i / 2)); give(v, slot(0, k * vsp)); });
+      // infantry: double columns behind the lead vehicle; after 12 the next pair of columns opens beside the first
+      const back = lead.r * 1.3 + 30, rsp = 26, csp = 24, P = Math.ceil(foot.length / 12);
+      const cols = P * 2;   // 2 columns per 12 troops; troops are dealt round-robin so every column is balanced and none exceeds 6
+      const fslots = foot.map((_, i) => { const col = i % cols, row = (i / cols) | 0; return slot(-(back + row * rsp), (col - (cols - 1) / 2) * csp); });
+      const used = new Array(fslots.length).fill(false);
+      const ordered = foot.slice().sort((a, b) => (a.x - cx) * cf + (a.y - cy) * sf - ((b.x - cx) * cf + (b.y - cy) * sf));
+      for (const u of ordered) { let bi = -1, bd = 1e18; for (let i = 0; i < fslots.length; i++) { if (used[i]) continue; const dd = dist2(u.x, u.y, fslots[i].x, fslots[i].y); if (dd < bd) { bd = dd; bi = i; } } used[bi] = true; give(u, fslots[bi]); }
+      // aircraft: loose grid over the destination
+      air.forEach((u, i) => { const cols = Math.ceil(Math.sqrt(air.length)); give(u, slot(30 + ((i / cols) | 0) * 40, ((i % cols) - (cols - 1) / 2) * 40)); });
+      popText(wx, wy - 10, 'CONVOY', '#7dffb2'); part('ring', wx, wy, 0, 0, .45, 6, '#7dffb2', { grow: 60, glow: 1 });
+      UI.attackMove = false; AU.ui('ok'); return;
+    }
     if (shape !== 'free' && n > 1) {
       // a real formation: units take assigned slots relative to the destination, the whole shape turned to face the
       // direction of travel, and the group moves at its slowest member's pace so it holds together.
@@ -14226,7 +14270,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b74';
+const BUILD_TAG = 'b75';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
