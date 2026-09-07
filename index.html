@@ -1434,7 +1434,7 @@ const AU = {
      jitter keeps bursts from sounding machine-stamped. */
   shot(x, y, kind, cd) {
     if (!this.ok || this.muted) return;
-    if (this.voices > 26) return;
+    if (this.voices > 512) return;   // effectively unlimited: never cut a sound, however many fire at once (huge safety valve only)
     const fam = SFX2FAM[kind] || 'rifle';
     // machine guns: the report tightens with the cyclic rate — a faster gun sounds higher and snappier
     const rateK = (fam === 'mg' && cd) ? clamp(Math.pow(.085 / cd, .45), .8, 1.35) : 1;
@@ -1562,7 +1562,7 @@ const AU = {
   gore(x, y, size = 1) {
     if (!this.ok || this.muted) return;
     const buf = this.smp.gore; if (!buf) return this.splat(x, y);
-    if (this.voices > 26) return;
+    if (this.voices > 512) return;   // effectively unlimited: never cut a sound, however many fire at once (huge safety valve only)
     const n = this.place(x, y, .95 * size, 2200, this.bus); if (!n) return;
     this.voices++; setTimeout(() => this.voices--, 300);
     const c = this.ctx, { dst, t } = n;
@@ -1573,7 +1573,7 @@ const AU = {
   blast(x, y, size = 1) {
     if (!this.ok || this.muted) return;
     const buf = this.smp.he40; if (!buf) return this.boom(x, y, size * .8);
-    if (this.voices > 26) return;
+    if (this.voices > 512) return;   // effectively unlimited: never cut a sound, however many fire at once (huge safety valve only)
     const n = this.place(x, y, .95 * size, 2600, this.bus); if (!n) return;
     this.voices++; setTimeout(() => this.voices--, 260);
     const c = this.ctx, { dst, t } = n;
@@ -12437,7 +12437,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     sun.shadow.camera.left = -dist * .9; sun.shadow.camera.right = dist * .9; sun.shadow.camera.top = dist * .9; sun.shadow.camera.bottom = -dist * .9; sun.shadow.camera.updateProjectionMatrix();
     const day = updateLighting3(cxw, cyw); dayNow = day;
     TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
-    const vx0 = CAM.x - 200, vx1 = CAM.x + CAM.vw + 200, vy0 = CAM.y - 300, vy1 = CAM.y + CAM.vh + 200;
+    const mgx = CAM.vw * .3, mgy = CAM.vh * .3;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling)
+    const vx0 = CAM.x - mgx, vx1 = CAM.x + CAM.vw + mgx, vy0 = CAM.y - Math.max(300, mgy), vy1 = CAM.y + CAM.vh + mgy;
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
     if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
 
@@ -13068,13 +13069,8 @@ function loop(ts) {
   if (fpsT >= .5) {
     fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
     $('fps').textContent = fps + ' fps · ' + G.zeds.length + 'z ' + G.units.length + 'u' + (PIX <= 1 ? ' · HD' : '');
-    // adaptive resolution: stay crisp (HD) by default, drop to performance mode
-    // only after load stays heavy for ~2s; climb back once it clears for ~1.5s
-    if ((G.started || G.showcase) && !G.pixLock && fps > 0) {
-      if (fps < 28) { G._pixDown = (G._pixDown || 0) + 1; G._pixUp = 0; if (G._pixDown >= 2 && PIX < 2) { setPIX(2); G._pixDown = 0; } }
-      else if (fps >= 44) { G._pixUp = (G._pixUp || 0) + 1; G._pixDown = 0; if (G._pixUp >= 3 && PIX > 1) { setPIX(1); G._pixUp = 0; } }
-      else { G._pixDown = 0; G._pixUp = 0; }
-    }
+    // adaptive resolution is disabled: the graphics never auto-change mid-game (avoids the resolution-swap glitch).
+    // Quality stays exactly where the player set it; F1 still toggles HD/performance manually.
   }
 
   if (G.showcase && !G.started) {
@@ -13478,7 +13474,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b52';
+const BUILD_TAG = 'b53';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
