@@ -624,6 +624,9 @@ body:fullscreen #fsbtn,body:-webkit-full-screen #fsbtn{color:#ffd27a}
 #cmd.collapsed{transform:translateY(calc(100% - 25px)) scale(var(--ui))}
 #miniwrap{transform:scale(var(--ui));transform-origin:left bottom}
 #miniwrap.collapsed{transform:translateY(calc(100% - 25px)) scale(var(--ui))}
+#dev{transform:scale(var(--ui));transform-origin:top left}
+#devtoggle{transform:scale(var(--ui));transform-origin:top left}
+#devbadge{transform:scale(var(--ui));transform-origin:top left}
 /* floating cancel shown only while placing on a phone (all other HUD is hidden then) */
 #placebar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:30;display:none;gap:8px;pointer-events:auto}
 html.touch.placing #placebar{display:flex}
@@ -13474,7 +13477,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b53';
+const BUILD_TAG = 'b54';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
