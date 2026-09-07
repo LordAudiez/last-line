@@ -6105,7 +6105,7 @@ function updateAmbient(dt) {
   w.t += dt;
   w.x = 16 + Math.sin(w.t * .13) * 26 + Math.sin(w.t * .41) * 7;
   w.y = -3 + Math.sin(w.t * .21) * 11;
-  if (G.windForce) { const gust = 1 + Math.sin(w.t * .5) * .12 + Math.sin(w.t * 1.7) * .05; w.x = Math.cos(G.windForce.dir) * G.windForce.spd * gust; w.y = Math.sin(G.windForce.dir) * G.windForce.spd * gust; }   // dev: forced wind speed + direction
+  if (G.windForce) { w.x = Math.cos(G.windForce.dir) * G.windForce.spd; w.y = Math.sin(G.windForce.dir) * G.windForce.spd; }   // dev: steady forced wind — locked speed AND direction, no random drift or gusting
 
   // expire old grass trample marks (they've fully regrown by now)
   G.grassPruneT -= dt;
@@ -6707,6 +6707,18 @@ function updateUnits(dt) {
           const col = gt === T_SNOW ? '#9aa4b4' : gt === T_SAND ? '#7a6a48' : '#2e2a20';
           decal(u.x + px * hw, u.y + py * hw, u.def.heavy ? 3.2 : 2.2, col, gt === T_SNOW ? .5 : .28);
           decal(u.x - px * hw, u.y - py * hw, u.def.heavy ? 3.2 : 2.2, col, gt === T_SNOW ? .5 : .28);
+        }
+      }
+      // a dust trail kicked up from the wheels/tracks and a thin puff of engine exhaust, wherever it drives
+      const vsp = Math.hypot(u.vx || 0, u.vy || 0);
+      if (vsp > 16 && G.parts.length < PMAX * .85) {
+        u._exh = (u._exh || 0) + vsp * dt;
+        if (u._exh > (u.def.heavy ? 11 : 8)) {
+          u._exh = 0;
+          const back = u.ang + Math.PI, bx = u.x + Math.cos(back) * u.r * .7, by = u.y + Math.sin(back) * u.r * .7, gt = terrainAt(u.x, u.y);
+          const dcol = gt === T_SNOW ? 'rgba(222,230,238,1)' : gt === T_SAND ? 'rgba(196,178,138,1)' : gt === T_DIRT || gt === T_RUBBLE ? 'rgba(150,138,116,1)' : 'rgba(158,150,132,1)';
+          part('dust', bx + rnd(-4, 4), by + rnd(-4, 4), Math.cos(back) * 18 + rnd(-10, 10), (Math.sin(back) * 18 + rnd(-8, 8)) * .7, rnd(.5, .9), rnd(4, 7) * (u.def.heavy ? 1.5 : 1), dcol, { z: rnd(0, 3), vz: rnd(6, 20), grow: 11, drag: .9, wind: 1, a: .5 });   // ground trail
+          part('smoke', bx, by, Math.cos(back) * 8, Math.sin(back) * 8 * .7, rnd(.7, 1.2), rnd(2.4, 3.8), 'rgba(46,42,38,1)', { z: rnd(3, 7), vz: rnd(14, 26), grow: 6, drag: .92, wind: 1, a: .6 });   // exhaust
         }
       }
     }
@@ -11333,7 +11345,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const flush = im => { const n = Math.max(1, im.count); im.instanceMatrix.updateRange.offset = 0; im.instanceMatrix.updateRange.count = n * 16; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) { im.instanceColor.updateRange.offset = 0; im.instanceColor.updateRange.count = n * 3; im.instanceColor.needsUpdate = true; } };   // upload only the instances in use
   const BOXG = new THREE.BoxGeometry(1, 1, 1), SPHG = new THREE.SphereGeometry(1, 9, 7), HELMG = new THREE.SphereGeometry(1, 10, 6, 0, TAU, 0, HPI * 1.15), CYLG = new THREE.CylinderGeometry(1, 1, 1, 8), DODG = new THREE.DodecahedronGeometry(1, 0);
   const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .85, flatShading: true });
-  TEX.leaf.repeat.set(2.5, 2.5);                                     // finer leaf clusters on the crowns (the cut-out mask was dropped — it read as black holes)
+  TEX.leaf.repeat.set(3.2, 3.2);                                     // finer, denser leaf clusters on the crowns
   const leafM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.leaf, roughness: .8, metalness: 0, envMapIntensity: .35, flatShading: true });   // HD foliage: textured, shadow-casting and shadow-receiving
   const P = {
     box: pool(BOXG, white, 16000, true),                                                                             // plain matte: gear, boots, packs, guns, stumps
@@ -11345,10 +11357,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     metal: pool(BOXG, new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.panel, roughness: .32, metalness: .6 }), 3000, true),
     gore: pool(DODG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .35, metalness: .05 }), 3000, false), // meat, stumps
     trunk: pool(new THREE.CylinderGeometry(.06, .1, .6, 7), new THREE.MeshStandardMaterial({ color: lin('#6a4c30'), map: TEX.wood, bumpMap: TEX.wood, bumpScale: .03, roughness: .9 }), 3200, true),
-    canopy: pool(new THREE.IcosahedronGeometry(.42, 0), leafM, 9000, true),
-    cone: pool((() => { const g = new THREE.ConeGeometry(.5, 1, 9); g.translate(0, .5, 0); return g; })(), leafM, 16000, true),        // conifer tier (base at origin, unit height)
-    crown: pool(new THREE.IcosahedronGeometry(.42, 1), leafM, 12000, true),                                                          // rounder deciduous crown
-    bush: pool(new THREE.IcosahedronGeometry(.24, 0), leafM, 3000, true),
+    canopy: pool(new THREE.IcosahedronGeometry(.42, 1), leafM, 9000, true),
+    cone: pool((() => { const g = new THREE.ConeGeometry(.5, 1, 11); g.translate(0, .5, 0); return g; })(), leafM, 16000, true),        // conifer tier (base at origin, unit height)
+    crown: pool(new THREE.IcosahedronGeometry(.42, 2), leafM, 12000, true),                                                          // rounder, leafier deciduous crown (subdivided = clumped-leaf facets)
+    bush: pool(new THREE.IcosahedronGeometry(.24, 1), leafM, 3000, true),
     rock: pool(DODG, new THREE.MeshStandardMaterial({ color: lin('#f0ece4'), map: TEX.rock, roughness: 1, flatShading: true }), 2500, true),
     barrel: pool(new THREE.CylinderGeometry(.16, .16, .42, 9), new THREE.MeshStandardMaterial({ color: lin('#b03a2a'), map: TEX.panel, metalness: .3, roughness: .5 }), 400, true),
     wreck: pool(new THREE.BoxGeometry(1.1, .4, .6), new THREE.MeshStandardMaterial({ color: lin('#2a2624'), map: TEX.panel, roughness: .8 }), 400, true),
@@ -11368,7 +11380,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   // Same dense/detailed look for a fraction of the object count. Base at y=0 (unit height 1) so it tilts + scales cleanly.
   // Blades carry a baked vertical shade (dark root → bright tip) as grayscale vertex colours; the green tint comes per-instance.
   const GRASST = (() => {
-    const BL = 7, pos = [], col = [], idx = [];   // 7 blades per tuft
+    const BL = 5, pos = [], col = [], idx = [];   // 5 blades per tuft — same carpet look, fewer verts across the whole field
     let v = 0;
     for (let bI = 0; bI < BL; bI++) {
       const yaw = (bI / BL) * TAU + (bI * 2.399), rr = bI === 0 ? 0 : (.05 + (bI % 3) * .05), off = yaw;
@@ -12471,7 +12483,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     }
     {
       // wind: every crown leans downwind and rocks on two overlapping gusts, bushes shiver at the base
-      const wm = clamp(Math.hypot(G.wind.x, G.wind.y) / 55, 0, 1.6), wl = Math.hypot(G.wind.x, G.wind.y) + 1e-3, wdx = G.wind.x / wl, wdz = G.wind.y / wl, tt = G.t;
+      const wspd = Math.hypot(G.wind.x, G.wind.y), wm = clamp(wspd / 38, 0, 3.4), wl = wspd + 1e-3, wdx = G.wind.x / wl, wdz = G.wind.y / wl, tt = G.t;   // grass bends harder the faster the wind blows
       for (let i = 0; i < foliage.length; i++) {
         const q = foliage[i]; if (G.deadProps.has(q.id)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
         const ph = tt * 1.7 + q.x * .013 + q.y * .011, gust = (Math.sin(ph) * .55 + Math.sin(ph * 2.7 + 1.3) * .25 + Math.sin(ph * .37) * .2);
@@ -12542,7 +12554,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
           let rx, rz;
           if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran/landed through
-          else { const ph = tt * 2.4 + wx * .02 + wy * .017, sway = wm * (.14 + Math.sin(ph) * .11); rx = wdz * sway; rz = -wdx * sway; }
+          else { const ph = tt * 2.4 + wx * .02 + wy * .017, sway = wm * (.2 + Math.sin(ph) * .14); rx = wdz * sway; rz = -wdx * sway; }   // lean into the wind, harder as it gusts
           put(P.grass, wx * K, groundY(wx, wy), wy * K, rx, h2 * TAU, rz, thick, bh, thick, GRASSC[(tx + ty + k) % 3]);
         }
       }
@@ -13480,7 +13492,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b55';
+const BUILD_TAG = 'b57';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
