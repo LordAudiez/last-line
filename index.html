@@ -948,7 +948,9 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgFlash" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Unit flashlights &amp; headlights (night)</span></label>
       <div class="slid" style="margin-top:10px"><label>UI size</label><input type="range" id="uiScale" min="45" max="120" step="1"><span class="v" id="uiScaleV">100%</span></div>
       <div class="slid" style="margin-top:8px"><label>Graphics</label><div class="rowb" id="gfxRow" style="flex:1;margin:0"><button class="sx" data-q="mobile">📱 Mobile</button><button class="sx" data-q="low">Low</button><button class="sx" data-q="medium">Medium</button><button class="sx" data-q="high">High</button></div></div>
-      <div class="slid" style="margin-top:8px"><label>Smoke</label><input type="range" id="smokeOp" min="0" max="100" step="5"><span class="v" id="smokeOpV">15%</span></div>
+      <div class="slid" style="margin-top:8px"><label>Combat smoke</label><input type="range" id="smokeOp" min="0" max="100" step="5"><span class="v" id="smokeOpV">100%</span></div>
+      <label class="sfxrow" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="tgFxExpl" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Explosion smoke &amp; dust</span></label>
+      <label class="sfxrow" style="cursor:pointer"><input type="checkbox" id="tgFxFire" checked style="width:16px;height:16px;accent-color:#8dffbe"><span class="nm" style="margin-left:8px">Muzzle &amp; firing dust</span></label>
       <div class="sc" style="margin-top:6px">Mobile: no shadows, 60% render scale, sparse grass. High: full-resolution soft shadows and a dense grass carpet.</div>
       <div class="sc" style="margin-top:6px">Shrink the on-screen controls for more play space (great on phones). HD rendering auto-adjusts under heavy load; press <b>F1</b> to lock it.</div>
     </div>
@@ -4188,6 +4190,7 @@ function part(kind, x, y, vx, vy, life, r, col, opt) {
     drag: .96, z: 0, vz: 0, g: 0, bounce: 0, wind: 0
   };
   if (opt) for (const k in opt) p[k] = opt[k];
+  p.fx = G._fx | 0;                 // source tag: 0 none, 1 firing/muzzle, 2 explosion — set by the fx* emitters below
   G.parts.push(p); return p;
 }
 function fxSmoke(x, y, vx, vy, r, life, col, glow) {
@@ -4197,6 +4200,7 @@ function fxSmoke(x, y, vx, vy, r, life, col, glow) {
   });
 }
 function fxMuzzle(x, y, ang, sc, z, tier) {
+  const _fx = G._fx; G._fx = 1;                     // firing: muzzle powder smoke is tagged so the Combat-smoke slider / toggle reach it
   sc = sc || 1; z = z || 0; tier = tier || 1;
   // fire runs hotter each upgrade tier: pale gold -> white -> blue-white
   const flashCol = tier >= 3 ? '#cfe6ff' : tier === 2 ? '#fff2c8' : '#ffe9a8';
@@ -4222,6 +4226,7 @@ function fxMuzzle(x, y, ang, sc, z, tier) {
       { grow: 9 * sc * gm, rot: rnd(TAU), vr: rnd(-1, 1), drag: .87, a: .5, z: z + 8, vz: rnd(6, 20), g: -8, wind: 1 });
   }
   G.lights.push({ x: x + Math.cos(ang) * 10, y: y + Math.sin(ang) * 10, r: 120 * sc, c: [255, 218, 150], i: 1.1 });
+  G._fx = _fx;
 }
 function fxSpark(x, y, ang, n, col) {
   // ricochet sparks arc and fall under gravity; a pinpoint impact flash marks the hit
@@ -4244,6 +4249,7 @@ function fxSpark(x, y, ang, n, col) {
    wind and thin out over ~5 seconds. */
 function fxGunBump(vx, vy, r, k, ang) {
   if (G.parts.length > PMAX * .78) return;
+  const _fx = G._fx; G._fx = 1;
   // a THICK, compact dust bump that fully surrounds the tank over a WIDE area: dense low tan smoke from the hull edge out to
   // ~2.6x its radius on every side (white:1 => the billboard draws it at full opacity so it reads as heavy dust), low enough
   // that the turret and upper hull stay visible, and it thins away on the wind within ~2 s
@@ -4262,13 +4268,16 @@ function fxGunBump(vx, vy, r, k, ang) {
       rnd(2.0, 2.7), rnd(12, 18) * (.9 + k * .1), i % 2 ? 'rgba(198,186,160,1)' : 'rgba(180,168,144,1)',
       { z: rnd(0, 3), vz: rnd(1, 3), g: -2, grow: 18 + k * 6, drag: .9, wind: 1, white: 1 });
   }
+  G._fx = _fx;
 }
 /* 120mm HE hitting the ground: a tall column of thrown earth, a wide rolling dust wave that lingers on the wind for
    ~5 s, heavy clods that arc out and bounce, and a scorch — the tank shell's impact reads as a real physical event */
 function fxShellImpact(x, y, r, smk) {
+  const _fx = G._fx; G._fx = 2;                                                      // explosion
   smk = smk === undefined ? 1 : smk;                                                 // smoke/dust amount (impact area itself is unchanged)
   fxMortar(x, y, r * .9, true);
-  if (G.parts.length > PMAX * .9) return;
+  G._fx = 2;                                                                          // fxMortar restored the tag; re-assert it for our own dust below
+  if (G.parts.length > PMAX * .9) { G._fx = _fx; return; }
   for (let i = 0; i < Math.round(26 * smk); i++) {                                    // rolling dust wave
     const a = rnd(TAU), sp = rnd(50, 190);
     part('dust', x + Math.cos(a) * 10, y + Math.sin(a) * 8, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .7 + G.wind.y * .5, rnd(3.8, 5.2), rnd(8, 14), 'rgba(160,146,118,1)', { z: rnd(0, 6), vz: rnd(4, 18), g: 4, grow: 26, drag: .92, wind: 1 });
@@ -4281,9 +4290,11 @@ function fxShellImpact(x, y, r, smk) {
     const a = rnd(TAU), sp = rnd(30, 200);
     part('debris', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(1.2, 2.4), rnd(2, 5), i % 3 ? '#4a3f33' : '#2e2820', { z: 4, vz: rnd(200, 520), vr: rnd(-14, 14), drag: .98, g: 560, bounce: 1 });
   }
+  G._fx = _fx;
 }
 function fxMuzzleDust(vx, vy, ang, ground, jet, muzLen, muzZ) {
   if (G.parts.length > PMAX * .86) return;
+  const _fx = G._fx; G._fx = 1;                     // firing
   // low dust rolling out around the vehicle, drifting off on the wind
   if (ground > 0) {
     const n = Math.max(1, Math.round(ground * 22));
@@ -4318,6 +4329,7 @@ function fxMuzzleDust(vx, vy, ang, ground, jet, muzLen, muzZ) {
     for (let i = 0; i < Math.round(9 * jet) + 4; i++) { const a2 = rnd(TAU), sp = rnd(90, 240) * jet;   // dust wave rolling out low around the muzzle instead of a flat ring
       part('dust', mx, my, Math.cos(a2) * sp + G.wind.x * .4, Math.sin(a2) * sp * .8 + G.wind.y * .4, rnd(3.8, 5.4), rnd(5, 9) * (.6 + jet), 'rgba(196,184,158,1)', { z: Z * .4 + rnd(0, 3), vz: rnd(2, 10), g: 5, grow: 40 * jet + 20, drag: .9, wind: 1 }); }
   }
+  G._fx = _fx;
 }
 /* A vehicle driving into a tree knocks it over: the trunk is taken out of the standing forest at once and handed to
    G.fallen, where it tips over in the vehicle's direction of travel (rendered tilting about its base), slams into
@@ -4605,6 +4617,7 @@ function grassFlat(x, y) {
    explosion, and each clod kicks a small dust puff where it lands. */
 function fxGroundBurst(x, y, r) {
   if (G.parts.length > PMAX * .9) return;
+  const _fx = G._fx; G._fx = 2;                     // explosion (ejected dirt ring)
   const n = clamp(Math.round(r / 5), 6, 30);
   for (let i = 0; i < n; i++) {
     const a = rnd(TAU), s = rnd(30, r * 3.2);
@@ -4618,8 +4631,10 @@ function fxGroundBurst(x, y, r) {
     part('dust', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(1, 2.2), rnd(6, 12), 'rgba(120,102,76,1)',
       { z: rnd(0, 6), vz: rnd(18, 56), grow: 22, drag: .95, wind: 1 });
   }
+  G._fx = _fx;
 }
 function fxExplosion(x, y, r, colA, colB, snd) {
+  const _fx = G._fx; G._fx = 2;                     // explosion
   colA = colA || '#ffd27a'; colB = colB || '#ff7a2e';
   const big = G.parts.length < PMAX * .7;      // richer layering while there's particle budget
   // 1. hot core: a white flash that swells and dies in a few frames
@@ -4659,6 +4674,7 @@ function fxExplosion(x, y, r, colA, colB, snd) {
   addShake(x, y, r * .12);
   // light HE (Hydra rockets, 25/30/40 mm autocannon shells) cracks with the real 40 mm round sample; big shells keep the deep synthetic boom
   if (snd === 'hydra' || snd === 'chain40' || snd === 'auto') AU.blast(x, y, clamp(r / 45, .7, 1.4)); else AU.boom(x, y, clamp(r / 60, .5, 1.7));
+  G._fx = _fx;
 }
 /* Only what is happening on screen (or just past its edge) is allowed to move
    the camera, and by far less than before. */
@@ -5025,6 +5041,7 @@ function bloaterShock(src, r) {
 
 /* ---------------- mortar impact: big ground-hugging blast ---------------- */
 function fxMortar(x, y, r, big) {
+  const _fx = G._fx; G._fx = 2;                     // explosion
   part('ring', x, y, 0, 0, .42, r * .28, '#ffe9c0', { grow: r * 1.9 / .42, glow: 1 });
   part('ring', x, y, 0, 0, .75, r * .5, '#c9d6e0', { grow: r * 2.6 / .75, glow: 1 });
   for (let i = 0; i < (big ? 26 : 16); i++) {
@@ -5049,6 +5066,7 @@ function fxMortar(x, y, r, big) {
   blastProps(x, y, r * 1.6);
   addShake(x, y, r * (big ? .12 : .09));
   AU.boom(x, y, clamp(r / 55, .7, 2.0));
+  G._fx = _fx;
 }
 
 /* ---------------- keep bodies out of solid geometry ---------------- */
@@ -9834,9 +9852,21 @@ function applySmokeOp(v) {
 }
 window.applySmokeOp = applySmokeOp;
 (function () {
-  let saved = .15; try { const raw = localStorage.getItem('ll_smokeop'); if (raw != null) saved = parseFloat(raw); } catch (e) {}
+  let saved = 1; try { const raw = localStorage.getItem('ll_smokeop'); if (raw != null) saved = parseFloat(raw); } catch (e) {}
   applySmokeOp(saved);
   const s = $('smokeOp'); if (s) s.addEventListener('input', () => applySmokeOp((+s.value || 0) / 100));
+})();
+
+/* ---------------- Combat FX toggles: disable explosion / firing smoke & dust independently ---------------- */
+(function () {
+  const wireFx = (id, key, set) => {
+    const el = $(id); if (!el) return;
+    let v = true; try { const raw = localStorage.getItem(key); if (raw != null) v = raw === '1'; } catch (e) {}
+    el.checked = v; set(v);
+    el.addEventListener('change', () => { set(el.checked); try { localStorage.setItem(key, el.checked ? '1' : '0'); } catch (e) {} });
+  };
+  wireFx('tgFxExpl', 'll_fxexpl', v => { if (typeof G !== 'undefined') G.fxExpl = v; });   // explosion smoke & dust
+  wireFx('tgFxFire', 'll_fxfire', v => { if (typeof G !== 'undefined') G.fxFire = v; });   // muzzle & firing dust
 })();
 
 /* ---------------- floating placement Cancel/Confirm (mobile: the rest of the HUD is hidden while placing) ---------------- */
@@ -12872,6 +12902,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (b.kind === 'acid') bb(partsAdd, x, y, z, .28, .6, .95, .25, .9);
     }
     /* ---- particles from G.parts: wind / gravity / bounces already applied by the sim ---- */
+    const smK = (G.smokeOp !== undefined ? G.smokeOp : 1);   // Combat-smoke opacity scale (1 = default), applied to firing/explosion smoke & dust
     for (const p of G.parts) {
       if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
       const x = p.x * K, z = p.y * K, gy = groundY(p.x, p.y), y = gy + (p.z || 0) * K + .05, a = p.a, k = p.kind;
@@ -12881,8 +12912,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
       else if (k === 'flare') { const fl = .75 + .25 * Math.sin(G.t * 40 + p.x); bb(partsAdd, x, y, z, r * 7 * fl, 1, .55, .22, a * .55); bb(partsAdd, x, y, z, r * 3 * fl, 1, .85, .5, a * .9); bb(partsAdd, x, y, z, r * 1.3, 1, 1, .95, a); }   // orange halo, hot amber body, white core
       else if (k === 'ring') put(P.ring, x, gy + .06, z, -HPI, 0, 0, r, r, 1);
-      else if (k === 'smoke') bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], a * (G.smokeOp !== undefined ? G.smokeOp : .15), p._sd === undefined ? (p._sd = Math.random()) : p._sd);
-      else if (k === 'dust' || k === 'fog') bb(partsNoise, x, y + .02, z, r * 2.1, c[0], c[1], c[2], a * .22, p._sd === undefined ? (p._sd = Math.random()) : p._sd);
+      else if (k === 'smoke') { let sa = a * .15; if (p.fx === 1) { if (G.fxFire === false) continue; sa *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; sa *= smK; } bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], sa, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
+      else if (k === 'dust' || k === 'fog') { let da = a * .22; if (p.fx === 1) { if (G.fxFire === false) continue; da *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; da *= smK; } bb(partsNoise, x, y + .02, z, r * 2.1, c[0], c[1], c[2], da, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
       else if (k === 'blood') { bb(partsAlpha, x, y, z, Math.max(.06, r * 1.7), c[0] * .55, c[1] * .3, c[2] * .3, Math.min(1, a * 1.5)); if (p.z > 1) bb(partsAlpha, x, y - r * .6, z, Math.max(.04, r * .9), c[0] * .5, c[1] * .25, c[2] * .25, Math.min(1, a)); }
       else if (k === 'gib') drawGib(p, x, gy + (p.z || 0) * K, z);
       else if (k === 'chunk') { if (p.col && MEAT(p.col)) { const v = rgbOf(p.col); if (v[1] > v[0] * 1.6) continue; put(P.gore, x, y, z, p.rot * 1.3, p.rot, p.rot * .7, r * .9, r * .7, r * .8, col3(p.col)); } else put(P.box, x, y, z, p.rot * 1.1, p.rot, p.rot * .6, r * 1.2, r * .6, r * .9, col3(p.col || '#5a4028')); }
@@ -13522,7 +13553,7 @@ function openLobby() {
 function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b59';
+const BUILD_TAG = 'b60';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
