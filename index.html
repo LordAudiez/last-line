@@ -2910,20 +2910,20 @@ const ZDEF = {
    but carry med:true so rigs, behaviour and audio switch to the ancient-host set. */
 const MDEF = {
   infantry: {
-    name: 'Spearman', med: true, hp: 96, spd: 42, r: 10, dmg: 13, rate: 1.0, armor: 3, spr: 'infantry', scrap: 5,
+    name: 'Spearman', med: true, vsInf: 5.5, hp: 96, spd: 42, r: 10, dmg: 13, rate: 1.0, armor: 3, spr: 'infantry', scrap: 5,
     info: 'Ayutthaya levy in a lacquered hat and leather breastplate, a tall hide shield on one arm and a long spear or curved dha in the other. The backbone of every column — dangerous in numbers, little else.'
   },
   cavalry: {
-    name: 'Horse Lancer', med: true, hp: 240, spd: 108, r: 13, dmg: 26, rate: 1.1, armor: 6, spr: 'cavalry', scrap: 12, big: true, mount: true,
+    name: 'Horse Lancer', med: true, vsInf: 4, hp: 240, spd: 108, r: 13, dmg: 26, rate: 1.1, armor: 6, spr: 'cavalry', scrap: 12, big: true, mount: true,
     info: 'A noble lancer in a black-lacquer officer\'s hat on a caparisoned war horse. Closes the gap frighteningly fast and hits like a truck on the charge. Concentrate fire before it reaches the line.'
   },
   archer: {
-    name: 'Bowman', med: true, hp: 58, spd: 46, r: 9, dmg: 11, rate: 1.7, armor: 1, spr: 'archer', scrap: 8, ranged: 300, arrow: true,
+    name: 'Bowman', med: true, vsInf: 4, hp: 58, spd: 46, r: 9, dmg: 11, rate: 1.7, armor: 1, spr: 'archer', scrap: 8, ranged: 300, arrow: true,
     info: 'Green-hatted skirmisher with a bamboo war bow and a quiver on his back. Looses volleys from well outside spear range — flush them out or lose men to plunging fire.'
   },
   siege: {
-    name: 'War Elephant', med: true, hp: 820, spd: 20, r: 21, dmg: 70, rate: 2.4, armor: 8, spr: 'siege', scrap: 30, big: true, siege: true,
-    info: 'A caparisoned war elephant with a mahout on its neck and a spearman in the howdah. Slow, enormously tough, and it makes straight for your walls and buildings, trampling whatever stands in the way. Bring the heavy guns.'
+    name: 'War Elephant', med: true, vsInf: 3, elephant: true, hp: 1400, spd: 20, r: 21, dmg: 90, rate: 2.4, armor: 8, spr: 'siege', scrap: 30, big: true, siege: true,
+    info: 'A caparisoned war elephant with a mahout on its neck and a spearman in the howdah. One blow kills any foot soldier; small arms barely mark it (15 rifle rounds, 6 shotgun blasts or 30 pistol rounds to bring one down). It makes straight for your walls and buildings. Bring the heavy guns.'
   },
   worker: {
     name: 'Levy Builder', med: true, hp: 64, spd: 46, r: 9, dmg: 0, rate: 9, armor: 0, spr: 'worker', scrap: 6, worker: true,
@@ -4603,7 +4603,7 @@ function weaponClass(src, wep) {
 /* Location-based small-arms damage on a zombie: headshots drop it, torso takes several rounds, and hits to the
    arms/legs blow those limbs off (arms cut its attack, legs cut its speed). 'a' is already halved for specials. */
 function applyZedDamage(e, a, srcAng, opts) {
-  const M = MODEL[e.t], special = !!e.def.special, wc = opts.wc, loc = e.limbs !== undefined && !opts.trueDmg && (wc === 'rifle' || wc === 'shotgun' || wc === 'vmg');
+  const M = MODEL[e.t], special = !!e.def.special, wc = opts.wc, loc = e.limbs !== undefined && !opts.trueDmg && !e.def.elephant && (wc === 'rifle' || wc === 'shotgun' || wc === 'vmg');   // an elephant has no headshot: fixed rounds-to-kill (see damage)
   if (loc) {
     if (wc === 'shotgun') {
       // buckshot: a headshot still drops a normal zombie outright; otherwise it is a control weapon — heavy body damage,
@@ -5052,6 +5052,12 @@ function damage(e, amt, srcAng, opts) {
   }
   let a = amt;
   if (!opts.trueDmg) a = Math.max(1, a - (e.armor || 0));
+  // war elephant: small arms barely mark it — it takes a fixed 15 rifle rounds, 6 shotgun blasts (7 pellets each) or 30 pistol
+  // rounds to bring one down, whatever the calibre; heavy weapons (tank, rockets, mortar, .50 sniper, DMR) do their full damage
+  if (e.kind === 'zed' && e.def && e.def.elephant && !opts.trueDmg) {
+    const mh = e.maxHp || e.def.hp || 1;
+    if (opts.wc === 'shotgun') a = mh / 41.9; else if (opts.pistol) a = mh / 29.9; else if (opts.small) a = mh / 14.9;
+  }
   if (e.kind === 'unit' && e.inside) { if (e.inside.kind === 'unit') return; a *= .22; }   // troops inside a transport are shielded by its hull
   // special zombies are twice as hard to put down — every source of damage counts half
   if (e.kind === 'zed' && e.def.special && !opts.trueDmg) a *= 0.5;
@@ -5099,7 +5105,17 @@ function killZed(z, ang) {
   // a kill usually takes a limb or two with it
   const rip = 1 + (Math.random() * 2 | 0);
   for (let i = 0; i < rip; i++) severLimb(z, ang);
-  G.corpses.push({ x: z.x, y: z.y, a: z.ang + rnd(-.6, .6), t: z.t, limbs: z.limbs, life: 26, max: 26 });
+  if (z.def.elephant) {
+    // the war elephant dies slowly: the carcass topples over ~2 s (animated by the renderer from ele.t) and the mahout and the
+    // howdah spearman are thrown off the side it falls toward, ragdolling to the ground
+    const side = Math.random() < .5 ? -1 : 1, a = z.ang, px = -Math.sin(a) * side, py = Math.cos(a) * side, EU = 32 * .6 * 1.55;   // ELE_U in px
+    G.corpses.push({ x: z.x, y: z.y, a, t: z.t, limbs: 15, life: 40, max: 40, elephant: true, ele: { t: 0, side } });
+    for (const rd of [[.52, 1.22], [-.12, 1.28]]) {
+      const rx = z.x + Math.cos(a) * rd[0] * EU, ry = z.y + Math.sin(a) * rd[0] * EU;
+      G.corpses.push({ x: rx, y: ry, a: a + rnd(-.6, .6), t: z.t, limbs: 15, life: 26, max: 26, air: 1, z: rd[1] * EU, vx: px * rnd(40, 75) + rnd(-10, 10), vy: py * rnd(40, 75) + rnd(-10, 10), vz: rnd(40, 90), rot: a, vr: rnd(-4, 4) });
+    }
+    addShake(z.x, z.y, 5); for (let k = 0; k < 10; k++) part('dust', z.x + rnd(-24, 24), z.y + rnd(-16, 16), rnd(-40, 40), rnd(-25, 25), rnd(.8, 1.4), rnd(6, 11), 'rgba(160,146,124,1)', { grow: 18, drag: .9, z: 0, vz: rnd(10, 30), g: -40 });
+  } else G.corpses.push({ x: z.x, y: z.y, a: z.ang + rnd(-.6, .6), t: z.t, limbs: z.limbs, life: 26, max: 26 });
   if (G.corpses.length > 220) G.corpses.shift();
   if (z.def.burst) {
     fxExplosion(z.x, z.y, 46, '#b7d24a', '#6f8f2e');
@@ -5706,7 +5722,7 @@ function planConstruction(z) {
     // troop mix shifts with the wave: early camps, later stables and siege works
     const w = G.wave, r = Math.random();
     const t = r < .42 ? 'mBarracks' : r < .68 ? 'mRange' : (w >= 3 && r < .88) ? 'mStable' : w >= 5 ? 'mWorkshop' : 'mBarracks';
-    const s = spawnZed(t, p.x, p.y); s.mode = 'hunt'; s.mission = 'raid';
+    const s = spawnZed(t, p.x, p.y); s.mode = 'hunt'; s.mission = 'raid'; if (typeof musterJoin === 'function') musterJoin(s);
     return s;
   }
   return null;
@@ -6674,7 +6690,7 @@ function spawnInvaderContact(t) {
   if (!p) return;
   const z = spawnZed(t, p.x, p.y);
   z.mode = 'hunt';
-  assignInvaderMission(z);
+  if (z.med && !z.def.worker) musterJoin(z); else assignInvaderMission(z);   // fighting men form up with the host first; levies go straight to work
 }
 
 function callAirdrop(manual) {
@@ -7626,7 +7642,7 @@ function fire(src, tgt, wep, muz) {
     const life = (wep.rng * rngMul(src) * (shots > 1 ? 1.05 : 1.35)) / spd;
     G.bullets.push({
       x: m.x, y: m.y, px: m.x, py: m.y, ox: m.x, oy: m.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
-      dmg, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx,
+      dmg, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx, small: wep.kind === 'bullet' && !wep.pierce && (wep.dmg || 0) <= 16, pistol: !!wep.sidearm,
       ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0, pn: wep.pierceN || 0,
       z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0
     });
@@ -7653,7 +7669,7 @@ function zedFire(z, tgt) {
     const sp = 560;
     G.bullets.push({
       x: z.x, y: z.y - 6, px: z.x, py: z.y - 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-      dmg, kind: 'arrow', life: 1.3, ang: a, team: 2, src: z, z: 12
+      dmg, kind: 'arrow', life: 1.3, ang: a, team: 2, src: z, z: 12, vsInf: z.def.vsInf || 1
     });
     if (AU.bowShot) AU.bowShot(z.x, z.y); else AU.ui && AU.blip(320, .05, 'triangle', .05);
     return;
@@ -7663,6 +7679,16 @@ function zedFire(z, tgt) {
     dmg, kind: 'acid', life: 1.4, ang: a, team: 2, src: z, splash: 26, z: 10
   });
   AU.splat(z.x, z.y);
+}
+
+/* the finisher on a confirmed kill: pick a move, freeze the killer in it for a second and tag the fresh corpse so the
+   renderer can play the victim's fall and the ground-stab from the same clock */
+function startFinisher(z, t) {
+  const c = G.corpses.length ? G.corpses[G.corpses.length - 1] : null;
+  const corpse = c && Math.abs(c.x - t.x) < 1 && Math.abs(c.y - t.y) < 1 && !c.veh ? c : null;
+  const kind = (Math.random() * 5) | 0, a = angTo(z.x, z.y, t.x, t.y);
+  z.fin = { kind, t: 0, dur: 1.0, a, vx: t.x, vy: t.y, c: corpse, hit: false };
+  if (corpse) { corpse.fin = { kind, t: 0, a: a + Math.PI, kx: z.x, ky: z.y }; corpse.a = a + Math.PI; }   // he faces his killer as he goes down
 }
 
 /* ==================== ZOMBIES ==================== */
@@ -7707,6 +7733,62 @@ function hordeAssembling() {
   if (G.hordeEv) return G.hordeEv.t < HORDE_SPAWN_T;
   return !!(G.hordeAlert && G.waveQueue && G.wave === G.hordeWave && G.waveQueue.list.length > 0);
 }
+/* ---- the invaders' host muster (Thai Ancient / invaders mode) ----
+   Every invader that spawns — wave contacts and the troops the war camps raise — does not attack on its own. It walks to
+   the host's muster ground (open land 60-105 tiles out from a command post) and takes a place in the ranks: a block of
+   rows facing the base, MUSTER_ROW wide, war elephants in the front rank, spearmen behind them, then the lancers, the
+   bowmen at the rear. Rows stack up as troops arrive. When the host is MUSTER_FULL strong it steps off together — one
+   marching pace for every arm so the block stays a block — and makes for the base; a fresh muster ground is chosen for the
+   next host. Troops that come under attack while mustering fight where they stand. */
+const MUSTER_FULL = 300, MUSTER_ROW = 20, MUSTER_SP = 32, MUSTER_ROWSP = 34, MUSTER_PACE = 30;
+const MUSTER_RANK = { siege: 0, infantry: 1, cavalry: 2, archer: 3 };
+function musterNew() {
+  const o = waveOrigin(MUSTER_FULL); if (!o) return null;
+  const hq = nearestHQ(o.x, o.y); const dir = hq ? angTo(o.x, o.y, hq.x, hq.y) : 0;
+  G.muster = { id: (G.musterId = (G.musterId || 0) + 1), x: o.x, y: o.y, dir, members: [], n: 0, marching: false, t: 0 };
+  return G.muster;
+}
+function musterJoin(z) {
+  if (!z || z.dead || !z.med || z.def.worker || z.def.struct) return;
+  let M = G.muster; if (!M || M.marching) M = musterNew(); if (!M) return;
+  M.members.push(z); z.muster = { id: M.id, x: M.x, y: M.y }; z.mission = 'muster'; z.target = null; z.mode = 'hunt';
+  musterLayout(M);
+}
+function musterLayout(M) {
+  M.members = M.members.filter(z => !z.dead && z.muster && z.muster.id === M.id);
+  // the standard-bearer: a lancer if the host has one, else a spearman — he carries the host's banner and stands front and centre
+  { const pick = M.members.find(z => z.t === 'cavalry') || M.members.find(z => z.t === 'infantry') || M.members.find(z => z.t === 'archer') || M.members[0] || null;
+    if (!M.leader || M.leader.dead || !M.members.includes(M.leader) || (pick && pick.t === 'cavalry' && M.leader.t !== 'cavalry')) { M.leader = pick; for (const z of M.members) z.banner = z === M.leader ? M.id : 0; } }   // a lancer takes the standard as soon as one arrives
+  const rank = z => z === M.leader ? -1 : (MUSTER_RANK[z.t] === undefined ? 9 : MUSTER_RANK[z.t]);
+  const list = M.members.slice().sort((a, b) => (rank(a) - rank(b)) || (a.id - b.id));
+  const cd = Math.cos(M.dir), sd = Math.sin(M.dir), rx = -sd, ry = cd;              // forward = toward the base, right = its perpendicular
+  let k = 0;
+  for (const z of list) {
+    const big = z.def.siege, row = (k / MUSTER_ROW) | 0, col = k % MUSTER_ROW;
+    const lat = (col % 2 ? 1 : -1) * (((col / 2) | 0) + .5) * MUSTER_SP * (big ? 2.2 : 1), back = row * MUSTER_ROWSP * (big ? 1.6 : 1);   // files fill outward from the centre
+    z.muster.x = M.x + rx * lat - cd * back; z.muster.y = M.y + ry * lat - sd * back;
+    k += big ? 2 : 1;                                                                 // an elephant takes two files
+  }
+  M.n = list.length;
+}
+/* a marching host keeps its banner: if the standard-bearer falls, the nearest man to him picks the standard up */
+function updateHostBanners() {
+  const hosts = new Map();
+  for (const z of G.zeds) { if (z.dead || !z.host) continue; let h = hosts.get(z.host); if (!h) hosts.set(z.host, h = { list: [], bearer: null }); h.list.push(z); if (z.banner) h.bearer = z; }
+  for (const h of hosts.values()) if (!h.bearer && h.list.length) { const z = h.list.find(q => q.t === 'cavalry') || h.list[0]; z.banner = z.host; }
+}
+function musterMarch(M) {
+  M.marching = true;
+  for (const z of M.members) if (!z.dead) { z.muster = null; z.host = M.id; z.mission = 'raid'; z.target = null; z.mode = 'hunt'; }
+  alertMsg('⚠ THE HOST MARCHES — ' + M.n + ' strong, making for the base', 'bad'); AU.ui('alarm');
+  G.muster = null;
+}
+function updateMuster(dt) {
+  const M = G.muster; if (!M || M.marching) return;
+  M.t += dt;
+  if ((G.frame % 30) === 0) { musterLayout(M); if (M.n >= MUSTER_FULL) musterMarch(M); }
+}
+function updateHosts(dt) { updateMuster(dt); if ((G.frame % 60) === 0) updateHostBanners(); }
 /* a spawn spot in the crowd around an assembly point: passable ground within `rad` px of it */
 function nearPoint(o, rad) {
   for (let a = 0; a < 12; a++) { const an = rnd(TAU), r = rnd(0, rad); const x = clamp(o.x + Math.cos(an) * r, TS * 2, WW - TS * 2), y = clamp(o.y + Math.sin(an) * r, TS * 2, WH - TS * 2); if (!IMPASSABLE(terrainAt(x, y)) && !solidAt(x, y, false)) return { x, y }; }
@@ -7748,11 +7830,42 @@ function updateZeds(dt) {
     }
     if (z.def.struct) { updateConstruction(z, dtz, near); continue; }      // invader buildings: build progress + mustering
     if (z.def.worker) { updateWorker(z, dtz, near); continue; }            // unarmed levies: walk to the site and build
+    /* ---- finisher: a melee man who has just cut down a foot soldier spends a second finishing him — a spin-slash, a
+       flipping cut, a lunging stab, a shoulder-bump that puts the man on the ground followed by a stab, or a leg-sweep and
+       a stab. The move is choreographed by the renderer from fin.kind and fin.t; here he just stands over the body. */
+    if (z.fin) {
+      const F = z.fin; F.t += dtz; if (F.c) F.c.fin.t = F.t;
+      z.ang = angLerp(z.ang, F.a, .3); z.lunge = 0; z.cd = Math.max(z.cd, .3);
+      const hitAt = F.kind >= 3 ? .7 : .38;
+      if (!F.hit && F.t >= hitAt) { F.hit = true; fxBlood(F.vx, F.vy, F.a, 14, '#b32020'); bloodDecal(F.vx, F.vy, 8, '#5c0f0f'); AU.splat(F.vx, F.vy); }
+      if (F.t >= F.dur) z.fin = null;
+      continue;
+    }
     // knocked flat (shotgun): the zombie lies there, incapable, then scrambles back up
     if (z.down > 0) { z.down -= dtz; z.lunge = 0; z.step = 0; if (z.down <= 0) z.getup = .55; continue; }
     if (z.getup > 0) z.getup -= dtz;
     if (near && z.moan <= 0) { AU.groan(z.x, z.y); z.moan = rnd(5, 16); }
 
+    /* ---- host muster (invaders): walk to my place in the ranks and stand facing the base until the host is full ---- */
+    if (z.muster) {
+      const M = G.muster;
+      if (!M || M.id !== z.muster.id || M.marching) { z.muster = null; z.mission = 'raid'; z.target = null; }
+      else {
+        if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
+          const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+          z.target = best;
+        }
+        if (!z.target) {
+          const sl = z.muster;
+          z.spd = z.def.spd * (z.slow > 0 ? .5 : 1);
+          if (dist2(z.x, z.y, sl.x, sl.y) < 8 * 8) { z.ang = angLerp(z.ang, M.dir, .08); z.lunge = 0; }               // in place: dress ranks, face the base
+          else { steer(z, dtz, sl.x, sl.y, false, 5); z.bob += dtz * 6; z.step += dtz * 7; }
+          if (solidAt(z.x, z.y, false)) unstick(z, false);
+          continue;
+        }
+      }
+    }
     /* ---- horde assembly: gather at the entry point and mill about until the whole horde has arrived, then advance together.
        Troops that come within sight are still fought on the spot. */
     if (z.assembly) {
@@ -7788,6 +7901,7 @@ function updateZeds(dt) {
     // a body missing legs does not move like one that still has them: one leg gone → 50%, both gone → a 5% crawl
     const legs = ((z.limbs & 4) ? 1 : 0) + ((z.limbs & 8) ? 1 : 0);
     z.spd = z.def.spd * nightSpd * (legs === 2 ? 1 : legs === 1 ? .5 : .05);
+    if (z.host && !(z.target && z.target.kind === 'unit')) z.spd = (z.def.siege ? Math.max(z.spd, MUSTER_PACE) : Math.min(z.spd, MUSTER_PACE)) * (legs === 2 ? 1 : .5);   // the host marches as one block
     if (z.slow > 0) z.spd *= .5;                          // shotgun stagger / mortar concussion: slowed to a crawl
     if (z.getup > 0) z.spd *= .28;                       // still getting to its feet
     // arms drive the bite: one arm gone → half attack speed, both gone → a feeble 5% cadence and a tenth of the damage
@@ -7849,8 +7963,10 @@ function updateZeds(dt) {
       z.ang = angLerp(z.ang, angTo(z.x, z.y, t.x, t.y), .2);
       if (z.cd <= 0) {
         z.cd = z.def.rate * (z.slow > 0 ? 1.7 : 1) * atkRate; z.lunge = .18;
-        damage(t, z.def.dmg * ((G.diff && G.diff.dmgMul) || 1) * atkDmg, angTo(z.x, z.y, t.x, t.y));
+        const foot = t.kind === 'unit' && !t.def.veh && !t.def.fly, vs = foot && z.def.vsInf ? z.def.vsInf : 1;   // the ancient host's blades cut foot soldiers down in one or two strokes
+        damage(t, z.def.dmg * ((G.diff && G.diff.dmgMul) || 1) * atkDmg * vs, angTo(z.x, z.y, t.x, t.y));
         AU.splat(z.x, z.y);
+        if (foot && t.dead && z.med && !z.def.ranged && !z.def.mount && !z.def.siege) startFinisher(z, t);   // a killing stroke on foot: the finisher
         if (t.kind === 'build' && t.def.thorns) damage(z, t.def.thorns, 0, { trueDmg: true });
       }
     } else {
@@ -8064,7 +8180,7 @@ function updateBullets(dt) {
             if (!b._hit[z.id]) {
               b._hit[z.id] = 1; b._hn = (b._hn || 0) + 1;
               if (b.pn && b._hn >= b.pn) { hit = z; break; }                              // limited-penetration round: the last body it can pass stops it (hit handled below)
-              damage(z, b.dmg, b.ang, { wc: b.wc }); fxSpark(b.x, b.y, b.ang + Math.PI, 3, '#ffe0a8');
+              damage(z, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); fxSpark(b.x, b.y, b.ang + Math.PI, 3, '#ffe0a8');
             }
           }
         }
@@ -8073,12 +8189,12 @@ function updateBullets(dt) {
       }
       if (!hit && G.players.length > 1) {                                 // PvP: rounds also strike the other teams' troops and structures
         const ul = G.hUnits.near(b.x, b.y, 26, _q3);
-        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc }); } } else { hit = u; break; } } }
+        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); } } else { hit = u; break; } } }
         if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat && plyOf(bb).team !== b.tm) hit = bb; }
       }
     } else {
       const list = G.hUnits.near(b.x, b.y, 26, _q2);
-      for (const u of list) { if (u.dead || u.inside) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { hit = u; break; } }
+      for (const u of list) { if (u.dead || u.inside) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { hit = u; if (b.vsInf && !u.def.veh && !u.def.fly) b.dmg *= b.vsInf; break; } }   // arrows: extra bite on foot soldiers
       if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat) hit = bb; }
     }
     // trees: a small-arms round stops in the trunk; vehicle guns, tank shells and the MG nest chew straight through and fell it
@@ -8106,7 +8222,7 @@ function updateBullets(dt) {
         if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .49); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }
         else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false); }
       } else if (hit) {
-        damage(hit, b.dmg, b.ang, { wc: b.wc });
+        damage(hit, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol });
         fxSpark(b.x, b.y, b.ang + Math.PI, 4, hit.kind === 'build' ? '#c9a86a' : '#ff9a6a');
       } else {
         terrainHit(b.x, b.y, b.ang);      // splash on water, chips on rock, dirt puff, etc.
@@ -8164,6 +8280,7 @@ function updateItems(dt) {
   for (let i = G.corpses.length - 1; i >= 0; i--) {
     const c = G.corpses[i]; c.life -= dt;
     if (c.life <= 0) { G.corpses.splice(i, 1); continue; }
+    if (c.ele) { const t0 = c.ele.t; c.ele.t += dt; if (t0 < 2.1 && c.ele.t >= 2.1) { addShake(c.x, c.y, 7); bloodDecal(c.x, c.y, 10, '#4d0c0c'); for (let k = 0; k < 14; k++) part('dust', c.x + rnd(-40, 40), c.y + rnd(-28, 28), rnd(-50, 50), rnd(-30, 30), rnd(.9, 1.6), rnd(7, 13), 'rgba(160,146,124,1)', { grow: 20, drag: .9, z: 0, vz: rnd(10, 30), g: -40 }); AU.boom && AU.boom(c.x, c.y, .5); } }   // the carcass hits the ground
     /* ---- blast ragdoll: a body thrown by an explosion arcs through the air,
        tumbling, then hits the ground, bounces once and slides to a stop ---- */
     if (c.air) {
@@ -8470,6 +8587,7 @@ function step(dt) {
   if (G.players.length > 1 && G.frame % 30 === 0) checkVictory();
   /* horde alarm: from the horde call until EVERY horde body is down (spawning runs for 40 s, then the alarm holds until the last one dies) */
   if (G.hordeEv) updateHordeEvent(dt);
+  if (G.mode === 'invaders') updateHosts(dt);
   if (G.hordeAlert) {
     const queued = G.waveQueue && G.wave === G.hordeWave && G.waveQueue.list.length > 0;
     const spawning = !!(G.hordeEv && G.hordeEv.t < HORDE_SPAWN_T);
@@ -10759,7 +10877,7 @@ function issueOrder(wx, wy, shift, fast) {
       const give = (u, sl) => { u.order = { type: UI.attackMove ? 'amove' : 'move', x: sl.x, y: sl.y, fast: !!fast, capSpd: minS }; };
       // vehicles: the leader dead centre, the rest fanning out beside it in priority order (2nd right, 3rd left, …)
       const vsp = Math.max(...gveh.map(v => v.r)) * 2.6, lead = gveh[0];
-      gveh.forEach((v, i) => { const k = i === 0 ? 0 : (i % 2 ? Math.ceil(i / 2) : -Math.ceil(i / 2)); give(v, slot(0, k * vsp)); });
+      gveh.forEach((v, i) => { const k = i === 0 ? 0 : (i % 2 ? Math.ceil(i / 2) : -Math.ceil(i / 2)); give(v, slot(0, k * vsp)); if (i === 0) v.order.lead = true; });   // the lead vehicle flies the convoy pennant
       // infantry: double columns behind the lead vehicle; after 12 the next pair of columns opens beside the first
       const back = lead.r * 1.3 + 30, rsp = 26, csp = 24, P = Math.ceil(foot.length / 12);
       const cols = P * 2;   // 2 columns per 12 troops; troops are dealt round-robin so every column is balanced and none exceeds 6
@@ -11312,6 +11430,7 @@ function updateHUD(dt) {
   const f = G.waveQueue ? 1 : clamp(1 - G.waveT / (G.waveTMax || 60), 0, 1);
   $('wavefill').style.width = (f * 100) + '%';
   $('wavetxt').textContent = G.waveAlive > 0 ? G.waveAlive + ' hostiles' : (G.waveT < 12 ? 'imminent' : Math.ceil(G.waveT) + 's');
+  if (G.mode === 'invaders' && G.muster && !G.muster.marching && (G.frame % 10) === 0) $('wavetxt').textContent += ' · host mustering ' + G.muster.n + '/' + MUSTER_FULL;
   { const rp = $('rallyPill'); if (rp) { const on = !!(G.hq && !G.hq.dead && G.hq.alarmRally); if (rp.classList.contains('show') !== on) rp.classList.toggle('show', on);
       if (on && (G.frame % 10) === 0) { let n = 0, h = 0; for (const u of G.units) if (!u.dead && u.rallyPt) { n++; if (u.rallyHeld) h++; } $('rallyN').textContent = h + ' / ' + n + ' in position'; } } }
   const wb = $('wavebox'), hz = G.hordeAlert ? 1 : 0;                                   // horde siren: the wave cell flashes red until the horde is broken
@@ -12274,13 +12393,41 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const FIG = new Map(), SIGK = new Map(); let figDrawn = 0, figStagger = 1, figReplayed = 0;
   const sigId = v => { if (v == null) return 0; let k = SIGK.get(v); if (k === undefined) { k = SIGK.size + 1; SIGK.set(v, k); } return k; };
   function figSig(S, o) {                                            // discrete state that changes the assembled parts
-    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0);
+    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0) | (o.ride ? 4096 : 0);
     h = h * 131 + sigId(o.gun); h = h * 131 + sigId(o.ut); h = h * 131 + sigId(o.mk); h = h * 131 + sigId(o.zt); h = h * 131 + sigId(o.kind);
     h = h * 131 + ((S.tier || 0) | 0); h = h * 131 + sigId(o.idle && o.idle.act);
     if (o.dead) h = h * 131 + Math.round((o.tilt || 0) * 200);       // air-tumbling corpses change their tilt → rebuild
     return h;
   }
+  /* whole-body move: after a figure is assembled, every one of its parts is rotated about its lateral axis (pitch — a flip,
+     a lunge, a fall) around a pivot at height pv above the feet, spun about the vertical (yaw), lifted and pushed forward.
+     Used for the finisher choreography and the victim's fall; costs one full assembly per frame for the few figures in a move. */
+  function figPost(x, y, z, ang, fx) {
+    const pitch = fx.pitch || 0, roll = fx.roll || 0, yaw = fx.yaw || 0, lift = fx.lift || 0, fwd = fx.fwd || 0, pv = fx.pv === undefined ? .2 : fx.pv;
+    const cA = Math.cos(ang), sA = Math.sin(ang);
+    // Rodrigues: rotation about a unit axis (nx,ny,nz) by th → 3x3 (row-major)
+    const rod = (nx, ny, nz, th) => { const c = Math.cos(th), s = Math.sin(th), t = 1 - c; return [c + t * nx * nx, t * nx * ny - s * nz, t * nx * nz + s * ny, t * nx * ny + s * nz, c + t * ny * ny, t * ny * nz - s * nx, t * nx * nz - s * ny, t * ny * nz + s * nx, c + t * nz * nz]; };
+    const mul = (A, B) => [A[0] * B[0] + A[1] * B[3] + A[2] * B[6], A[0] * B[1] + A[1] * B[4] + A[2] * B[7], A[0] * B[2] + A[1] * B[5] + A[2] * B[8], A[3] * B[0] + A[4] * B[3] + A[5] * B[6], A[3] * B[1] + A[4] * B[4] + A[5] * B[7], A[3] * B[2] + A[4] * B[5] + A[5] * B[8], A[6] * B[0] + A[7] * B[3] + A[8] * B[6], A[6] * B[1] + A[7] * B[4] + A[8] * B[7], A[6] * B[2] + A[7] * B[5] + A[8] * B[8]];
+    let R = rod(-sA, 0, cA, pitch);                                                       // pitch: about the lateral axis
+    if (roll) R = mul(rod(cA, 0, sA, roll), R);                                             // roll: about the forward axis
+    if (yaw) R = mul(rod(0, 1, 0, yaw), R);                                                 // yaw: about the vertical
+    const py = y + pv, ox = cA * fwd, oz = sA * fwd;
+    for (let i = 0; i < recN; i++) {
+      const im = recPools[i], a = im.instanceMatrix.array, o = recIdx[i] * 16;
+      for (let c = 0; c < 3; c++) { const b = o + c * 4, vx = a[b], vy = a[b + 1], vz = a[b + 2];
+        a[b] = R[0] * vx + R[1] * vy + R[2] * vz; a[b + 1] = R[3] * vx + R[4] * vy + R[5] * vz; a[b + 2] = R[6] * vx + R[7] * vy + R[8] * vz; }
+      const tx = a[o + 12] - x, ty = a[o + 13] - py, tz = a[o + 14] - z;
+      a[o + 12] = x + R[0] * tx + R[1] * ty + R[2] * tz + ox; a[o + 13] = py + R[3] * tx + R[4] * ty + R[5] * tz + lift; a[o + 14] = z + R[6] * tx + R[7] * ty + R[8] * tz + oz;
+    }
+  }
+  /* the war elephant's death: it buckles at the front and goes down on its knees (0.9 s), then rolls over onto its side and
+     lies still; drawn as the live model put through a whole-body transform, so it keeps its caparison and howdah */
+  function eleDeathFx(t, side) {
+    const p1 = sm(t / .9), p2 = sm((t - .9) / 1.3), u = ELE_U;
+    return { pitch: .36 * p1 * (1 - p2 * .6), roll: side * HPI * .92 * p2, lift: -.28 * u * p1 - .62 * u * p2, pv: 1.0 * u, fwd: 0 };
+  }
   function drawFigureC(x, y, z, ang, walk, S, o) {
+    if (o.fx) { figRec = true; recN = 0; drawFigure(x, y, z, ang, walk, S, o); figRec = false; figPost(x, y, z, ang, o.fx); return; }   // choreographed: assembled fresh and transformed as a whole
     const ck = o.ck; if (!ck || G.figCache === false) { drawFigure(x, y, z, ang, walk, S, o); return; }
     figDrawn++;
     let c = FIG.get(ck); const sig = figSig(S, o), dead = !!o.dead;
@@ -12361,13 +12508,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const legsGone = !(lm & L_LL) && !(lm & L_RL), oneLeg = !(lm & L_LL) || !(lm & L_RL);
     const rc = o.rc || 0, relP = o.reload || 0, relK = relP > 0 ? Math.sin(Math.min(1, relP) * Math.PI) : 0;   // recoil kick 0..1 and reload progress 0..1 (bell-shaped hand travel)
     const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + idLean;   // tactical stance while engaged: leaning into the gun, knees bent; crouch/idle add more
-    const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.sit ? legL * .82 : 0) + idHip;
-    const spread = torsoW * .24;
+    const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.sit ? legL * .82 : 0) - (o.ride ? legL * .3 : 0) + idHip;
+    const spread = torsoW * (o.ride ? .56 : .24);                                   // a rider straddles the saddle
     // legs: thigh + shin with a knee that folds on the trailing leg, a knee pad at the joint and a chunky boot — reads as a real leg in motion
     for (let s = -1; s <= 1; s += 2) {
-      const bit = s < 0 ? L_LL : L_RL, swing = o.sit ? 1.15 : (zed ? .45 : .5) * sw * s;
+      const bit = s < 0 ? L_LL : L_RL, swing = o.sit ? 1.15 : o.ride ? .62 : (zed ? .45 : .5) * sw * s;
       if (lm & bit) {
-        const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = o.sit ? -.05 : (swing < 0 ? swing - bend : swing * .72);
+        const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = o.sit ? -.05 : o.ride ? -.38 : (swing < 0 ? swing - bend : swing * .72);   // riding: thighs forward round the barrel, shins hanging back to the stirrup
         limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, tL, legW * (med ? 1.22 : 1), ry, swing, trou, legW * (med ? 1.3 : 1.08));   // ancient host: baggy patterned chong kraben to the knee
         const kf = Math.sin(swing) * tL, ky = hipY - Math.cos(swing) * tL;
         if (!zed && !med) put(P.head, X(kf + legW * .18, s * spread), ky, Z(kf + legW * .18, s * spread), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
@@ -12605,6 +12752,43 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (const sd of [-1, 1]) put(P.box, X(-.1, sd * .19), Y(1.5), Z(-.1, sd * .19), 0, ry, 0, .46 * u, .02 * u, .02 * u, GOLD);
     put(P.box, X(-.32, 0), Y(1.5), Z(-.32, 0), 0, ry, 0, .02 * u, .02 * u, .4 * u, GOLD);
     put(P.cyl, X(-.28, 0), Y(1.75), Z(-.28, 0), 0, ry, 0, .012 * u, .7 * u, .012 * u, GOLD); put(P.cyl, X(-.28, 0), Y(2.08), Z(-.28, 0), 0, ry, 0, .3 * u, .04 * u, .3 * u, RED); put(P.head, X(-.28, 0), Y(2.12), Z(-.28, 0), 0, ry, 0, .05 * u, .05 * u, .05 * u, GOLD);   // parasol
+  }
+  /* ---- melee finisher choreography ----
+     Five moves, one second each, driven by the sim's fin.kind / fin.t: 0 spin-slash, 1 flipping cut, 2 lunging stab,
+     3 shoulder-bump then a stab into the man on the ground, 4 low leg-sweep then the ground stab. Returns the killer's
+     whole-body transform plus stance flags; the victim's fall for the same move comes from finVictim. */
+  const easeO = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3), sm = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+  function finKiller(F) {
+    const p = F.t / (F.dur || 1), k = F.kind, fx = { pitch: 0, yaw: 0, lift: 0, fwd: 0, pv: .2 }, o = {};
+    if (k === 0) { fx.yaw = -TAU * easeO(p / .55); o.walk = p < .55 ? 1.05 : 0; }                                                              // spin-slash: a full turn, blade out
+    else if (k === 1) { const q = clamp(p / .62, 0, 1); fx.lift = Math.sin(Math.PI * q) * .42 * FS; fx.pitch = TAU * easeO(q); fx.fwd = q * .22 * FS; o.walk = 1.05; if (p > .62 && p < .85) o.crouch = true; }   // flipping cut, landing in a crouch
+    else if (k === 2) { const q = sm((p - .12) / .3) * (1 - sm((p - .5) / .3)); fx.fwd = q * .3 * FS; fx.pitch = q * .5; o.walk = 1.05; }         // lunging stab
+    else if (k === 3) { if (p < .3) { const q = Math.sin(Math.PI * p / .3); fx.fwd = q * .26 * FS; fx.pitch = q * .38; } else if (p > .5 && p < .92) { o.crouch = true; fx.pitch = sm((p - .5) / .2) * .55 * (1 - sm((p - .82) / .1) * .5); fx.fwd = .12 * FS; o.walk = 1.05; } }   // shoulder-bump, then down and stab
+    else { if (p < .42) { o.crouch = true; fx.yaw = -TAU * easeO(p / .42); fx.pv = .1; o.walk = 1.05; } else if (p > .5 && p < .92) { o.crouch = true; fx.pitch = sm((p - .5) / .2) * .55 * (1 - sm((p - .82) / .1) * .5); fx.fwd = .12 * FS; o.walk = 1.05; } }   // low leg-sweep, then the stab
+    return { fx, o };
+  }
+  /* the victim: for the first third of a second he is still on his feet, toppling away from (or over) the blow, then the
+     ordinary corpse takes over; in the ground-stab moves he lies with his feet toward the killer and jerks at the stab */
+  function finVictim(F) {
+    const p = F.t / 1.0, k = F.kind;
+    if (k <= 2) { if (p < .34) return { live: true, fx: { pitch: -HPI * sm(p / .34), pv: 0, lift: 0 } }; return null; }   // cut down: falls backward off the blade
+    if (p < .3) return { live: true, fx: { pitch: -HPI * sm(p / .3), pv: 0, fwd: sm(p / .3) * .18 * FS } };                 // knocked flat on his back, shoved away by the bump / sweep
+    const jerk = p > .68 && p < .8 ? Math.sin(Math.PI * (p - .68) / .12) * .05 * FS : 0;
+    return { live: false, lift: jerk };                                                                                       // on the ground; the stab lifts him a hair
+  }
+  /* a standard: a tall pole with a gold finial and a swallow-tailed flag that ripples in the wind, planted just behind and
+     to the left of whoever carries it (the invaders' host banner, or the player's convoy pennant on the lead vehicle) */
+  function drawBanner(x, y, z, ang, h, flagCol, trimCol, seed) {
+    const u = FS, cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, bx = x + (-.14 * cx + .16 * px) * u, bz = z + (-.14 * cz + .16 * pz) * u;
+    const w = G.wind || { x: 1, y: 0 }, wm = Math.hypot(w.x, w.y) || 1, wa = Math.atan2(w.y, w.x), t = G.t * (2.2 + Math.min(1.2, wm / 40)) + (seed || 0);
+    put(P.cyl, bx, y + h * .5, bz, 0, 0, 0, .014 * u, h, .014 * u, WOOD);                                                            // pole
+    put(P.head, bx, y + h + .03 * u, bz, 0, 0, 0, .035 * u, .05 * u, .035 * u, GOLD);                                                // finial
+    const fl = .46 * u, fh = .3 * u, ripple = Math.sin(t) * .12, fa = wa + ripple * .6;                                              // the flag streams downwind and ripples
+    const fx = bx + Math.cos(fa) * fl * .5, fz = bz + Math.sin(fa) * fl * .5, fy = y + h - fh * .5 - .02 * u;
+    put(P.cloth, fx, fy, fz, 0, -fa, ripple * .5, fl, fh, .012 * u, flagCol);
+    put(P.cloth, fx, fy + fh * .42, fz, 0, -fa, ripple * .5, fl, fh * .16, .014 * u, trimCol);                                         // trim band top
+    put(P.cloth, fx, fy - fh * .42, fz, 0, -fa, ripple * .5, fl, fh * .16, .014 * u, trimCol);                                         // trim band bottom
+    put(P.cloth, bx + Math.cos(fa) * fl * 1.08, fy, bz + Math.sin(fa) * fl * 1.08, 0, -fa, ripple * .5, fl * .22, fh * .36, .012 * u, flagCol);   // swallow-tail tongue
   }
   /* severed limbs thrown by the sim as 'gib' particles: keep the rig kit so the gib matches the body it came off */
   const _sever = severLimb;
@@ -13705,6 +13889,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         if (d.fly) { um.g.rotation.set(0, -u.ang, Math.sin(G.t * 2 + u.id) * .03); if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
         else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil) um.tur.position.x = -.15 - u.recoil * .12;
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); } }   // roof MGs slew on their own pintles, relative to the turret they ride on
+        if (u.order && u.order.lead && !d.fly) { const pl = G.players && G.players[u.owner || 0]; drawBanner(x, gy + u.r * K * .9, z, u.ang, 1.35 * FS, col3(pl && pl.color ? pl.color : '#7dffb2'), col3('#f2f2f2'), u.id); }   // convoy leader flies the pennant
         if (u.headlight && !d.fly && G.flashOn !== false) {                                        // headlights: a soft fan of light laid over the ground ahead of the hull
           const hl = u.r * K * 1.05, L = 7 + u.r * K * 3, dk = .35 + (1 - dayNow) * .65, ca = Math.cos(u.ang), sa = Math.sin(u.ang);
           for (const sd of [-1, 1]) {
@@ -13778,13 +13963,15 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (zz.def.struct) { drawEB(zz, x, gy, z); continue; }
       if (zz.def.worker) { drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: 'worker', gun: 'mallet', scale: .88, limbs: 15, id: zz.id, work: zz.work || 0 }); continue; }
       if (zz.med) {
-        if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigureC(x, gy + HORSE_SEAT, z, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id }); }
+        if (zz.banner) drawBanner(x, gy + (zz.def.mount ? HORSE_SEAT * .6 : 0), z, zz.ang, (zz.def.mount ? 1.9 : 1.75) * FS, col3('#b8151e'), GOLD, zz.id);   // the host's standard
+        if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigureC(x, gy + HORSE_SEAT + .055, z, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id, ride: true }); }   // seated in the saddle, legs round the horse
         else if (zz.def.siege) {
           drawElephant(x, gy, z, zz.ang, zz.step || 0, zz.id);
           const ecx = Math.cos(zz.ang) * ELE_U, ecz = Math.sin(zz.ang) * ELE_U;
-          drawFigureC(x + ecx * .52, gy + ELE_NECK, z + ecz * .52, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'none', scale: .78, limbs: 15, id: zz.id, sit: true });                                                   // mahout astride the neck
+          drawFigureC(x + ecx * .52, gy + ELE_NECK + .05, z + ecz * .52, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'none', scale: .78, limbs: 15, id: zz.id, ride: true });                                                   // mahout astride the neck
           drawFigureC(x - ecx * .12, gy + ELE_HOWDAH, z - ecz * .12, zz.ang, 0, S, { ck: zz._rider || (zz._rider = { id: zz.id + 7 }), kind: 'med', mk: 'cavalry', gun: 'spear', scale: .82, limbs: zz.limbs, id: zz.id + 7 });   // spearman in the howdah
         }
+        else if (zz.fin) { const q = finKiller(zz.fin); drawFigureC(x, gy, z, zz.ang, q.o.walk || 0, S, { ck: zz, kind: 'med', mk: 'infantry', gun: (zz.id & 1) ? 'spear' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id, crouch: !!q.o.crouch, fx: q.fx }); }   // finishing a man
         else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : 'infantry', gun: zz.def.arrow ? 'bow' : ((zz.id & 1) ? 'spear' : 'sword'), scale: .92, limbs: zz.limbs, id: zz.id });   // spearmen and dha-and-shield men mixed
       } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
       else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0 }); }
@@ -13799,7 +13986,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else {
         const M = MODEL[c.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' }; const isZed = !!ZDEF[c.t], isMed = !!MDEF[c.t];
         if (!c._bp) { c._bp = 1; if (!c.air) { const v = rgbOf(S.blood || '#5a0e0e'); decalList.push({ k: (Math.random() * 4) | 0, x: (c.x + Math.cos(c.a) * 6) * K, y: (c.y + Math.sin(c.a) * 6) * K, r: rnd(.5, .7), rot: rnd(TAU), c: v[1] > v[0] ? GREENBLOOD : WHITE }); bloodDecal(c.x, c.y, 3, S.blood || '#5a0e0e'); } }
-        drawFigureC(x, gy, z, c.a, 0, S, { ck: c, kind: isZed ? 'zed' : isMed ? 'med' : 'mil', dead: 1, tilt: c.air ? (c.rot - c.a) : 0, scale: .9, limbs: c.limbs, id: c.x | 0 });
+        if (c.elephant) { figRec = true; recN = 0; drawElephant(x, gy, z, c.a, 0, c.x | 0); figRec = false; figPost(x, gy, z, c.a, eleDeathFx(Math.min(2.2, c.ele.t), c.ele.side)); continue; }   // the beast goes down slowly
+        const fv = c.fin && c.fin.t < 1.0 ? finVictim(c.fin) : null;
+        if (fv && fv.live) drawFigureC(x, gy, z, c.a, 0, S, { ck: c, kind: 'mil', gun: gunOf(c.t), scale: .92, limbs: c.limbs, id: c.x | 0, ut: c.t, fx: fv.fx });   // still on his feet, going down
+        else drawFigureC(x, gy + (fv ? fv.lift : 0), z, c.a, 0, S, { ck: c, kind: isZed ? 'zed' : isMed ? 'med' : 'mil', dead: 1, tilt: c.air ? (c.rot - c.a) : 0, scale: .9, limbs: c.limbs, id: c.x | 0 });
       }
     }
     for (const [key, wm] of wreckMeshes) if (!liveW.has(key)) { scene3.remove(wm); wreckMeshes.delete(key); }
@@ -13989,7 +14179,7 @@ function newGame(opts) {
   if (opts.size) setMapSize(opts.size.w, opts.size.h);
   if (opts.seed != null) WSEED = opts.seed;
   G.diff = DIFFS[opts.diff] || DIFFS.normal; G.diffName = opts.diff || 'normal';
-  G.mode = opts.mode || 'defense'; G.villages = []; G.camps = []; G.fieldCamps = []; G.waveOrigin = null; G.bonus = 0; G.cutscene = null;
+  G.mode = opts.mode || 'defense'; G.villages = []; G.camps = []; G.fieldCamps = []; G.waveOrigin = null; G.muster = null; G.bonus = 0; G.cutscene = null;
   G.topples = []; G.fuses = [];
   // the world grid is sized to the map — reallocate it when the size changes
   if (G.gridB.length !== MW * MH) G.gridB = new Int32Array(MW * MH); else G.gridB.fill(0);
@@ -14605,7 +14795,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b82';
+const BUILD_TAG = 'b83';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
