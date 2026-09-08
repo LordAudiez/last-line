@@ -15214,7 +15214,7 @@ function lobbyJoin(code) {
     if (!LOBBY.room) { NET.leave(); LOBBY.open = false; LOBBY.stage = null; mpShow('mp-home'); alertLobby('Room "' + LOBBY.code + '" not found — check the code'); }
   }, 6000);
 }
-function seat(id, name, spawn) { return { id, name, team: 'ABCDEF'[spawn || 0] === undefined ? 'A' : 'ABCD'[(spawn || 0) % 4], spawn: spawn || 0, ready: false, loaded: 0, t: Date.now() }; }
+function seat(id, name, spawn) { return { id, name, team: 'A', spawn: spawn || 0, ready: false, loaded: 0, t: Date.now() }; }   // CO-OP by default: everyone lands on team A so no friendly fire — the per-seat Team button splits players for PvP
 function playerName() { try { return localStorage.getItem('ll_name') || ('Cmdr-' + (Math.random() * 900 + 100 | 0)); } catch (e) { return 'Cmdr'; } }
 const mySeat = () => LOBBY.room && LOBBY.room.seats.find(s => s.id === LOBBY.myId);
 const amHost = () => LOBBY.room && LOBBY.room.hostId === LOBBY.myId;
@@ -15298,7 +15298,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b89';
+const BUILD_TAG = 'b90';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -15433,7 +15433,7 @@ function tryStartMatch() {
   if ((pct[LOBBY.myId] || 0) < 100) return;   // start the moment I'M done — every device drops in on its own, nobody waits
   LOBBY.stage = 'game'; clearInterval(LOBBY.loadTimer);
   const r = LOBBY.room, cfg = r.cfg;
-  const players = r.seats.map(s => ({ name: s.name, team: s.team, spawn: s.spawn, color: TEAM_COL[s.team] }));
+  const players = r.seats.map((s, i) => ({ name: s.name, team: s.team, spawn: s.spawn, color: PLAYER_COL[i % 6] }));   // distinct colour per player so allies stay tellable apart even on the same team
   const meIdx = Math.max(0, r.seats.findIndex(s => s.id === LOBBY.myId));
   const mode = cfg.mode === 'defense' ? 'defense' : (cfg.enemy === 'zombie' ? 'defense' : 'invaders');
   startGame({
