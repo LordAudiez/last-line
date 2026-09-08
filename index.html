@@ -1164,7 +1164,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   <div class="mscreen" data-screen="credits" hidden>
     <div class="mhd">CREDITS</div>
     <div class="mcredits">
-      <p><b>LAST LINE</b> — a top-down survival RTS: hold the line against zombie hordes or a time-warped medieval host.</p>
+      <p><b>LAST LINE</b> — a top-down survival RTS: hold the line against zombie hordes or a time-warped Thai Ancient host.</p>
       <p>Design, code, art &amp; sound: <b>Developed by Mr. Norawid Khao-Ubon</b></p>
       <p>Gun sounds: player-supplied CC0 samples.</p>
       <p>Everything renders in one self-contained HTML file — no engine, no assets.</p>
@@ -2705,33 +2705,35 @@ function buildMedieval() {
     if (wepSpr) { MODEL[key].u.wep = wepSpr; MODEL[key].wep = wepSpr; }
   };
   const MB = { head: 3.9, len: 18, wid: 15, round: 4, armLen: 12.5, armW: 4.4, legLen: 10.5, legW: 5.4, blood: '#7a1414' };
-
-  // MAN-AT-ARMS — steel helm, coloured surcoat over mail, sword
-  [['#8a3f3f', '#5a2828'], ['#3f5a8a', '#28385a'], ['#5a7a3f', '#3a4a28'], ['#7a6a3a', '#4a4028']].forEach((c, i) => {
+  /* ---- the ANCIENT host: an Ayutthaya-era army ----
+     helm  = lacquered wide-brimmed hat (the 3D rig builds the crown + brim + gold finial from this colour)
+     uni   = tunic     gear = leather breastplate     sash = the wide waist sash     trouser = patterned chong kraben
+     band  = hat band / trim colour     pack = the horse's caparison (cavalry only) */
+  // SPEARMEN — maroon lacquer hats, dark tunics, leather chest plates, tall hide shields; spear or curved dha
+  [['#5a2a2a', '#6a2a3a'], ['#2f3b5e', '#3a2a4a'], ['#2e4a38', '#4a2a2a'], ['#4a3a2a', '#5a2a3a']].forEach((c, i) => {
     mk('infantry' + (i ? i : ''), Object.assign({}, MB, {
-      helm: STEEL, uni: c[0], sleeve: shadeHex(c[0], .78), trouser: '#3a2f22',
-      gear: '#4a3a24', shoulder: DKSTEEL, wep: { len: 16, wid: 3, col: '#cdd0d8', stock: '#3a2f22', stockLen: 3 }
+      helm: '#5e1f1f', band: '#d9b24a', uni: c[0], sleeve: c[0], trouser: c[1], sash: '#b8642a',
+      gear: '#3a2618', wep: { len: 16, wid: 3, col: '#cdd0d8', stock: '#3a2f22', stockLen: 3 }
     }), sword);
   });
-  // KNIGHT CAVALRY — full plate, tall, lance/sword; horse drawn separately
-  [['#6a6a72', '#8a2f2f'], ['#72726a', '#2f4a7a']].forEach((c, i) => {
+  // HORSE LANCERS — black-lacquer officers' hats with gold, richer tunics, red-and-gold caparisoned horses
+  [['#5a2a4a', '#8a1f1f'], ['#2a3a5a', '#1f3a7a']].forEach((c, i) => {
     mk('cavalry' + (i ? i : ''), Object.assign({}, MB, {
-      helm: STEEL, uni: c[0], sleeve: shadeHex(c[0], .82), trouser: '#3a3a40', visor: '#20242a',
-      gear: '#3a3a40', shoulder: '#c9ccd4', pack: c[1],
+      helm: '#1c1a18', band: '#e2c04a', uni: c[0], sleeve: c[0], trouser: '#3a2a3a', sash: '#c9a33d',
+      gear: '#3a2618', pack: c[1],
       len: 19, wid: 15.5, wep: { len: 20, wid: 2.8, col: '#dfe2e8', stock: '#3a2f22', stockLen: 3 }
     }), sword);
   });
-  // LONGBOWMAN — leather + hood, war bow
-  [['#4a5a38', '#6a5a34'], ['#5a4a30', '#7a6a40'], ['#3f4a3a', '#5a5038']].forEach((c, i) => {
+  // BOWMEN — green lacquer hats, green tunics, no breastplate, quiver on the back
+  [['#2f5a3c', '#3a2a2a'], ['#3a5a30', '#4a3a2a'], ['#2a4a3a', '#3a3a2a']].forEach((c, i) => {
     mk('archer' + (i ? i : ''), Object.assign({}, MB, {
-      helm: c[1], uni: c[0], sleeve: shadeHex(c[0], .8), trouser: '#3a3024',
-      gear: '#5a4a30', head: 3.7, len: 17, wid: 14, wep: { len: 4, wid: 4, col: '#6a4a26' }
+      helm: '#254a30', band: '#b8963a', uni: c[0], sleeve: c[0], trouser: c[1], sash: '#8a5a2a',
+      gear: c[0], head: 3.7, len: 17, wid: 14, wep: { len: 4, wid: 4, col: '#6a4a26' }
     }), bow);
   });
-  // SIEGE ENGINE CREW — heavy, hauling a battering ram
+  // WAR ELEPHANT CREW — the mahout and the howdah spearman (the elephant itself is drawn by the renderer)
   mk('siege', Object.assign({}, MB, {
-    helm: STEEL, uni: '#4a4038', sleeve: '#3f362e', trouser: '#332a20', gear: '#2a2018', shoulder: DKSTEEL,
-    len: 25, wid: 23, head: 5, armLen: 16, armW: 6.4, legLen: 13, legW: 7.4, round: 6,
+    helm: '#6a1f1f', band: '#e2c04a', uni: '#b89a3a', sleeve: '#b89a3a', trouser: '#5a2a3a', sash: '#8a1f1f', gear: '#3a2618',
     wep: { len: 6, wid: 6, col: '#5a3f22' }
   }), ram);
   // LEVY BUILDER — bare head, rough tunic, a timber mallet; no armour, no fight in them
@@ -2740,7 +2742,7 @@ function buildMedieval() {
     g.fillStyle = '#4a3a2a'; g.fillRect(4, -4.5, 6, 9); g.fillStyle = '#5c4a36'; g.fillRect(4, -4.5, 6, 2);   // head
   });
   mk('worker', Object.assign({}, MB, {
-    helm: '#8a6a4a', uni: '#8a7a56', sleeve: '#7a6a48', trouser: '#4a3a28', gear: '#5a4a30', head: 3.8, len: 17, wid: 14,
+    helm: '#6a5030', band: '#6a5030', bare: true, uni: '#8a7a56', sleeve: '#8a7a56', trouser: '#4a3a28', sash: '#6a4a30', gear: '#8a7a56', head: 3.8, len: 17, wid: 14,
     wep: { len: 6, wid: 4, col: '#6a4a26' }
   }), mallet);
 }
@@ -2903,46 +2905,46 @@ const ZDEF = {
   spitter: { name: 'Spitter', hp: 95, spd: 54, r: 10, dmg: 15, rate: 1.5, armor: 0, spr: 'spitter', scrap: 11, special: true }   // no more spit: every zombie has to close to biting range
 };
 
-/* ---- INVADERS mode: a medieval army warped forward in time ----
+/* ---- INVADERS mode: THAI ANCIENT — an Ayutthaya-era army warped forward in time ----
    These enemies reuse the whole horde pipeline (spawnZed/updateZeds/drawZed)
-   but carry med:true so rigs, behaviour and audio switch to the medieval set. */
+   but carry med:true so rigs, behaviour and audio switch to the ancient-host set. */
 const MDEF = {
   infantry: {
-    name: 'Man-at-Arms', med: true, hp: 96, spd: 42, r: 10, dmg: 13, rate: 1.0, armor: 3, spr: 'infantry', scrap: 5,
-    info: 'Levied foot soldier in a padded gambeson with sword and kite shield. The backbone of every invading column — dangerous in numbers, little else.'
+    name: 'Spearman', med: true, hp: 96, spd: 42, r: 10, dmg: 13, rate: 1.0, armor: 3, spr: 'infantry', scrap: 5,
+    info: 'Ayutthaya levy in a lacquered hat and leather breastplate, a tall hide shield on one arm and a long spear or curved dha in the other. The backbone of every column — dangerous in numbers, little else.'
   },
   cavalry: {
-    name: 'Knight Cavalry', med: true, hp: 240, spd: 108, r: 13, dmg: 26, rate: 1.1, armor: 6, spr: 'cavalry', scrap: 12, big: true, mount: true,
-    info: 'An armoured knight on a barded warhorse. Closes the gap frighteningly fast and hits like a truck on the charge. Concentrate fire before it reaches the line.'
+    name: 'Horse Lancer', med: true, hp: 240, spd: 108, r: 13, dmg: 26, rate: 1.1, armor: 6, spr: 'cavalry', scrap: 12, big: true, mount: true,
+    info: 'A noble lancer in a black-lacquer officer\'s hat on a caparisoned war horse. Closes the gap frighteningly fast and hits like a truck on the charge. Concentrate fire before it reaches the line.'
   },
   archer: {
-    name: 'Longbowman', med: true, hp: 58, spd: 46, r: 9, dmg: 11, rate: 1.7, armor: 1, spr: 'archer', scrap: 8, ranged: 300, arrow: true,
-    info: 'Skirmisher with a yard-long war bow. Loose volleys of bodkin arrows from well outside sword range — flush them out or lose men to plunging fire.'
+    name: 'Bowman', med: true, hp: 58, spd: 46, r: 9, dmg: 11, rate: 1.7, armor: 1, spr: 'archer', scrap: 8, ranged: 300, arrow: true,
+    info: 'Green-hatted skirmisher with a bamboo war bow and a quiver on his back. Looses volleys from well outside spear range — flush them out or lose men to plunging fire.'
   },
   siege: {
-    name: 'Siege Engine', med: true, hp: 820, spd: 20, r: 21, dmg: 70, rate: 2.4, armor: 8, spr: 'siege', scrap: 30, big: true, siege: true,
-    info: 'A timber battering-ram and trebuchet crew. Painfully slow, enormously tough, and it makes straight for your walls and buildings. Kill the crew before it reaches the wire.'
+    name: 'War Elephant', med: true, hp: 820, spd: 20, r: 21, dmg: 70, rate: 2.4, armor: 8, spr: 'siege', scrap: 30, big: true, siege: true,
+    info: 'A caparisoned war elephant with a mahout on its neck and a spearman in the howdah. Slow, enormously tough, and it makes straight for your walls and buildings, trampling whatever stands in the way. Bring the heavy guns.'
   },
   worker: {
     name: 'Levy Builder', med: true, hp: 64, spd: 46, r: 9, dmg: 0, rate: 9, armor: 0, spr: 'worker', scrap: 6, worker: true,
-    info: 'Unarmed peasant levies with mallets and timber. They cannot fight back — they raise war camps, stables, archery butts and siege works that keep spawning troops until you burn them down. Kill the builders, then the building.'
+    info: 'Unarmed peasant levies with mallets and timber. They cannot fight back — they raise war camps, stables, archery butts and elephant lines that keep spawning troops until you burn them down. Kill the builders, then the building.'
   },
   /* invader constructions: static "enemies" the workers raise over a minute; when finished each one spawns its own troop type */
   mBarracks: {
     name: 'War Camp', med: true, struct: true, troop: 'infantry', hp: 1100, spd: 0, r: 34, dmg: 0, rate: 99, armor: 4, spr: 'mBarracks', scrap: 90, buildT: 60, spawnT: 34, spawnN: [2, 3], w: 3, h: 2,
-    info: 'A palisaded war camp. Takes the levies a minute to raise; once the banner flies it musters a fresh squad of men-at-arms every half minute. Destroy it — it has no defence of its own.'
+    info: 'A palisaded war camp. Takes the levies a minute to raise; once the banner flies it musters a fresh squad of spearmen every half minute. Destroy it — it has no defence of its own.'
   },
   mRange: {
     name: 'Archery Butts', med: true, struct: true, troop: 'archer', hp: 760, spd: 0, r: 30, dmg: 0, rate: 99, armor: 2, spr: 'mRange', scrap: 70, buildT: 60, spawnT: 30, spawnN: [2, 3], w: 3, h: 2,
-    info: 'Straw targets and a fletcher\'s hut. Trains longbowmen — a pair every half minute once finished. Flimsy; a burst of fire brings it down.'
+    info: 'Straw targets and a fletcher\'s hut. Trains bowmen — a pair every half minute once finished. Flimsy; a burst of fire brings it down.'
   },
   mStable: {
     name: 'Stables', med: true, struct: true, troop: 'cavalry', hp: 1000, spd: 0, r: 36, dmg: 0, rate: 99, armor: 5, spr: 'mStable', scrap: 110, buildT: 60, spawnT: 46, spawnN: [1, 2], w: 4, h: 2,
-    info: 'Timber stables with a paddock. Musters barded knight cavalry — slower to train but each one is a charge you must stop. Priority target.'
+    info: 'Timber stables with a paddock. Musters horse lancers — slower to train but each one is a charge you must stop. Priority target.'
   },
   mWorkshop: {
-    name: 'Siege Works', med: true, struct: true, troop: 'siege', hp: 1500, spd: 0, r: 40, dmg: 0, rate: 99, armor: 8, spr: 'mWorkshop', scrap: 160, buildT: 60, spawnT: 70, spawnN: [1, 1], w: 4, h: 3,
-    info: 'Carpenters\' yard building rams and engines. Very tough; every ~70 s it rolls out a new siege crew aimed at your walls. Bring the Abrams.'
+    name: 'Elephant Lines', med: true, struct: true, troop: 'siege', hp: 1500, spd: 0, r: 40, dmg: 0, rate: 99, armor: 8, spr: 'mWorkshop', scrap: 160, buildT: 60, spawnT: 70, spawnN: [1, 1], w: 4, h: 3,
+    info: 'Elephant stables and a mahouts\' yard. Very tough; every ~70 s it sends out a new war elephant aimed at your walls. Bring the Abrams.'
   }
 };
 /* one lookup that resolves either faction's stat block */
@@ -5396,7 +5398,7 @@ function updateProps(dt) {
 }
 
 /* ============================ INVADERS MODE ============================
-   A medieval army warped forward in time. Adds: enemy CAMPS scattered on
+   A Thai Ancient (Ayutthaya-era) army warped forward in time. Adds: enemy CAMPS scattered on
    the map (persistent invader spawn strongholds), 20 small friendly
    VILLAGES the player holds for bonus resources (invaders try to capture
    them, turning a taken village into their own spawn point), and the
@@ -5603,7 +5605,7 @@ function updateIntel() {
 
 /* ============================ TIME-WARP CUTSCENE ============================ */
 function startWarpCutscene() {
-  G.cutscene = { t: 0, dur: 6.4, skip: false };
+  G.cutscene = { t: 0, dur: 7.4, skip: false };
   G.paused = true;
   const h = document.getElementById('hud'); if (h) h.style.display = 'none';   // clean intro
   const skip = () => { if (G.cutscene) G.cutscene.skip = true; };
@@ -5617,7 +5619,7 @@ function tickCutscene(dt) {
   if (cs.t >= cs.dur) {
     G.cutscene = null; G.paused = false;
     const h = document.getElementById('hud'); if (h) h.style.display = '';
-    alertMsg('The medieval host is marching. Hold the line and protect the villages.', 'info');
+    alertMsg('The Thai Ancient host is marching. Hold the line and protect the villages.', 'info');
   }
 }
 function drawCutscene(g) {
@@ -5653,16 +5655,16 @@ function drawCutscene(g) {
   hand(R * .5, 4, spin * .35); hand(R * .78, 2.5, spin);
   g.fillStyle = '#eef2f6'; g.beginPath(); g.arc(cx, cy, 4, 0, TAU); g.fill();
 
-  // the year rewinding from 2026 toward the middle ages
-  const year = Math.round(2026 - clamp(t / (dur - 1), 0, 1) * (2026 - 1330));
+  // the year rewinding from 2026 back into the Late Middle Ages (15th–17th centuries) — it lands in 1593
+  const year = Math.round(2026 - clamp(t / (dur - 1), 0, 1) * (2026 - 1593));
   g.globalAlpha = fadeIn * fadeOut;
   g.fillStyle = '#eaf0f6'; g.textAlign = 'center';
   g.font = 'bold ' + Math.round(R * .5) + 'px ui-monospace,monospace';
-  g.fillText(year >= 1330 ? year + ' AD' : '1330 AD', cx, cy + R + R * .55);
+  g.fillText(year >= 1593 ? year + ' AD' : '1593 AD', cx, cy + R + R * .55);
 
   // captions per beat
   g.font = 'bold ' + Math.round(H * .028) + 'px ui-monospace,monospace';
-  const cap = t < 2.0 ? 'TEMPORAL DISPLACEMENT DETECTED…' : t < 4.2 ? 'THE TIMELINE IS COLLAPSING BACKWARD' : 'YEAR 1330 — A MEDIEVAL HOST SURROUNDS YOU';
+  const cap = t < 2.0 ? 'TEMPORAL DISPLACEMENT DETECTED…' : t < 3.8 ? 'THE TIMELINE IS COLLAPSING BACKWARD' : t < 5.6 ? 'LATE MIDDLE AGES · 15TH–17TH CENTURIES' : 'YEAR 1593 — A THAI ANCIENT HOST SURROUNDS YOU';
   g.fillStyle = '#9fb4c8'; g.fillText(cap, cx, H * .8);
   g.font = Math.round(H * .02) + 'px ui-monospace,monospace'; g.fillStyle = 'rgba(180,196,210,.7)';
   g.fillText('Your modern battalion, ripped from 2026. Hold the line. — click to skip', cx, H * .86);
@@ -10477,7 +10479,7 @@ const SP_CATS = [
   ] },
   { sec: 'ENEMY UNITS', groups: [
     { id: 'zombie', label: 'Zombie', icon: '🧟', side: 'enemy', list: ['walker', 'runner', 'brute', 'bloater', 'spitter'] },
-    { id: 'medieval', label: 'Medieval', icon: '⚔️', side: 'enemy', list: ['infantry', 'cavalry', 'archer', 'siege', 'worker'] }
+    { id: 'medieval', label: 'Thai Ancient', icon: '🐘', side: 'enemy', list: ['infantry', 'cavalry', 'archer', 'siege', 'worker'] }
   ] }
 ];
 function spName(side, t) { const d = side === 'player' ? UDEF[t] : (ZDEF[t] || MDEF[t]); return (d && d.name) || t; }
@@ -12366,32 +12368,43 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const bit = s < 0 ? L_LL : L_RL, swing = o.sit ? 1.15 : (zed ? .45 : .5) * sw * s;
       if (lm & bit) {
         const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = o.sit ? -.05 : (swing < 0 ? swing - bend : swing * .72);
-        limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, tL, legW, ry, swing, trou, legW * 1.08);
+        limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, tL, legW * (med ? 1.22 : 1), ry, swing, trou, legW * (med ? 1.3 : 1.08));   // ancient host: baggy patterned chong kraben to the knee
         const kf = Math.sin(swing) * tL, ky = hipY - Math.cos(swing) * tL;
-        if (!zed) put(P.head, X(kf + legW * .18, s * spread), ky, Z(kf + legW * .18, s * spread), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
-        limb(bodyPool, X(kf, s * spread), ky, Z(kf, s * spread), cx, cz, sL, legW * .9, ry, sw2, trou);
+        if (!zed && !med) put(P.head, X(kf + legW * .18, s * spread), ky, Z(kf + legW * .18, s * spread), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
+        limb(bodyPool, X(kf, s * spread), ky, Z(kf, s * spread), cx, cz, sL, legW * (med ? .72 : .9), ry, sw2, med ? skin : trou);                    // bare shins below the wrap
         const bs = Math.sin(sw2), bc = Math.cos(sw2), ff = kf + bs * sL, fy = ky - bc * sL;
-        put(P.box, X(ff + legW * .3, s * spread), fy + legW * .38, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.65, legW * .8, legW * 1.05, zed ? col3k(S.trouser || '#3a3a3a', .7) : BOOT);   // boot
-        if (!zed) put(P.box, X(ff, s * spread), fy + legW * .85, Z(ff, s * spread), 0, ry, sw2 * .3, legW * 1.0, legW * .6, legW * 1.02, BOOT);                                                        // boot shaft
+        if (med) { put(P.box, X(ff + legW * .3, s * spread), fy + legW * .22, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.5, legW * .42, legW * .95, skin); put(P.box, X(ff + legW * .3, s * spread), fy + legW * .04, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.55, legW * .12, legW * 1.0, col3('#3a2618')); }   // bare foot on a leather sandal
+        else { put(P.box, X(ff + legW * .3, s * spread), fy + legW * .38, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.65, legW * .8, legW * 1.05, zed ? col3k(S.trouser || '#3a3a3a', .7) : BOOT);   // boot
+        if (!zed) put(P.box, X(ff, s * spread), fy + legW * .85, Z(ff, s * spread), 0, ry, sw2 * .3, legW * 1.0, legW * .6, legW * 1.02, BOOT); }                                                        // boot shaft
       }
       else STUMP(P.gore, X(0, s * spread), hipY - legW * .3, Z(0, s * spread), 0, ry, 0, legW * .75, legW * .6, legW * .75, blood);
     }
     // torso (leaning), belt, plate carrier / surcoat, shoulder pads, pack
     const tl = Math.sin(lean) * torsoH * .5, tcY = hipY + Math.cos(lean) * torsoH * .5;
     put(bodyPool, X(tl, 0), tcY, Z(tl, 0), 0, ry, -lean, torsoD, torsoH, torsoW, uni);
-    put(P.box, X(tl * .15, 0), hipY + torsoH * .08, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.06, 1.6 * sc, torsoW * 1.04, gear);
-    if (!zed) put(med ? P.cloth : P.box, X(tl * 1.1 + torsoD * .08, 0), tcY + torsoH * .05, Z(tl * 1.1 + torsoD * .08, 0), 0, ry, -lean, torsoD * 1.18, torsoH * .62, torsoW * (med ? 1.02 : .92), med ? uni : gear);
+    if (med) put(P.cloth, X(tl * .15, 0), hipY + torsoH * .1, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.1, 3.4 * sc, torsoW * 1.08, col3(S.sash || '#b8642a'));   // wide waist sash
+    else put(P.box, X(tl * .15, 0), hipY + torsoH * .08, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.06, 1.6 * sc, torsoW * 1.04, gear);
+    if (med) { if (!S.bare && o.mk !== 'archer') { put(P.box, X(tl * 1.1 + torsoD * .12, 0), tcY + torsoH * .14, Z(tl * 1.1 + torsoD * .12, 0), 0, ry, -lean, torsoD * 1.1, torsoH * .58, torsoW * .84, gear);   // leather breastplate
+        put(P.box, X(tl * 1.1 + torsoD * .2, 0), tcY + torsoH * .38, Z(tl * 1.1 + torsoD * .2, 0), 0, ry, -lean, torsoD * 1.0, 1.0 * sc, torsoW * .6, GOLD); put(P.box, X(tl * 1.1 + torsoD * .22, 0), tcY + torsoH * .12, Z(tl * 1.1 + torsoD * .22, 0), 0, ry, -lean, torsoD * .9, torsoH * .2, 1.0 * sc, GOLD); } }   // gold neck trim + centre strap
+    else if (!zed) put(P.box, X(tl * 1.1 + torsoD * .08, 0), tcY + torsoH * .05, Z(tl * 1.1 + torsoD * .08, 0), 0, ry, -lean, torsoD * 1.18, torsoH * .62, torsoW * .92, gear);
     if (zed) { if (h1 > .3) put(P.box, X(tl * 1.4 + torsoD * .3, (h2 - .5) * torsoW * .6), tcY + (h1 - .5) * torsoH * .5, Z(tl * 1.4 + torsoD * .3, (h2 - .5) * torsoW * .6), 0, ry, -lean, torsoD * .5, torsoH * .3, torsoW * .35, blood); if (h2 > .55) put(P.box, X(tl * .6 - torsoD * .3, (h1 - .5) * torsoW * .5), tcY - torsoH * .2, Z(tl * .6 - torsoD * .3, (h1 - .5) * torsoW * .5), 0, ry, -lean, torsoD * .5, torsoH * .25, torsoW * .3, blood); }
     if (o.zt === 'bloater') put(P.head, X(tl * 1.3 + torsoD * .35, 0), tcY - torsoH * .12, Z(tl * 1.3 + torsoD * .35, 0), 0, ry, 0, torsoD * .9, torsoH * .42, torsoW * .55, uni);
     const shoY = hipY + Math.cos(lean) * torsoH, shoF = Math.sin(lean) * torsoH;
-    if (S.shoulder) for (let s = -1; s <= 1; s += 2) put(P.box, X(shoF, s * torsoW * .5), shoY - 1.2 * sc, Z(shoF, s * torsoW * .5), 0, ry, -lean, torsoD * .8, 2.6 * sc, armW * 1.3, med ? DKSTEEL : col3(S.shoulder));
+    if (S.shoulder && !med) for (let s = -1; s <= 1; s += 2) put(P.box, X(shoF, s * torsoW * .5), shoY - 1.2 * sc, Z(shoF, s * torsoW * .5), 0, ry, -lean, torsoD * .8, 2.6 * sc, armW * 1.3, col3(S.shoulder));
     if (S.pack && !med) put(P.box, X(tl - torsoD * .5 - 2.2 * sc, 0), tcY + torsoH * .05, Z(tl - torsoD * .5 - 2.2 * sc, 0), 0, ry, -lean, 4.4 * sc, torsoH * .7, torsoW * .72, col3(S.pack));
     if (med && o.mk === 'archer') put(P.cyl, X(tl - torsoD * .5 - 1.5 * sc, torsoW * .2), tcY + torsoH * .1, Z(tl - torsoD * .5 - 1.5 * sc, torsoW * .2), .35, ry, .3, 2 * sc, torsoH * .8, 2 * sc, WOOD);
     // head, helmet / hair, visor
     const hF = shoF + (zed || o.zt === 'brute' ? headR * .6 : 0), hY = shoY + headR * (zed ? .8 : 1.0);
     put(P.head, X(hF, 0), hY, Z(hF, 0), 0, ry, 0, headR, headR * 1.05, headR * .95, skin);
     if (zed) { if (h1 < .8) put(P.helm, X(hF - headR * .15, 0), hY + headR * .15, Z(hF - headR * .15, 0), 0, ry, .15, headR * 1.03, headR * .95, headR * 1.03, HAIRS[(h2 * 5) | 0]); }
-    else if (med) { const hc = S.helm === '#9aa0aa' || o.mk !== 'archer' ? STEEL : col3(S.helm); put(P.helm, X(hF, 0), hY + headR * .1, Z(hF, 0), 0, ry, 0, headR * 1.14, headR * 1.05, headR * 1.14, hc); if (o.mk !== 'archer') put(P.box, X(hF + headR * 1.05, 0), hY + headR * .05, Z(hF + headR * 1.05, 0), 0, ry, 0, headR * .25, headR * 1.0, headR * .22, hc); }
+    else if (med) {
+      if (S.bare) put(P.helm, X(hF - headR * .1, 0), hY + headR * .2, Z(hF - headR * .1, 0), 0, ry, 0, headR * 1.04, headR * .9, headR * 1.04, col3('#1a1410'));   // levy: bare head, dark hair
+      else { const hc = col3(S.helm || '#5e1f1f'), band = col3(S.band || '#d9b24a'), hb = hY + headR * .62;
+        put(P.cyl, X(hF, 0), hb, Z(hF, 0), 0, ry, 0, headR * 2.15, headR * .14, headR * 2.15, hc);                                       // wide flat brim
+        put(P.helm, X(hF, 0), hb + headR * .02, Z(hF, 0), 0, ry, 0, headR * .98, headR * 1.45, headR * .98, hc);                          // tall rounded crown
+        put(P.cyl, X(hF, 0), hb + headR * .3, Z(hF, 0), 0, ry, 0, headR * 1.0, headR * .16, headR * 1.0, band);                           // band round the crown
+        put(P.cyl, X(hF, 0), hb + headR * 1.5, Z(hF, 0), 0, ry, 0, headR * .16, headR * .4, headR * .16, GOLD); }                        // gold finial
+    }
     else { put(P.helm, X(hF, 0), hY + headR * .16, Z(hF, 0), 0, ry, -.1, headR * 1.2, headR * 1.02, headR * 1.2, col3(S.helm || '#6f8757')); put(P.box, X(hF, 0), hY + headR * .08, Z(hF, 0), 0, ry, 0, headR * 2.0, headR * .4, headR * 2.3, col3k(S.helm || '#6f8757', .85)); if (S.visor) put(P.box, X(hF + headR * 1.0, 0), hY + headR * .2, Z(hF + headR * 1.0, 0), 0, ry, 0, headR * .3, headR * .5, headR * 1.6, col3(S.visor)); }
     // upgrade tiers: every role gets its own kit at Mk2 and Mk3 (all of it hugs the body, so the figure never grows past its real size)
     if (S.tier >= 2 && !zed && !med) {
@@ -12475,11 +12488,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         if (gun === 'sword' || gun === 'mallet') {
           const up = gun === 'sword' ? .5 + Math.max(0, Math.sin(walk * 1.5)) * .5 : .35 + Math.max(0, Math.sin(o.work || 0)) * .9, L = gun === 'sword' ? wl * 1.4 : 9 * sc;
           const gf = grip.f + Math.cos(up) * L * .5, gy = grip.y + Math.sin(up) * L * .5;
-          if (gun === 'sword') { put(P.box, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, up, L, 1.1 * sc, 3 * sc, STEEL); put(P.box, X(grip.f, grip.r), grip.y, Z(grip.f, grip.r), 0, ry, up, 1.6 * sc, 1.6 * sc, 6 * sc, WOOD); }
+          if (gun === 'sword') { put(P.box, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, up, L, .9 * sc, 2.4 * sc, STEEL); put(P.box, X(gf + Math.cos(up) * L * .32, grip.r), gy + Math.sin(up) * L * .32, Z(gf + Math.cos(up) * L * .32, grip.r), 0, ry, up + .18, L * .4, .9 * sc, 2.2 * sc, STEEL); put(P.cyl, X(grip.f - Math.cos(up) * 2 * sc, grip.r), grip.y - Math.sin(up) * 2 * sc, Z(grip.f - Math.cos(up) * 2 * sc, grip.r), 0, ry, HPI + up, 1.0 * sc, 9 * sc, 1.0 * sc, WOOD); put(P.cyl, X(grip.f + Math.cos(up) * 2.6 * sc, grip.r), grip.y + Math.sin(up) * 2.6 * sc, Z(grip.f + Math.cos(up) * 2.6 * sc, grip.r), 0, ry, HPI + up, 1.4 * sc, .8 * sc, 1.4 * sc, GOLD); }   // dha: slim curved blade, long round grip, gold ferrule
           else { put(P.cyl, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, HPI + up, .9 * sc, L, .9 * sc, WOOD); put(P.box, X(grip.f + Math.cos(up) * L, grip.r), grip.y + Math.sin(up) * L, Z(grip.f + Math.cos(up) * L, grip.r), 0, ry, up, 3 * sc, 3.5 * sc, 3.5 * sc, col3('#4a3a2a')); }
-        } else if (gun === 'spear') { const L = wl * 2.2, gf = grip.f + L * .3, gy = grip.y + L * .3 * .12; put(P.cyl, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, HPI + .12, 1.1 * sc, L, 1.1 * sc, WOOD); put(P.box, X(grip.f + L * .8, grip.r), grip.y + L * .8 * .12, Z(grip.f + L * .8, grip.r), 0, ry, .12, 5 * sc, 1 * sc, 2.5 * sc, STEEL); }
+        } else if (gun === 'spear') { const L = wl * 2.2, gf = grip.f + L * .3, gy = grip.y + L * .3 * .12; put(P.cyl, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, HPI + .12, 1.1 * sc, L, 1.1 * sc, WOOD); put(P.box, X(grip.f + L * .8, grip.r), grip.y + L * .8 * .12, Z(grip.f + L * .8, grip.r), 0, ry, .12, 5 * sc, 1 * sc, 2.5 * sc, STEEL); if (med) { put(P.cyl, X(grip.f + L * .69, grip.r), grip.y + L * .69 * .12, Z(grip.f + L * .69, grip.r), 0, ry, HPI + .12, 1.6 * sc, 1.2 * sc, 1.6 * sc, GOLD); put(P.cloth, X(grip.f + L * .64, grip.r), grip.y + L * .64 * .12 - 1.5 * sc, Z(grip.f + L * .64, grip.r), 0, ry, .12, 1.2 * sc, 3 * sc, 1.2 * sc, col3('#8a1f1f')); } }   // gold socket + red horsehair tassel
         else if (gun === 'bow' && lh) { put(P.box, X(lh.f + 1 * sc, lh.r), lh.y, Z(lh.f + 1 * sc, lh.r), 0, ry, 0, 2 * sc, 26 * sc, 1.6 * sc, WOOD); put(P.box, X(lh.f - 2 * sc, lh.r), lh.y, Z(lh.f - 2 * sc, lh.r), 0, ry, 0, .4 * sc, 25 * sc, .4 * sc, STEEL); if (rh) { const af = (lh.f + rh.f) * .5 + 2 * sc; put(P.box, X(af, lh.r * .5 + rh.r * .5), (lh.y + rh.y) * .5, Z(af, lh.r * .5 + rh.r * .5), 0, ry, 0, Math.max(6 * sc, lh.f - rh.f + 8 * sc), .7 * sc, .7 * sc, WOOD); } }
-        if ((o.mk === 'infantry' || o.mk === 'cavalry') && lh) put(P.cloth, X(lh.f + 1.5 * sc, lh.r - 1.4 * sc), lh.y + 1 * sc, Z(lh.f + 1.5 * sc, lh.r - 1.4 * sc), 0, ry, 0, 6 * sc, 9 * sc, 1.2 * sc, uni);
+        if (o.mk === 'infantry' && lh) { put(P.cloth, X(lh.f + 1.5 * sc, lh.r - 1.6 * sc), lh.y + 1.5 * sc, Z(lh.f + 1.5 * sc, lh.r - 1.6 * sc), 0, ry, 0, 1.2 * sc, 15 * sc, 6.5 * sc, HIDE);   // tall hide shield
+          put(P.box, X(lh.f + 2.2 * sc, lh.r - 1.6 * sc), lh.y + 1.5 * sc, Z(lh.f + 2.2 * sc, lh.r - 1.6 * sc), 0, ry, 0, .3 * sc, 13 * sc, .5 * sc, GOLD); for (const dy of [-4, 0, 4]) put(P.box, X(lh.f + 2.2 * sc, lh.r - 1.6 * sc), lh.y + (1.5 + dy) * sc, Z(lh.f + 2.2 * sc, lh.r - 1.6 * sc), 0, ry, 0, .3 * sc, .6 * sc, 3.6 * sc, GOLD); }   // gold spine + studs
+        else if (o.mk === 'cavalry' && lh) { put(P.cyl, X(lh.f + 1.6 * sc, lh.r - 1.4 * sc), lh.y + 1 * sc, Z(lh.f + 1.6 * sc, lh.r - 1.4 * sc), 0, ry, HPI, 5 * sc, .9 * sc, 5 * sc, GOLD); put(P.cyl, X(lh.f + 2.2 * sc, lh.r - 1.4 * sc), lh.y + 1 * sc, Z(lh.f + 2.2 * sc, lh.r - 1.4 * sc), 0, ry, HPI, 3.2 * sc, .6 * sc, 3.2 * sc, HIDE); }   // round embossed buckler
       } else if (o.pistol && rh) {
         // sidearm out: slide + grip in the right hand, left hand cupped under it; the primary rides slung across the back
         const pf = rh.f + 1.2 * sc - rc * 1.2 * sc, py = rh.y + .6 * sc + rc * .5 * sc, pr = (rh.r + (lh ? lh.r : rh.r)) * .5;
@@ -12545,6 +12560,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   };
   const LEDC = new THREE.Color(.82, .9, 1), TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35), LIGHTC = new THREE.Color(1, .96, .82), FLOODC = new THREE.Color(1, .91, .69), FLOODD = new THREE.Color(.52, .47, .36), FLOODF = new THREE.Color(.062, .068, .078);   // FLOODF: a cool flashlight-LED tint at ~5% — just a hint of a beam
   const LASER = col3('#30ff50'), KNEE = col3('#2a2c28'), GLOVE = col3('#2c2a26'), GUNMETAL = col3('#24272b'), GUNDK = col3('#15171a'), TANF = col3('#8a7a56'), SCOPE = col3('#1a1c1e'), LENS = col3('#7fc8ff'), RAIL = col3('#3a3d42');
+  const GOLD = col3('#d9b24a'), HIDE = col3('#2e1f14'), ELE = col3('#77717c'), ELED = col3('#5a555f'), TUSK = col3('#efe7d2');
   const HORSE = col3('#4a3a2a'), HDARK = col3('#2c2118'), HORSE_SEAT = .72 * FS;
   function drawHorse(x, y, z, ang, walk, bard) {
     const u = FS, ry = -ang, cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, sw = Math.sin(walk * 1.3), X = (f, r) => x + (cx * f + px * r) * u, Z = (f, r) => z + (cz * f + pz * r) * u, Y = h => y + h * u;
@@ -12557,6 +12573,38 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (let i = 0; i < 4; i++) { const f = i < 2 ? .3 : -.32, sd = i % 2 ? .11 : -.11; limb(P.cloth, X(f, sd), Y(.42), Z(f, sd), cx, cz, .4 * u, .07 * u, ry, (i % 2 ? sw : -sw) * .45 * (i < 2 ? 1 : -1), HORSE); }
     if (bard) { for (const sd of [-1, 1]) put(P.cloth, X(-.02, sd * .17), Y(.4), Z(-.02, sd * .17), 0, ry, 0, .8 * u, .26 * u, .03 * u, bard); put(P.cloth, X(.5, 0), Y(.62), Z(.5, 0), 0, ry, -.65, .05 * u, .3 * u, .2 * u, bard); }
     put(P.box, X(0, 0), Y(.73), Z(0, 0), 0, ry, 0, .3 * u, .06 * u, .3 * u, col3('#3a2a1c'));
+  }
+  /* war elephant (the ancient host's siege beast): a big grey body on four pillar legs, domed head with flapping ears, a
+     trunk that swings as it walks, white tusks, a red-and-gold face mask and caparison, and a howdah on its back with a
+     railed platform and a parasol. The mahout sits on the neck and a spearman rides in the howdah (drawn by the caller
+     at ELE_NECK / ELE_HOWDAH). Faces +x like every other model. */
+  const ELE_U = FS * 1.55, ELE_NECK = 1.22 * ELE_U, ELE_HOWDAH = 1.28 * ELE_U;
+  function drawElephant(x, y, z, ang, walk, id) {
+    const u = FS * 1.55, ry = -ang, cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, sw = Math.sin(walk * .9), X = (f, r) => x + (cx * f + px * r) * u, Z = (f, r) => z + (cz * f + pz * r) * u, Y = h => y + h * u;
+    const RED = col3('#8a1f1f'), t = G.t + (id || 0);
+    put(P.head, X(0, 0), Y(1.0), Z(0, 0), 0, ry, 0, .9 * u, .55 * u, .52 * u, ELE);                                              // barrel body
+    put(P.head, X(-.6, 0), Y(1.0), Z(-.6, 0), 0, ry, 0, .36 * u, .46 * u, .44 * u, ELED);                                         // rump
+    put(P.head, X(.7, 0), Y(1.08), Z(.7, 0), 0, ry, 0, .32 * u, .3 * u, .36 * u, ELE);                                            // neck / shoulders
+    put(P.head, X(.98, 0), Y(1.16), Z(.98, 0), 0, ry, .15, .3 * u, .32 * u, .34 * u, ELE);                                        // domed head, carried high
+    for (const sd of [-1, 1]) { const flap = Math.sin(t * 1.7 + sd) * .12; put(P.cloth, X(.86, sd * .36), Y(1.14), Z(.86, sd * .36), flap * sd, ry, 0, .24 * u, .38 * u, .05 * u, ELED); }   // big flapping ears
+    { const s1 = .45 - sw * .08, s2 = .2 + sw * .14;                                                                                  // trunk: three hanging segments that swing with the stride
+      put(P.cyl, X(1.26, 0), Y(1.0), Z(1.26, 0), 0, ry, HPI * .55 + s1 * .4, .09 * u, .34 * u, .09 * u, ELE);
+      put(P.cyl, X(1.36, 0), Y(.72), Z(1.36, 0), 0, ry, s1 * .3, .075 * u, .34 * u, .075 * u, ELE);
+      put(P.cyl, X(1.4 + s2 * .1, 0), Y(.44), Z(1.4 + s2 * .1, 0), 0, ry, -s2 * .8, .06 * u, .3 * u, .06 * u, ELE); }
+    for (const sd of [-1, 1]) put(P.cyl, X(1.3, sd * .14), Y(.9), Z(1.3, sd * .14), 0, ry, HPI * .72, .035 * u, .48 * u, .035 * u, TUSK);   // tusks
+    for (const sd of [-1, 1]) put(P.head, X(1.2, sd * .19), Y(1.22), Z(1.2, sd * .19), 0, ry, 0, .03 * u, .03 * u, .03 * u, col3('#1a1410'));   // eyes
+    put(P.cloth, X(1.1, 0), Y(1.3), Z(1.1, 0), 0, ry, -.5, .34 * u, .04 * u, .3 * u, RED); put(P.cloth, X(1.13, 0), Y(1.33), Z(1.13, 0), 0, ry, -.5, .14 * u, .05 * u, .14 * u, GOLD);   // face mask + gold boss
+    for (let i = 0; i < 4; i++) { const f = i < 2 ? .42 : -.42, sd = i % 2 ? .21 : -.21; limb(P.cloth, X(f, sd), Y(.76), Z(f, sd), cx, cz, .74 * u, .17 * u, ry, (i % 2 ? sw : -sw) * .28 * (i < 2 ? 1 : -1), ELE); }   // pillar legs
+    put(P.cloth, X(-.9, 0), Y(1.0), Z(-.9, 0), 0, ry, .6, .04 * u, .36 * u, .04 * u, ELED);                                        // tail
+    // caparison: red saddle cloth over the back with gold hem, girth strap
+    put(P.cloth, X(-.05, 0), Y(1.2), Z(-.05, 0), 0, ry, 0, .72 * u, .1 * u, .9 * u, RED); put(P.cloth, X(-.05, 0), Y(1.14), Z(-.05, 0), 0, ry, 0, .74 * u, .03 * u, .96 * u, GOLD);
+    for (const sd of [-1, 1]) put(P.cloth, X(-.05, sd * .48), Y(.9), Z(-.05, sd * .48), 0, ry, 0, .3 * u, .5 * u, .03 * u, RED);
+    // howdah: floor, four corner posts, low rail, cushion, parasol on a gold pole
+    put(P.cloth, X(-.1, 0), Y(1.26), Z(-.1, 0), 0, ry, 0, .5 * u, .05 * u, .42 * u, WOOD);
+    for (const f of [-.32, .12]) for (const sd of [-1, 1]) put(P.cyl, X(f, sd * .19), Y(1.4), Z(f, sd * .19), 0, ry, 0, .018 * u, .26 * u, .018 * u, GOLD);
+    for (const sd of [-1, 1]) put(P.box, X(-.1, sd * .19), Y(1.5), Z(-.1, sd * .19), 0, ry, 0, .46 * u, .02 * u, .02 * u, GOLD);
+    put(P.box, X(-.32, 0), Y(1.5), Z(-.32, 0), 0, ry, 0, .02 * u, .02 * u, .4 * u, GOLD);
+    put(P.cyl, X(-.28, 0), Y(1.75), Z(-.28, 0), 0, ry, 0, .012 * u, .7 * u, .012 * u, GOLD); put(P.cyl, X(-.28, 0), Y(2.08), Z(-.28, 0), 0, ry, 0, .3 * u, .04 * u, .3 * u, RED); put(P.head, X(-.28, 0), Y(2.12), Z(-.28, 0), 0, ry, 0, .05 * u, .05 * u, .05 * u, GOLD);   // parasol
   }
   /* severed limbs thrown by the sim as 'gib' particles: keep the rig kit so the gib matches the body it came off */
   const _sever = severLimb;
@@ -13731,8 +13779,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (zz.def.worker) { drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: 'worker', gun: 'mallet', scale: .88, limbs: 15, id: zz.id, work: zz.work || 0 }); continue; }
       if (zz.med) {
         if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigureC(x, gy + HORSE_SEAT, z, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id }); }
-        else if (zz.def.siege) { drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'sword', scale: 1.0, limbs: zz.limbs, id: zz.id }); drawRam(x, gy, z, zz.ang, zz.def.r * K); }
-        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : 'infantry', gun: zz.def.arrow ? 'bow' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id });
+        else if (zz.def.siege) {
+          drawElephant(x, gy, z, zz.ang, zz.step || 0, zz.id);
+          const ecx = Math.cos(zz.ang) * ELE_U, ecz = Math.sin(zz.ang) * ELE_U;
+          drawFigureC(x + ecx * .52, gy + ELE_NECK, z + ecz * .52, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'none', scale: .78, limbs: 15, id: zz.id, sit: true });                                                   // mahout astride the neck
+          drawFigureC(x - ecx * .12, gy + ELE_HOWDAH, z - ecz * .12, zz.ang, 0, S, { ck: zz._rider || (zz._rider = { id: zz.id + 7 }), kind: 'med', mk: 'cavalry', gun: 'spear', scale: .82, limbs: zz.limbs, id: zz.id + 7 });   // spearman in the howdah
+        }
+        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : 'infantry', gun: zz.def.arrow ? 'bow' : ((zz.id & 1) ? 'spear' : 'sword'), scale: .92, limbs: zz.limbs, id: zz.id });   // spearmen and dha-and-shield men mixed
       } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
       else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0 }); }
     }
@@ -14169,7 +14222,7 @@ openDev(false);
   // campaign / mode cards
   const mInfo = {
     defense: [SVGI.skull, 'Zombie Defense', 'The classic outbreak. Hold your base against escalating waves of the infected.'],
-    invaders: [SVGI.target, 'Invaders', 'Warped back to 1330. Fend off a medieval army — cavalry, archers and siege — and hold 20 friendly villages.']
+    invaders: [SVGI.target, 'Invaders', 'Warped back to the Late Middle Ages (15th–17th centuries). Fend off a Thai Ancient host — spearmen, bowmen, horse lancers and war elephants — and hold 20 friendly villages.']
   };
   $('mModes').innerHTML = Object.keys(mInfo).map(k => `<button class="mcard" data-mode="${k}">${mInfo[k][0]}<div class="cn">${mInfo[k][1]}</div><div class="cd">${mInfo[k][2]}</div></button>`).join('');
   $('mModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) { selMode = b.dataset.mode; show('difficulty'); } });
@@ -14412,7 +14465,7 @@ const LOBBY = {
   loadTimer: null
 };
 const CFG_MODE = [['invaders', 'Invaders'], ['defense', 'Zombies']];
-const CFG_ENEMY = [['medieval', 'Medieval'], ['zombie', 'Zombie']];
+const CFG_ENEMY = [['medieval', 'Thai Ancient'], ['zombie', 'Zombie']];
 const CFG_DIFF = [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard'], ['creative', 'Creative']];
 const CFG_SIZE = [['small', 'Small'], ['average', 'Average'], ['large', 'Large']];
 const randCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join('');
@@ -14552,7 +14605,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b81';
+const BUILD_TAG = 'b82';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
