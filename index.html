@@ -468,6 +468,27 @@ kbd{background:#142420;border:1px solid #33513f;border-bottom-width:2px;border-r
 /* ---------- multiplayer lobby ---------- */
 .mprow{display:flex;flex-direction:column;gap:10px;align-items:center;margin:8px 0}
 .mpjoin{display:flex;gap:8px;align-items:center}
+/* open-lobby list: every room a host has created shows up here live, named by its host, so friends can pick the right one */
+.loblist{width:min(420px,92vw);background:rgba(10,20,16,.72);border:1px solid #2d4539;border-radius:14px;padding:10px 12px;pointer-events:auto;backdrop-filter:blur(8px)}
+.llhd{display:flex;justify-content:space-between;align-items:center;font-size:11px;letter-spacing:2.4px;color:#8ea79a;font-weight:800;margin-bottom:6px}
+.llrows{display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow-y:auto}
+.llrow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);animation:mfade .25s}
+.llrow .lln{font-weight:800;color:#e9f3ec;font-size:14px;letter-spacing:.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.llrow .llm{grid-column:1;color:#7ea294;font-size:11px;display:flex;gap:8px;flex-wrap:wrap}
+.llrow .llm b{color:#8dffbe;font-weight:700}.llrow .llm code{color:#ffbe63;background:#0c1714;padding:0 5px;border-radius:3px;letter-spacing:2px}
+.llrow .llj{grid-row:1/3;grid-column:2;padding:8px 14px;border-radius:10px;border:1px solid #2d4539;background:linear-gradient(180deg,#1b3328,#0f2119);color:#8dffbe;font:800 12px/1 var(--sans,inherit);letter-spacing:2px;cursor:pointer}
+.llrow .llj:hover{filter:brightness(1.2)}.llrow.full .llj{opacity:.45;cursor:default}
+.llempty{color:#5f7a6d;font-size:12px;text-align:center;padding:10px 0}
+.llnote{color:#7ea294;font-size:10.5px;line-height:1.5;margin-top:6px}.llnote code{color:#ffbe63;background:#0c1714;padding:1px 5px;border-radius:3px;font-size:10px}
+/* lobby-name popup shown before a room is created */
+#lobNamePop{position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(4,8,7,.66);backdrop-filter:blur(4px);pointer-events:auto}
+#lobNamePop[hidden]{display:none}
+.lnbox{width:min(360px,90vw);background:linear-gradient(180deg,#132219,#0b1611);border:1px solid #2d4539;border-radius:16px;padding:18px 18px 14px;box-shadow:0 20px 60px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:10px;animation:mfade .2s}
+.lnhd{font-size:12px;letter-spacing:3px;color:#8ea79a;font-weight:800}
+.lnbox label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:#7ea294;letter-spacing:1px}
+.lnbox input{padding:11px 12px;font:700 15px var(--sans,inherit);background:#0c1714;border:1px solid #2d4539;border-radius:9px;color:#e9f3ec;outline:none}
+.lnbox input:focus{border-color:#3ddc84}
+.lnbar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:4px}.lnbar .mbtn{width:auto;padding:11px 18px}
 .mpjoin input{width:150px;padding:11px 12px;font:700 15px ui-monospace,monospace;letter-spacing:3px;text-align:center;text-transform:uppercase;background:#0c1714;border:1px solid #2d4539;border-radius:7px;color:#8dffbe}
 .mpnote{color:#7ea294;font-size:11px;max-width:420px;text-align:center;margin:10px auto;line-height:1.5}
 .mpnote code{color:#ffbe63;background:#0c1714;padding:1px 5px;border-radius:3px}
@@ -1090,8 +1111,21 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     <div class="mhd">MULTIPLAYER</div>
     <div class="mprow">
       <button class="mbtn primary" id="mpHost"><span class="ml">HOST A GAME</span></button>
+      <div class="loblist" id="mpList">
+        <div class="llhd"><span>OPEN LOBBIES</span><span class="mdim" id="mpListN">searching…</span></div>
+        <div class="llrows" id="mpListRows"></div>
+        <div class="llnote" id="mpListNote"></div>
+      </div>
       <div class="mpjoin"><input id="mpCode" placeholder="ROOM CODE" maxlength="6" autocomplete="off"><button class="mbtn" id="mpJoin"><span class="ml">JOIN</span></button></div>
       <button class="mbtn" id="mpLocal"><span class="ml">LOCAL HOT-SEAT (test)</span></button>
+    </div>
+    <div id="lobNamePop" hidden>
+      <div class="lnbox">
+        <div class="lnhd">NAME YOUR LOBBY</div>
+        <label>Your name<input id="lnPlayer" maxlength="16" autocomplete="off" placeholder="Commander"></label>
+        <label>Lobby name<input id="lnName" maxlength="24" autocomplete="off" placeholder="e.g. Moto's squad"></label>
+        <div class="lnbar"><button class="mbtn primary" id="lnCreate"><span class="ml">CREATE LOBBY</span></button><button class="mback" id="lnCancel">CANCEL</button></div>
+      </div>
     </div>
     <div class="mpnote" id="mpNote">Host creates a room and shares the 4-letter code (no O, 0, I or 1). Both players must see the same server and build below.</div>
     <div class="mpnote" id="mpStatus" style="font-weight:700"><span id="mpDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#7a7a7a;margin-right:6px;vertical-align:middle"></span><span id="mpStatusTxt">checking server…</span> · build <code id="mpBuild">?</code></div>
@@ -14115,7 +14149,7 @@ openDev(false);
 (function initMenu() {
   const menu = $('menu');
   let selDiff = 'normal', selSize = 'average', selMode = 'defense';
-  const show = name => { menu.querySelectorAll('.mscreen').forEach(s => s.hidden = s.dataset.screen !== name); };
+  const show = name => { menu.querySelectorAll('.mscreen').forEach(s => s.hidden = s.dataset.screen !== name); if (typeof lobbyListWatch === 'function') lobbyListWatch(name === 'mp-home'); };
   menu.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) show(b.dataset.go); });
 
   // ---- animated SVG icons + hover/click sound for every menu control ----
@@ -14398,7 +14432,7 @@ const NET = {
   _emitState(id, s) { for (const cb of this._stateCbs) cb(id, s); },
   host(code) { this.isHost = true; (this.transport || LOCAL_TRANSPORT).host(code); },
   join(code) { this.isHost = false; (this.transport || LOCAL_TRANSPORT).join(code); },
-  publishRoom(r) { (this.transport || LOCAL_TRANSPORT).publishRoom(r); },       // host writes the authoritative room
+  publishRoom(r) { (this.transport || LOCAL_TRANSPORT).publishRoom(r); if (typeof lobbyCardPublish === 'function') lobbyCardPublish(); },       // host writes the authoritative room (+ its open-lobby card)
   publishCmd(c) { (this.transport || LOCAL_TRANSPORT).publishCmd(c); },          // any player broadcasts an order/command
   publishState(s) { const t = this.transport || LOCAL_TRANSPORT; if (t.publishState) t.publishState(s); },   // live per-client match state (co-op sync)
   leave() { const t = this.transport || LOCAL_TRANSPORT; if (t.leave) t.leave(); this._roomCbs = []; this._cmdCbs = []; this._stateCbs = []; }
@@ -14414,10 +14448,10 @@ const LOCAL_TRANSPORT = {
 };
 
 /* ---------------- lobby lifecycle ---------------- */
-function lobbyHost(local) {
+function lobbyHost(local, name) {
   if (!local && !NET.transport) attachFirebaseIfPresent();     // make sure the realtime channel is attached before hosting
   LOBBY.code = randCode(); LOBBY.myId = uid(); LOBBY.hostId = LOBBY.myId; LOBBY.local = !!local; LOBBY.loadPct = {}; LOBBY.stage = null; clearInterval(LOBBY.loadTimer);
-  LOBBY.room = { code: LOBBY.code, hostId: LOBBY.myId, cfg: defaultCfg(), seats: [seat(LOBBY.myId, playerName())], started: false };
+  LOBBY.room = { code: LOBBY.code, hostId: LOBBY.myId, name: (name || '').trim() || (playerName() + "'s lobby"), cfg: defaultCfg(), seats: [seat(LOBBY.myId, playerName())], started: false };
   if (local) { for (let i = 1; i < 2; i++) LOBBY.room.seats.push(seat(uid(), 'Player ' + (i + 1), i)); }   // one extra local seat to demo teams
   bindRoom(); NET.host(LOBBY.code); NET.publishRoom(LOBBY.room); openLobby();   // write the room to the DB right away so joiners see it
 }
@@ -14454,13 +14488,71 @@ function bindRoom() {
 
 function openLobby() {
   LOBBY.open = true; LOBBY.stage = 'lobby';
-  mpShow('lobby'); $('lobCode').textContent = '· ' + LOBBY.code;
+  mpShow('lobby'); $('lobCode').textContent = '· ' + LOBBY.code + (LOBBY.room && LOBBY.room.name ? ' · ' + LOBBY.room.name : '');
+  lobbyListWatch(false);                                        // leaving the multiplayer screen: stop watching the open-lobby list
   buildCfgControls(); bindSpawnMap(); renderLobby();
 }
-function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); }
+function mpShow(name) { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') { mpStatusCheck(); lobbyListWatch(true); } else lobbyListWatch(false); }
+
+/* ---------------- open-lobby list ----------------
+   Every hosted room also publishes a small card at lobbies/<CODE> — {code, name, host, n, max, mode, t} — that the host keeps
+   fresh (seat count, settings) and the server drops the instant the host disconnects. The multiplayer screen listens to
+   that node live, so a friend sees every open lobby by name and host and joins with one click instead of typing a code.
+   Rooms that have started, or whose card is older than 10 minutes without a heartbeat, are hidden. */
+const LOBBY_RULE_HINT = '"lobbies": { ".read": true, ".write": true }';
+function lobbyCard() {
+  const r = LOBBY.room; if (!r) return null;
+  const host = r.seats.find(x => x.id === r.hostId);
+  return { code: r.code, name: r.name || ((host ? host.name : 'Host') + "'s lobby"), host: host ? host.name : '?', n: r.seats.length, max: 6, mode: r.cfg ? (r.cfg.mode === 'defense' ? 'Zombies' : 'Invaders') + ' · ' + r.cfg.diff : '', started: !!r.started, t: Date.now() };
+}
+function lobbyCardPublish() {
+  if (!amHost() || LOBBY.local || !window.__DB) return;
+  const card = lobbyCard(); if (!card) return;
+  try {
+    const ref = window.__DB.ref('lobbies/' + card.code);
+    if (card.started) { ref.remove().catch(() => {}); return; }
+    ref.set(card).catch(() => {}); ref.onDisconnect().remove();
+  } catch (e) { }
+}
+function lobbyCardRemove(code) { if (!window.__DB || !code) return; try { window.__DB.ref('lobbies/' + code).remove().catch(() => {}); } catch (e) { } }
+function lobbyListWatch(on) {
+  const rows = $('mpListRows'), n = $('mpListN'), note = $('mpListNote'); if (!rows) return;
+  if (lobbyListWatch._ref) { try { lobbyListWatch._ref.off(); } catch (e) { } lobbyListWatch._ref = null; }
+  if (!on) return;
+  if (!attachFirebaseIfPresent() || !window.__DB) { rows.innerHTML = '<div class="llempty">offline — no server</div>'; n.textContent = ''; return; }
+  rows.innerHTML = '<div class="llempty">searching…</div>'; n.textContent = ''; note.textContent = '';
+  try {
+    const ref = window.__DB.ref('lobbies'); lobbyListWatch._ref = ref;
+    ref.on('value', s => lobbyListRender(s.val() || {}), err => {
+      rows.innerHTML = '<div class="llempty">lobby list is not enabled on this server</div>'; n.textContent = '';
+      note.innerHTML = 'Server owner: in the Firebase console → Realtime Database → Rules, add <code>' + LOBBY_RULE_HINT.replace(/</g, '&lt;') + '</code> beside the <code>rooms</code> rule, then the list works for everyone. Until then, join with a room code.';
+    });
+  } catch (e) { rows.innerHTML = '<div class="llempty">lobby list unavailable</div>'; }
+}
+function lobbyListRender(all) {
+  const rows = $('mpListRows'), n = $('mpListN'); if (!rows) return;
+  const now = Date.now();
+  const list = Object.values(all).filter(c => c && c.code && !c.started && (now - (c.t || 0) < 10 * 60 * 1000)).sort((a, b) => (b.t || 0) - (a.t || 0));
+  n.textContent = list.length ? list.length + ' open' : 'none open';
+  if (!list.length) { rows.innerHTML = '<div class="llempty">no open lobbies right now — host one, or ask your friend for a code</div>'; return; }
+  const esc = t => String(t || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  rows.innerHTML = list.map(c => { const full = (c.n || 0) >= (c.max || 6); return '<div class="llrow' + (full ? ' full' : '') + '" data-code="' + esc(c.code) + '"><div class="lln">' + esc(c.name) + '</div><div class="llm"><span>host <b>' + esc(c.host) + '</b></span><span><b>' + (c.n || 0) + '</b>/' + (c.max || 6) + ' players</span><span>' + esc(c.mode) + '</span><code>' + esc(c.code) + '</code></div><button class="llj">' + (full ? 'FULL' : 'JOIN') + '</button></div>'; }).join('');
+  rows.querySelectorAll('.llrow').forEach(el => { const b = el.querySelector('.llj'); b.onclick = () => { if (el.classList.contains('full')) return; AU.ui && AU.ui('ok'); lobbyJoin(el.dataset.code); }; });
+}
+/* name popup before hosting: your commander name + a lobby name, so friends can tell whose room it is */
+function lobbyNamePrompt(onDone) {
+  const pop = $('lobNamePop'); if (!pop) return onDone('');
+  const pn = $('lnPlayer'), ln = $('lnName');
+  pn.value = playerName(); ln.value = (localStorage.getItem('ll_lobby') || '') || (pn.value + "'s lobby");
+  pop.hidden = false; setTimeout(() => { ln.focus(); ln.select(); }, 30);
+  const close = () => { pop.hidden = true; $('lnCreate').onclick = null; $('lnCancel').onclick = null; pop.onkeydown = null; };
+  const go = () => { const p = pn.value.trim().slice(0, 16); if (p) { try { localStorage.setItem('ll_name', p); } catch (e) { } } const nm = ln.value.trim().slice(0, 24) || (playerName() + "'s lobby"); try { localStorage.setItem('ll_lobby', nm); } catch (e) { } close(); onDone(nm); };
+  $('lnCreate').onclick = go; $('lnCancel').onclick = close;
+  pop.onkeydown = e => { if (e.key === 'Enter') go(); else if (e.key === 'Escape') close(); };
+}
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b80';
+const BUILD_TAG = 'b81';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -14521,6 +14613,7 @@ function drawSpawnMap() {
 }
 /* ---------------- render the lobby ---------------- */
 function renderLobby() {
+  if (LOBBY.room && $('lobCode')) $('lobCode').textContent = '· ' + LOBBY.code + (LOBBY.room.name ? ' · ' + LOBBY.room.name : '');
   if (!LOBBY.room) return;
   const r = LOBBY.room, host = amHost();
   // seats
@@ -14606,16 +14699,16 @@ function tryStartMatch() {
 
 /* ---------------- wire the menu buttons ---------------- */
 function initLobbyUI() {
-  const go = name => { $('menu').querySelectorAll('.mscreen').forEach(sc => sc.hidden = sc.dataset.screen !== name); if (name === 'mp-home') mpStatusCheck(); };
+  const go = mpShow;
   const online = attachFirebaseIfPresent();
   const note = $('mpNote'); if (note) note.textContent = online ? 'Online: Host a game and share the room code with friends.' : 'Local test only — no Firebase config found. Host/Local run in this tab.';
   const mm = $('mMulti'); if (mm) mm.onclick = () => go('mp-home');
-  const hb = $('mpHost'); if (hb) hb.onclick = () => lobbyHost(false);
+  const hb = $('mpHost'); if (hb) hb.onclick = () => lobbyNamePrompt(nm => lobbyHost(false, nm));
   const lb = $('mpLocal'); if (lb) lb.onclick = () => lobbyHost(true);
   const jb = $('mpJoin'); if (jb) jb.onclick = () => { const c = ($('mpCode').value || '').trim(); if (c.length >= 3) lobbyJoin(c); else alertLobby('Enter a room code'); };
   const rdy = $('lobReady'); if (rdy) rdy.onclick = () => { const s = mySeat(); if (!s) return; s.ready = !s.ready; if (amHost()) NET.publishRoom(LOBBY.room); else NET.publishCmd({ t: 'ready', id: s.id, v: s.ready }); renderLobby(); };
   const st = $('lobStart'); if (st) st.onclick = () => { if (!amHost()) return; if (!LOBBY.room.seats.every(s => s.ready)) return; LOBBY.room.started = true; NET.publishRoom(LOBBY.room); NET.publishCmd({ t: 'begin' }); beginLoading(); };
-  const lv = $('lobLeave'); if (lv) lv.onclick = () => { NET.leave(); LOBBY.open = false; LOBBY.stage = null; clearInterval(LOBBY.loadTimer); go('main'); };
+  const lv = $('lobLeave'); if (lv) lv.onclick = () => { if (amHost()) lobbyCardRemove(LOBBY.code); NET.leave(); LOBBY.open = false; LOBBY.stage = null; clearInterval(LOBBY.loadTimer); go('main'); };
 }
 function alertLobby(m) { const n = $('mpNote'); if (n) { n.textContent = m; n.style.color = '#ffb3a7'; setTimeout(() => n.style.color = '', 1800); } }
 
