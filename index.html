@@ -228,6 +228,7 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
   background:linear-gradient(180deg,#1a2620,#101a15);color:#cfe6da;font-family:inherit;font-size:11px;
   font-weight:800;letter-spacing:.7px;cursor:pointer;white-space:nowrap}
 .dvbtn:hover{border-color:#8dffbe;color:#eafff4}
+.dvbtn.on{border-color:#ffd28a;color:#1a1004;background:linear-gradient(180deg,#ffe0a8,#e5a63a);box-shadow:0 0 12px rgba(255,200,120,.4)}
 .dvbtn.wide{width:100%;padding:10px;font-size:12px;color:#8dffbe;border-color:#2f5a44;letter-spacing:1.2px}
 .dvbtn.wide:hover{background:linear-gradient(180deg,#1d3a2a,#12241a)}
 .dvrow{display:flex;align-items:center;gap:5px}
@@ -920,6 +921,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
       <div id="dvIvMenu"><button class="dvbtn wide" id="dvIvSurround">◎ SPAWN SURROUNDING BASE</button><button class="dvbtn wide" id="dvIvPlace">✛ PLACE ON MAP (click a spot)</button></div>
       <div class="dvrow"><span class="dvlbl">Time</span>
         <button class="dvbtn" data-time="day">☀ DAY</button>
+        <button class="dvbtn" data-time="hold" id="dvHold">⏸ HOLD</button>
         <button class="dvbtn" data-time="night">☾ NIGHT</button></div>
       <div class="dvrow"><span class="dvlbl">Wave</span>
         <button class="dvbtn" data-wave="back" title="Step the counter down and launch that weaker wave now">◀ BACK</button>
@@ -5198,6 +5200,7 @@ function killZed(z, ang) {
 function killUnit(u) {
   if (u.dead) return;
   u.dead = true; G.lost++;
+  if (typeof NP !== 'undefined' && NP.on && !u.remote) NP.deaths.push([Math.round(u.x), Math.round(u.y), u.def.veh ? 1 : 0]);   // co-op: tell the other players one of my units just fell so they hear it too
   G.pop -= u.def.pop;
   const i = G.sel.indexOf(u); if (i >= 0) G.sel.splice(i, 1);
   if (u.inside) { if (u.inside.gar) { const g = u.inside.gar, k = g.indexOf(u); if (k >= 0) g.splice(k, 1); } else if (u.inside.cargo) { const k = u.inside.cargo.indexOf(u); if (k >= 0) u.inside.cargo.splice(k, 1); } u.inside = null; }
@@ -6045,8 +6048,25 @@ function myAllies() { const t = myTeam(); return G.players.map((p, i) => ({ p, i
    ================================================================================ */
 const NP = {
   on: false, host: true, sendT: 0.3, SEND: 0.18,
-  peers: {}, peerG: {}, zG: new Map(), shots: [], killZ: [], deadZ: new Set()
+  peers: {}, peerG: {}, zG: new Map(), shots: [], killZ: [], deadZ: new Set(), deaths: []
 };
+
+/* ---- shared world atmosphere (day/night, weather, wind) ----
+   The host is the single clock and sky for the match: it streams the current time, storm and wind in its snapshot and
+   every client follows it (the local day/weather/wind models are switched off on clients — see the guards in 07_sim /
+   08_render). A dev-mode change to any of these is applied at once for instant feedback and, if a client made it, sent
+   to the host to adopt so it re-streams to the whole lobby. */
+function netWorldApply(ch) {
+  if ('day' in ch) { G.day = ch.day; G.night = (G.day < .22 || G.day > .76); }
+  if ('hold' in ch) { G.dayHold = !!ch.hold; const hb = (typeof document !== 'undefined') && document.getElementById('dvHold'); if (hb) hb.classList.toggle('on', !!G.dayHold); }
+  if ('wf' in ch && typeof WX !== 'undefined') { WX.forced = (ch.wf == null ? null : ch.wf); WX.on = WX.forced != null ? WX.forced > .05 : WX.on; }
+  if ('wind' in ch) G.windForce = ch.wind || null;
+}
+/* called by the dev controls: apply locally, and if I'm a co-op client ask the host to adopt (it then streams it back to all) */
+function netWorld(ch) {
+  netWorldApply(ch);
+  if (NP.on && !NP.host && typeof NET !== 'undefined' && NET.publishCmd) NET.publishCmd(Object.assign({ t: 'world' }, ch));
+}
 
 /* record one of my units'/turrets' shots so allies can render the tracer */
 function npRecordShot(src, tgt, wep, m) {
@@ -6088,9 +6108,16 @@ function broadcastState() {
     const Z = [];
     for (const z of G.zeds) { if (z.dead || z.remote || z.def.struct || z.def.worker) continue; Z.push([z.id, z.t, Math.round(z.x), Math.round(z.y), Math.round((z.ang || 0) * 100), Math.round(z.hp)]); }
     snap.z = Z;
+    // the host is the shared sky: stream the clock, storm and wind so every screen shows the same day/night, weather and wind
+    snap.w = [+G.day.toFixed(4), G.days || 0, G.night ? 1 : 0,
+      +((typeof WX !== 'undefined' ? WX.k : 0)).toFixed(3),
+      (typeof WX !== 'undefined' && WX.forced != null) ? WX.forced : -1,
+      +((typeof WX !== 'undefined' ? WX.flash : 0)).toFixed(2),
+      Math.round(G.wind.x), Math.round(G.wind.y), G.dayHold ? 1 : 0];
   }
   if (!NP.host && NP.killZ.length) { snap.kz = NP.killZ; NP.killZ = []; }   // enemies I finished off — the host removes them
   if (NP.shots.length) { snap.f = NP.shots; NP.shots = []; }   // my gunfire this interval, for allies to draw
+  if (NP.deaths.length) { snap.d = NP.deaths; NP.deaths = []; }   // my units that fell this interval — allies hear them go down
   NET.publishState(snap);
 }
 
@@ -6134,6 +6161,16 @@ function reconcilePeer(pid, snap) {
   if (NP.host && snap.kz) { for (const id of snap.kz) { const z = G.zeds.find(q => !q.remote && q.id == id); if (z) z.dead = true; } }
   // draw this ally's gunfire as tracers
   if (snap.f) for (const s of snap.f) npGhostBullet(s[0], s[1], (s[2] || 0) / 100, s[3] || 900, s[4]);
+  // an ally's unit fell: everyone hears it (a foot soldier's cry, a vehicle's brew-up) and a small mark is left where it died
+  if (snap.d) for (const d of snap.d) { if (d[2]) { if (typeof fxExplosion === 'function') fxExplosion(d[0], d[1], 46); if (AU.boom) AU.boom(d[0], d[1], .9); } else { if (typeof fxBlood === 'function') fxBlood(d[0], d[1], Math.random() * 6.28, 8, '#b32020'); if (AU.splat) AU.splat(d[0], d[1]); } }
+  // the shared sky (only the host is authoritative): match its clock, storm and wind exactly
+  if (snap.w && LOBBY.room && pid === LOBBY.room.hostId) {
+    const w = snap.w;
+    G.day = w[0]; G.days = w[1]; G.dayHold = !!w[8];
+    { const hb = (typeof document !== 'undefined') && document.getElementById('dvHold'); if (hb) hb.classList.toggle('on', G.dayHold); }
+    if (typeof WX !== 'undefined') { WX.k = w[3]; WX.forced = (w[4] < 0 ? null : w[4]); WX.flash = Math.max(WX.flash || 0, w[5]); WX.on = WX.k > .05; }
+    const wd = G.wind; wd.x = w[6]; wd.y = w[7]; wd.dir = Math.atan2(wd.y, wd.x); wd.spd = Math.hypot(wd.x, wd.y); wd.dirTarget = wd.dir; wd.spdTarget = wd.spd;
+  }
 }
 
 function removePeer(pid) {
@@ -6480,8 +6517,12 @@ function blockedBy(e, x, y, friendly, heavy) {
 
 /* ==================== TIME, WAVES, AIRDROPS, WEATHER ==================== */
 function updateTime(dt) {
-  G.day += dt / G.dayLen * ((G.day < .22 || G.day > .76) ? .5 : 1);   // night runs at half speed, so darkness lasts about twice as long as daylight
-  if (G.day >= 1) { G.day -= 1; G.days = (G.days || 0) + 1; if (G.days === (G.rainDay || 7)) alertMsg('Day ' + G.days + ' — the weather is turning; rain is coming', 'info'); }
+  // the clock advances on the host (and in single player); a co-op client takes the time from the host, and "Hold" freezes it for everyone
+  const netFollowTime = (typeof NP !== 'undefined' && NP.on && !NP.host);
+  if (!G.dayHold && !netFollowTime) {
+    G.day += dt / G.dayLen * ((G.day < .22 || G.day > .76) ? .5 : 1);   // night runs at half speed, so darkness lasts about twice as long as daylight
+    if (G.day >= 1) { G.day -= 1; G.days = (G.days || 0) + 1; if (G.days === (G.rainDay || 7)) alertMsg('Day ' + G.days + ' — the weather is turning; rain is coming', 'info'); }
+  }
   const wasNight = G.night;
   G.night = (G.day < .22 || G.day > .76);
   if (G.night !== wasNight) {
@@ -6525,6 +6566,9 @@ const WIND_DIR_HOLD = 180, WIND_TURN_RATE = 9 * Math.PI / 180, WIND_STEP = 20;
 function updateAmbient(dt) {
   const w = G.wind;
   w.t += dt;
+  const netFollowWind = (typeof NP !== 'undefined' && NP.on && !NP.host);   // co-op client: the wind vector is streamed from the host, so don't run the local random model over it
+  if (netFollowWind) { /* w.x / w.y / w.dir / w.spd are set from the host's state each snapshot */ }
+  else {
   if (w.dir === undefined) {                                             // first tick: seed the model from the current vector
     w.dir = Math.atan2(w.y || -4, w.x || 14); w.dirTarget = w.dir; w.dirT = WIND_DIR_HOLD;
     w.spd = Math.hypot(w.x || 14, w.y || -4); w.spdTarget = w.spd; w.spdT = rnd(25, 50);
@@ -6542,6 +6586,7 @@ function updateAmbient(dt) {
   const s = w.spd * gust;
   w.x = Math.cos(w.dir) * s; w.y = Math.sin(w.dir) * s;
   if (G.windForce) { w.x = Math.cos(G.windForce.dir) * G.windForce.spd; w.y = Math.sin(G.windForce.dir) * G.windForce.spd; w.dir = G.windForce.dir; w.dirTarget = w.dir; w.spd = w.spdTarget = G.windForce.spd; }   // dev: steady forced wind — locked speed AND direction; the natural model resumes from it when released
+  }
 
   // expire old grass trample marks (they've fully regrown by now)
   G.grassPruneT -= dt;
@@ -10263,7 +10308,11 @@ function rainTex() {
 function updateWeather(dt) {
   if (G.mode === undefined) return;
   WX.t += dt;
-  if (WX.forced != null) {                                          // dev override: ease straight to the chosen intensity
+  // co-op client: the weather is streamed from the host (WX.k / WX.forced / WX.flash come in over the wire), so skip the
+  // local storm state machine and just let the rain/flash below render from the host's values.
+  const netFollowWx = (typeof NP !== 'undefined' && NP.on && !NP.host);
+  if (netFollowWx) { /* WX state is applied from the host snapshot in netplay */ }
+  else if (WX.forced != null) {                                          // dev override: ease straight to the chosen intensity
     WX.k += clamp(WX.forced - WX.k, -dt * .6, dt * .6);
     WX.on = WX.forced > .05;
     if (WX.on) { WX.boltT -= dt; if (WX.k > .5 && WX.boltT <= 0 && Math.random() < dt * .09) { WX.flash = 1; WX.boltT = rnd(4, 14); WX.thunderT = rnd(.4, 1.6); G.lights.push({ x: CAM.x + CAM.vw / 2, y: CAM.y + CAM.vh / 2, r: 4000, c: [220, 230, 255], i: 1 }); } }
@@ -10812,8 +10861,11 @@ function refreshDevToggles() {
   for (const el of document.querySelectorAll('.dvtog')) el.classList.toggle('on', !!G.cheat[el.dataset.c]);
 }
 function devTime(kind) {
-  G.day = kind === 'night' ? .90 : .42;
-  G.night = (G.day < .22 || G.day > .76);      // apply at once, even while paused
+  if (kind === 'hold') {                                  // freeze the clock at the current time (for everyone in co-op)
+    netWorld({ hold: !G.dayHold });
+    alertMsg(G.dayHold ? 'Day / night HELD' : 'Day / night resumed', 'info'); AU.ui('ok'); return;
+  }
+  netWorld({ day: kind === 'night' ? .90 : .42, hold: false });   // set the time (and release Hold), shared across co-op
   alertMsg(kind === 'night' ? 'Time set to night' : 'Time set to day', 'info');
   AU.ui('ok');
 }
@@ -10846,14 +10898,14 @@ for (const el of document.querySelectorAll('[data-wave]')) el.onclick = e => { e
 for (const el of document.querySelectorAll('[data-wx]')) el.onclick = e => {
   e.stopPropagation();
   const v = el.dataset.wx;
-  if (typeof WX !== 'undefined') WX.forced = (v === 'auto') ? null : parseFloat(v);
+  netWorld({ wf: (v === 'auto') ? null : parseFloat(v) });   // shared weather across co-op
   alertMsg('Weather: ' + (v === 'auto' ? 'automatic' : v === '0' ? 'clear' : v === '0.5' ? 'rain' : 'storm'), 'info');
   AU.ui('ok');
 };
 let dvWindDir = 0; const DV_WDIRS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 function dvApplyWind() {
   const spd = clamp(parseInt($('dvWindN').value, 10) || 0, 0, 200);
-  G.windForce = spd <= 0 ? null : { spd, dir: dvWindDir / 8 * TAU };
+  netWorld({ wind: spd <= 0 ? null : { spd, dir: dvWindDir / 8 * TAU } });   // shared wind across co-op
   alertMsg(spd <= 0 ? 'Wind: calm (automatic)' : 'Wind ' + spd + ' ' + DV_WDIRS[dvWindDir], 'info'); AU.ui('ok');
 }
 if ($('dvWindMinus')) $('dvWindMinus').onclick = e => { e.stopPropagation(); $('dvWindN').value = clamp((parseInt($('dvWindN').value, 10) || 0) - 20, 0, 200); dvApplyWind(); };
@@ -14694,7 +14746,7 @@ function newGame(opts) {
   const res = opts.res || {};
   G.players = cfg.map((c, i) => { const pl = mkPlayer(i, c); pl.baseCap = res.cap != null ? res.cap : 20; pl.maxCap = res.maxCap || 0; pl.unlim = c.unlim || res.unlim || { sup: false, scr: false, cap: false }; return pl; });
   G.me = opts.me || 0; G.cur = G.me; G.mp = G.players.length > 1; G.mode2 = null;
-  G.t = 0; G.day = .30; G.wave = 0; G.days = 0; G.rainDay = 7 + (Math.random() < .5 ? 0 : 1);   // the first storm front can only arrive once a week has passed
+  G.t = 0; G.day = .30; G.wave = 0; G.days = 0; G.rainDay = 7 + (Math.random() < .5 ? 0 : 1); G.dayHold = false; G.windForce = null;   // the first storm front can only arrive once a week has passed
   for (let pi = 0; pi < G.players.length; pi++) { G.cur = pi; G.sup = res.sup != null ? res.sup : G.diff.sup; G.scr = res.scr != null ? res.scr : G.diff.scr; G.pop = 0; G.up = { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }; G.tier = { inf: 1, veh: 1, air: 1 }; G.utier = {}; G.dropT = 22; }
   G.cur = G.me;
   G.waveT = 42; G.waveTMax = 42; G.waveQueue = null; G.waveAlive = 0;
@@ -15229,6 +15281,7 @@ function bindRoom() {
     else if (c.t === 'loaded') { LOBBY.loadPct = LOBBY.loadPct || {}; LOBBY.loadPct[c.id] = Math.max(LOBBY.loadPct[c.id] || 0, c.v || 0); renderLoad(); tryStartMatch(); }   // progress tracked in a monotonic map, not the room snapshot (snapshots would clobber it)
     else if (c.t === 'seat') { const st = LOBBY.room.seats.find(s => s.id === c.id); if (st) { if (c.team) st.team = c.team; if (c.spawn !== undefined) st.spawn = c.spawn; if (c.name) st.name = c.name; if (amHost()) NET.publishRoom(LOBBY.room); } renderLobby(); }
     else if (c.t === 'give') { if (typeof applyGive === 'function') applyGive(c.from, c.to, c.kind, c.amt); }   // ally resource gift — applied on every client so the recipient actually gets it
+    else if (c.t === 'world') { if (((typeof NP !== 'undefined' && NP.host) || amHost()) && typeof netWorldApply === 'function') netWorldApply(c); }   // a client's dev change to time/weather/wind: the host adopts it, then re-streams it to everyone
     else if (c.t === 'begin') beginLoading(); });
 }
 
@@ -15298,7 +15351,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b90';
+const BUILD_TAG = 'b91';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
