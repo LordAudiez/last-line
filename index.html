@@ -6590,7 +6590,13 @@ function findPath(x0, y0, x1, y1, forPlayer, clear, maxN) {
       if (!dx && !dy) continue; const nx = cx + dx, ny = cy + dy; if (!inMap(nx, ny) || tileSolid(nx, ny, forPlayer)) continue;
       if (dx && dy && (tileSolid(cx + dx, cy, forPlayer) || tileSolid(cx, cy + dy, forPlayer))) continue;   // no corner cutting
       // haulers (clear>0) pay extra to hug a wall, so their route naturally keeps a berth from buildings
-      const pen = clear && nearWall(nx, ny, forPlayer) ? 3 : 0;
+      let pen = clear && nearWall(nx, ny, forPlayer) ? 3 : 0;
+      if (G._pathLand) {                                                                    // a "keep to dry land" route: swamp is dear, and tiles beside water are dearer, so the line of march stays inland with a berth for the formation's flanks
+        if (MAP.t[ny * W + nx] === T_SWAMP) pen += 6;
+        let nearW = false;
+        for (let ay = ny - 1; ay <= ny + 1 && !nearW; ay++) for (let ax = nx - 1; ax <= nx + 1; ax++) if (ax >= 0 && ay >= 0 && ax < W && ay < MH && WATER(MAP.t[ay * W + ax])) { nearW = true; break; }
+        if (nearW) pen += 6;
+      }
       const nk = key(nx, ny), ng = g0 + (dx && dy ? 1.41 : 1) + pen;
       if (ng < (gs.has(nk) ? gs.get(nk) : 1e9)) { gs.set(nk, ng); came.set(nk, k); push(ng + h(nx, ny), nk); }
     }
@@ -8443,12 +8449,23 @@ function updateHostFormations(dt) {
       if (!n) { delete G.hostFm[id]; continue; }
       F.wait = lag > n * .15 ? 1 : 0;
     }
-    // the line of march is a planned route round water, cliffs and walls — re-plotted every few seconds — not a straight line into the sea
-    if (!F.route || G.t - F.routeT > 8) { F.routeT = G.t; const p = findPath(F.x, F.y, hq.x, hq.y, false, 0, 40000); F.route = p || []; F.ri = 0; }
+    if (F.wait) { F.waitT = (F.waitT || 0) + dt; if (F.waitT > 6) { F.wait = 0; } } else F.waitT = 0;   // never freeze forever waiting on stragglers — push on after a few seconds
+    // the line of march is a planned route that KEEPS TO DRY LAND — round every lake and swamp — all the way to the base, re-plotted every few seconds
+    if (!F.route || F.ri >= F.route.length || G.t - F.routeT > 6) { F.routeT = G.t; G._pathLand = true; const p = findPath(F.x, F.y, hq.x, hq.y, false, 0, 60000); G._pathLand = false; F.route = p || []; F.ri = 0; }
     let gx = hq.x, gy = hq.y;
     if (F.route.length) { while (F.ri < F.route.length - 1 && dist2(F.x, F.y, F.route[F.ri].x, F.route[F.ri].y) < (TS * 1.2) * (TS * 1.2)) F.ri++; gx = F.route[F.ri].x; gy = F.route[F.ri].y; }
     const want = angTo(F.x, F.y, gx, gy); F.dir = angLerp(F.dir, want, 1 - Math.pow(.3, dt));
-    if (!F.wait) { const nx = F.x + Math.cos(F.dir) * F.pace * dt, ny = F.y + Math.sin(F.dir) * F.pace * dt; if (!IMPASSABLE(terrainAt(nx, ny))) { F.x = nx; F.y = ny; } }
+    if (!F.wait) {                                                                          // slide along a shore / obstacle instead of standing frozen against it
+      let moved = false;
+      for (const off of [0, .45, -.45, .95, -.95, 1.5, -1.5, 2.2, -2.2]) {
+        const na = F.dir + off, nx = F.x + Math.cos(na) * F.pace * dt, ny = F.y + Math.sin(na) * F.pace * dt;
+        if (!IMPASSABLE(terrainAt(nx, ny)) && terrainAt(nx, ny) !== T_SWAMP) { F.x = nx; F.y = ny; if (off) F.dir = angLerp(F.dir, na, .6); moved = true; break; }
+      }
+      if (!moved) for (const off of [0, .6, -.6, 1.2, -1.2, 2.0, -2.0]) {                    // last resort: swamp is allowed rather than stopping dead
+        const na = F.dir + off, nx = F.x + Math.cos(na) * F.pace * dt, ny = F.y + Math.sin(na) * F.pace * dt;
+        if (!IMPASSABLE(terrainAt(nx, ny))) { F.x = nx; F.y = ny; if (off) F.dir = angLerp(F.dir, na, .6); break; }
+      }
+    }
   }
 }
 /* the host breaks step: from the first man attacked or the first sighting of a player unit, the fixed marching pace is
@@ -15866,7 +15883,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b107';
+const BUILD_TAG = 'b108';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
