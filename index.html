@@ -9547,7 +9547,7 @@ function drawGrass(g) {
       const variant = (h * 4) | 0;                       // 0..3 different tuft shapes
       const blades = 2 + (variant & 1);                  // 2 or 3 blades
       const tall = (tt === T_FOREST ? 8.5 : 6.5) * (.6 + h * .7) * (variant === 3 ? 1.3 : 1);
-      const hgt = tall * (1 - flat * .82);               // flattened = short
+      const hgt = tall * (1 - flat * .5);               // flattened = short
       const curl = (variant === 2 ? .8 : variant === 1 ? -.5 : 0);
       const sway = (Math.sin(t * 2.0 + px * .06 + py * .02) * (1.4 + Math.abs(wgx) * .08) + wgx * .05) * (1 - flat * .7);
       const bend = sway + curl + flat * tall * .95;      // flattened = laid over
@@ -13198,7 +13198,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     '  float ff = max(f, df * 0.92);',                                                        // downwash presses the tufts flat like a trample
     '  vec2 tilt = uWind.xy * sway * (1.0 - ff) + vec2(cos(td), sin(td)) * (1.5 * f) + dvec * (df * (1.45 + wave * 0.55));',   // and lays them flowing radially OUTWARD in a smoothly rippling ring
     '  float ang = length(tilt);',
-    '  float hgt = (mvPosition.y - gRoot.y) * (1.0 - ff * 0.82);',                            // pressed grass is shorter
+    '  float hgt = (mvPosition.y - gRoot.y) * (1.0 - ff * 0.5);',                             // pressed grass keeps ~half its height — laid over and green, never scoured to bare ground
     '  if (ang > 1e-4) { vec2 dir = tilt / ang; float sa = sin(ang), ca = cos(ang); mvPosition.xz += dir * sa * hgt; mvPosition.y = gRoot.y + ca * hgt; }',
     '  else mvPosition.y = gRoot.y + hgt;',
     '#endif',
@@ -14884,7 +14884,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
           const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;   // spread the tufts across the tile
           const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS, flat = grassFlat(wx, wy);
-          const bh = (.34 + h1 * .22) * (1 - flat * .82);                                        // ~half-body tall, near-flat once trampled
+          const bh = (.34 + h1 * .22) * (1 - flat * .5);                                        // ~half-body tall, near-flat once trampled
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
           let rx, rz;
           if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran/landed through
@@ -16069,7 +16069,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b118';
+const BUILD_TAG = 'b119';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
