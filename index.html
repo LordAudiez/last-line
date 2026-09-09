@@ -6517,12 +6517,15 @@ function routeTo(u, o, gx, gy, arrive) {
 const PACE = { slow: { m: .55, sp: .55, n: 'Slow-walk' }, normal: { m: 1, sp: 1, n: 'Normal' }, fast: { m: 1.3, sp: 1.45, n: 'Fast' }, double: { m: 1.7, sp: 2.2, n: 'Double-time' } };
 const PACE_ORDER = ['slow', 'normal', 'fast', 'double'];
 /* shooting stance (infantry): standing, crouched or prone — lower is slower to move but steadier and a smaller target */
-const POSE = { stand: { m: 1, sp: 1, hit: 1, acc: .6, n: 'Standing', g: '🧍' }, crouch: { m: .55, sp: .7, hit: .85, acc: .75, n: 'Crouched', g: '🧎' }, prone: { m: .3, sp: .45, hit: .7, acc: .9, n: 'Prone', g: '🛌' } };
+const POSE = { stand: { m: 1, sp: 1, hit: 1, ev: 0, acc: .6, n: 'Standing', g: '🧍' }, crouch: { m: .55, sp: .7, hit: 1, ev: .4, acc: .75, n: 'Crouched', g: '🧎' }, prone: { m: .3, sp: .45, hit: 1, ev: .85, acc: .9, n: 'Prone', g: '🛌' } };   // ev: chance an incoming round misses him outright
 const POSE_ACC_OPS = { stand: .8, crouch: .9, prone: 1 };     // Special Ops shoot better from every stance
 /* stance accuracy: the share of a foot soldier's rounds that fly true to the point of aim (the rest are thrown wide) */
 function stanceAcc(u) { if (!u || u.kind !== 'unit' || !u.def || u.def.veh || u.def.fly) return null; const ps = u.pose || 'stand'; return u.t === 'gunner' ? POSE_ACC_OPS[ps] : POSE[ps].acc; }
 function incendOn(u) { return !!(u && u.kind === 'unit' && !u.def.veh && !u.def.fly && G.up && G.up.incendAmmo && u.incend !== false); }
 const POSE_ORDER = ['stand', 'crouch', 'prone'];
+/* how far off an enemy can SPOT a unit, as a fraction of the enemy's sight: a prone man is seen only inside 20% of it, a
+   crouched one inside 30%; standing men and vehicles at the full range */
+function spotMul(u) { if (!u || u.kind !== 'unit' || !u.def || u.def.veh || u.def.fly) return 1; return u.pose === 'prone' ? .2 : u.pose === 'crouch' ? .3 : 1; }
 function poseOf(u) { return (u && u.pose && POSE[u.pose]) ? POSE[u.pose] : POSE.stand; }
 function paceMul(u) { return ((u && u.pace && PACE[u.pace]) ? PACE[u.pace].m : 1) * (u && u.kind === 'unit' && !u.def.veh ? poseOf(u).m : 1); }
 function paceSpread(u) { if (!u || u.kind !== 'unit') return 1; const ps = !u.def.veh ? poseOf(u).sp : 1; if (!u.pace || !PACE[u.pace]) return ps; const moving = u.order && (u.order.type === 'move' || u.order.type === 'amove'); return (moving ? PACE[u.pace].sp : (u.pace === 'slow' ? .8 : 1)) * ps; }
@@ -8133,8 +8136,8 @@ function pickZedTarget(z) {
   for (let i = 0; i < list.length; i++) {
     const u = list[i];
     if (u.dead || u.inside || u.def.fly) continue;
-    const d = dist2(u.x, u.y, z.x, z.y);
-    if (d < bd) { bd = d; best = u; }
+    const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u);
+    if (d < bd && d < sr * sr) { bd = d; best = u; }
   }
   if (best) return best;
   /* no troops in sight: the horde's standing objective is the player's command post — a hunting zombie marches on the
@@ -8168,6 +8171,18 @@ function hordeAssembling() {
    marching pace for every arm so the block stays a block — and makes for the base; a fresh muster ground is chosen for the
    next host. Troops that come under attack while mustering fight where they stand. */
 const MUSTER_FULL = 200, MUSTER_ROW = 20, MUSTER_SP = 32, MUSTER_ROWSP = 34, MUSTER_PACE = 30;
+const MUSTER_OUT = 25;                                                                         // front rank this many tiles out from the gate (rear rank ~5 tiles clear of the wall)
+/* the training yard beside the parade ground: sparring stations on both flanks of the block — two 1-on-1 bouts and one
+   1-against-3 — where waiting soldiers drill with their weapons until the host is full. Each station has fixed spots. */
+function musterYard(mx, my, dir) {
+  const cd = Math.cos(dir), sd = Math.sin(dir), lat = (MUSTER_ROW / 2) * MUSTER_SP + 4.5 * TS;   // just outside the block's flank
+  const at = (l, b) => ({ x: mx - sd * l - cd * b, y: my + cd * l - sd * b });
+  const mk = (l, b, kind) => { const c = at(l, b); const st = { x: c.x, y: c.y, kind, spots: [] };
+    if (kind === '1v1') { for (const q of [[-15, 0], [15, 0]]) st.spots.push({ x: c.x - sd * q[1] - cd * q[0], y: c.y + cd * q[1] - sd * q[0], z: null }); }
+    else { st.spots.push({ x: c.x, y: c.y, z: null, centre: true }); for (const a of [0, 2.1, 4.2]) st.spots.push({ x: c.x + Math.cos(dir + a) * 30, y: c.y + Math.sin(dir + a) * 30, z: null }); }
+    st.post = at(l + (l > 0 ? 1 : -1) * 2.2 * TS, b); return st; };
+  return [mk(-lat, 3 * MUSTER_ROWSP, '1v1'), mk(-lat, 9 * MUSTER_ROWSP, '1v3'), mk(lat, 6 * MUSTER_ROWSP, '1v1')];
+}
 const MUSTER_RANK = { siege: 0, duelist: 1, infantry: 2, cavalry: 3, archer: 4 };
 function musterNew() {
   // the muster ground is the field in front of the stronghold gate that faces the player's post (the ranks form up 12 tiles
@@ -8177,12 +8192,14 @@ function musterNew() {
   if (S) {
     const hq = nearestHQ(S.x, S.y), gates = G.zeds.filter(z => !z.dead && z.def.struct && z.def.gate);
     let g = null, bd = Infinity; for (const q of gates) { const d = hq ? dist2(q.x, q.y, hq.x, hq.y) : 0; if (d < bd) { bd = d; g = q; } }
-    if (g) { const out = angTo(S.x, S.y, g.x, g.y); const ox = g.x + Math.cos(out) * 12 * TS, oy = g.y + Math.sin(out) * 12 * TS; if (!IMPASSABLE(terrainAt(ox, oy))) o = { x: ox, y: oy }; dir = out; }
-    if (!o) { const hq2 = hq || { x: BASE_X, y: BASE_Y }; const out = angTo(S.x, S.y, hq2.x, hq2.y); o = { x: S.x + Math.cos(out) * (S.half + 12) * TS, y: S.y + Math.sin(out) * (S.half + 12) * TS }; dir = out; }
-    if (hq) dir = angTo(o.x, o.y, hq.x, hq.y);
+    // the ranks stand square to the wall (facing straight out through the gate) and the WHOLE block — front rank to rear
+    // rank, ~15 rows deep — sits outside the palisade: the front rank is MUSTER_OUT tiles from the gate, the rear rank a few
+    // tiles clear of the wall. (They turn toward the player's post only when they march.)
+    if (g) { const out = angTo(S.x, S.y, g.x, g.y); const ox = g.x + Math.cos(out) * MUSTER_OUT * TS, oy = g.y + Math.sin(out) * MUSTER_OUT * TS; if (!IMPASSABLE(terrainAt(ox, oy))) o = { x: ox, y: oy }; dir = out; }
+    if (!o) { const hq2 = hq || { x: BASE_X, y: BASE_Y }; const out = angTo(S.x, S.y, hq2.x, hq2.y); o = { x: S.x + Math.cos(out) * (S.half + MUSTER_OUT) * TS, y: S.y + Math.sin(out) * (S.half + MUSTER_OUT) * TS }; dir = out; }
   } else { o = waveOrigin(MUSTER_FULL); if (!o) return null; const hq = nearestHQ(o.x, o.y); dir = hq ? angTo(o.x, o.y, hq.x, hq.y) : 0; }
-  if (typeof clearProps === 'function') clearProps(o.x - Math.cos(dir) * 8 * TS, o.y - Math.sin(dir) * 8 * TS, 17 * TS);   // the parade ground is cleared of trees so the ranks can be seen
-  G.muster = { id: (G.musterId = (G.musterId || 0) + 1), x: o.x, y: o.y, dir, members: [], n: 0, marching: false, t: 0 };
+  if (typeof clearProps === 'function') clearProps(o.x - Math.cos(dir) * 8 * TS, o.y - Math.sin(dir) * 8 * TS, 19 * TS);   // the parade ground is cleared of trees so the ranks can be seen
+  G.muster = { id: (G.musterId = (G.musterId || 0) + 1), x: o.x, y: o.y, dir, members: [], n: 0, marching: false, t: 0, drill: musterYard(o.x, o.y, dir) };
   return G.muster;
 }
 const H_ORIGIN = z => z.guard;
@@ -8327,7 +8344,7 @@ function updateZeds(dt) {
     if (z.guard) {
       if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
         const R = zedSense(z) * .8; let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
         z.target = best;
       }
       if (!z.target) {
@@ -8343,7 +8360,7 @@ function updateZeds(dt) {
     if (z.host && z.slot && G.hostFm && G.hostFm[z.host] && !(G.hostHot && G.hostHot[z.host])) {
       if (((i + G.frame) % 10) === 0) {                                                             // eyes open: a player unit in sight breaks the whole host into a run
         const R = zedSense(z); const ul = G.hUnits.near(z.x, z.y, R, _q); let seen = null, bd = R * R;
-        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; seen = u; } }
+        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; seen = u; } }
         if (seen) { z.target = seen; hostEngage(z.host); }
       }
       if (!(G.hostHot && G.hostHot[z.host])) {
@@ -8362,17 +8379,37 @@ function updateZeds(dt) {
     /* ---- host muster (invaders): walk to my place in the ranks and stand facing the base until the host is full ---- */
     if (z.muster) {
       const M = G.muster;
-      if (!M || M.id !== z.muster.id || M.marching) { z.muster = null; z.mission = 'raid'; z.target = null; }
+      if (!M || M.id !== z.muster.id || M.marching) { z.muster = null; z.drill = null; z.mission = 'raid'; z.target = null; }
       else {
         if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
           const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
           z.target = best;
         }
         if (!z.target) {
           const sl = z.muster;
           z.spd = z.def.spd * (z.slow > 0 ? .5 : 1);
-          if (dist2(z.x, z.y, sl.x, sl.y) < 8 * 8) { z.ang = angLerp(z.ang, M.dir, .08); z.lunge = 0; }               // in place: dress ranks, face the base
+          if (z.drill) {                                                                                   // sparring in the training yard
+            const st = M.drill && M.drill[z.drill.s], sp = st && st.spots[z.drill.k];
+            if (!st || !sp || sp.z !== z) { z.drill = null; }
+            else if (dist2(z.x, z.y, sp.x, sp.y) > 6 * 6) { steer(z, dtz, sp.x, sp.y, false, 4); z.bob += dtz * 6; z.step += dtz * 7; z.lunge = Math.max(0, z.lunge - dtz); }
+            else {
+              // face the opponent (the centre man of a 1v3 squares up to whoever is lunging at him), then trade thrusts
+              let fo = null; if (st.kind === '1v1') fo = st.spots[1 - z.drill.k].z; else if (sp.centre) { for (const q of st.spots) if (!q.centre && q.z && q.z.lunge > 0) fo = q.z; if (!fo) for (const q of st.spots) if (!q.centre && q.z) { fo = q.z; break; } } else fo = st.spots[0].z;
+              const want = fo ? angTo(z.x, z.y, fo.x, fo.y) : z.ang; z.ang = angLerp(z.ang, want, .15);
+              z.drill.t -= dtz; z.lunge = Math.max(0, z.lunge - dtz * 1.6);
+              if (z.drill.t <= 0 && fo) { z.drill.t = rnd(.8, 1.8); z.lunge = .3; z.step += 2.2; if (Math.random() < .35) z.hop = .25; }   // a practice thrust / cut, now and then a spring
+            }
+            if (solidAt(z.x, z.y, false)) unstick(z, false);
+            continue;
+          }
+          if (dist2(z.x, z.y, sl.x, sl.y) < 8 * 8) {
+            z.ang = angLerp(z.ang, M.dir, .08); z.lunge = 0;                                                          // in place: dress ranks, face out through the gate
+            // a melee man standing in the ranks now and then steps out to the yard to spar, if a station has a free spot
+            if (M.drill && !z.def.ranged && !z.def.mount && !z.def.siege && Math.random() < dtz * .06) {
+              for (let si = 0; si < M.drill.length && !z.drill; si++) { const st = M.drill[si]; for (let k = 0; k < st.spots.length; k++) { if (!st.spots[k].z || st.spots[k].z.dead || st.spots[k].z.muster == null) { st.spots[k].z = z; z.drill = { s: si, k, t: rnd(.4, 1.2) }; break; } } }
+            }
+          }
           else { steer(z, dtz, sl.x, sl.y, false, 5); z.bob += dtz * 6; z.step += dtz * 7; }
           if (solidAt(z.x, z.y, false)) unstick(z, false);
           continue;
@@ -8386,7 +8423,7 @@ function updateZeds(dt) {
       else {
         if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
           const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
           z.target = best;
         }
         if (!z.target) {
@@ -8404,7 +8441,7 @@ function updateZeds(dt) {
     if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside)) z.target = pickZedTarget(z);
     else if (z.target.kind === 'build' && ((i + G.frame) % 20) === 0) {                 // marching on a structure: troops that come into sight take priority — twice a second, look for one
       const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-      for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y); if (d < bd) { bd = d; best = u; } }
+      for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
       if (best) z.target = best;
     }
     if (z.target && z.mode === 'roam') z.mode = 'hunt';
@@ -8717,12 +8754,12 @@ function updateBullets(dt) {
       }
       if (!hit && G.players.length > 1) {                                 // PvP: rounds also strike the other teams' troops and structures
         const ul = G.hUnits.near(b.x, b.y, 26, _q3);
-        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (!u.def.veh && !u.def.fly) netFlesh(b.x, b.y, true); } } else { hit = u; break; } } }
+        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (!u.def.veh && !u.def.fly) netFlesh(b.x, b.y, true); } } else { hit = u; break; } } }
         if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat && plyOf(bb).team !== b.tm) hit = bb; }
       }
     } else {
       const list = G.hUnits.near(b.x, b.y, 26, _q2);
-      for (const u of list) { if (u.dead || u.inside) continue; const rr = u.r * (u.def.veh ? 1 : poseOf(u).hit) + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { hit = u; if (b.vsInf && !u.def.veh && !u.def.fly) b.dmg *= b.vsInf; break; } }   // arrows: extra bite on foot soldiers; a crouched or prone man is a smaller mark
+      for (const u of list) { if (u.dead || u.inside) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } hit = u; if (b.vsInf && !u.def.veh && !u.def.fly) b.dmg *= b.vsInf; break; } }   // arrows: extra bite on foot soldiers; a crouched (40%) or prone (85%) man makes the round sail over him
       if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat) hit = bb; }
     }
     // trees: a small-arms round stops in the trunk; vehicle guns, tank shells and the MG nest chew straight through and fell it
@@ -11781,7 +11818,7 @@ function cardFor() {
       // shooting stance (cycles): standing → crouched → prone, for every foot soldier selected
       const foot = units.filter(u => !u.def.veh && !u.def.fly), ps = foot[0].pose || 'stand', PS = POSE[ps];
       const accP = Math.round(stanceAcc(foot[0]) * 100);
-      btns.push({ g: PS.g, n: PS.n, k: 'X', badge: accP + '%', act: ps !== 'stand', tip: 'Shooting stance (cycles) — accuracy: Standing 60% · Crouched 75% (55% pace, 15% smaller target) · Prone 90% (30% pace, 30% smaller target). Special Ops: 80 / 90 / 100%. Low stances are steadier and harder to hit but slow to move.', fn: () => { const nx = POSE_ORDER[(POSE_ORDER.indexOf(ps) + 1) % POSE_ORDER.length]; for (const u of foot) u.pose = nx; AU.ui('ok'); refreshCard(true); } });
+      btns.push({ g: PS.g, n: PS.n, k: 'X', badge: accP + '%', act: ps !== 'stand', tip: 'Shooting stance (cycles) — Standing: 60% accuracy · Crouched: 75% accuracy, dodges 40% of incoming rounds, seen by the enemy only inside 30% of their sight (55% pace) · Prone: 90% accuracy, dodges 85%, seen only inside 20% (30% pace). Special Ops shoot 80 / 90 / 100%.', fn: () => { const nx = POSE_ORDER[(POSE_ORDER.indexOf(ps) + 1) % POSE_ORDER.length]; for (const u of foot) u.pose = nx; AU.ui('ok'); refreshCard(true); } });
       if (G.up.incendAmmo) {
         // incendiary rounds (research): toggle per squad — burns what it hits, strikes a little softer
         const on = foot.every(u => u.incend !== false);
@@ -14735,6 +14772,20 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (const [key, wm] of wreckMeshes) if (!liveW.has(key)) { scene3.remove(wm); wreckMeshes.delete(key); }
     for (const [id, g] of ebMeshes) { if (g.userData.live !== G.frame) { const zz = G.zeds.find(q => q.id === id); if (!zz || zz.dead) { scene3.remove(g); ebMeshes.delete(id); } else g.visible = false; } }
     PF('corpses');
+    /* ---- the training yard: a straw-headed pell and a spear rack at each sparring station beside the parade ground, while the host musters ---- */
+    if (G.muster && !G.muster.marching && G.muster.drill) {
+      if (!G._strawC) G._strawC = col3('#cdb66b'); const STRAW = G._strawC;
+      for (const st of G.muster.drill) {
+        if (st.x < vx0 || st.x > vx1 || st.y < vy0 || st.y > vy1) continue;
+        const px = st.post.x * K, pz = st.post.y * K, py = groundY(st.post.x, st.post.y);
+        put(P.cyl, px, py + .55, pz, 0, 0, 0, .09, 1.1, .09, WOOD);                                                                 // the pell
+        put(P.box, px, py + .8, pz, 0, .4, 0, .34, .4, .3, STRAW); put(P.head, px, py + 1.2, pz, 0, 0, 0, .2, .24, .2, STRAW);         // straw body + head
+        put(P.box, px, py + .95, pz, 0, .4, 0, .95, .07, .07, WOOD);                                                                 // cross-arm
+        const rx = px + 1.0 * (st.post.x > st.x ? 1 : -1), rz = pz + .4;                                                             // weapon rack behind the post
+        put(P.box, rx - .38, py + .5, rz, 0, 0, 0, .07, 1.0, .07, WOOD); put(P.box, rx + .38, py + .5, rz, 0, 0, 0, .07, 1.0, .07, WOOD); put(P.box, rx, py + .96, rz, 0, 0, 0, .86, .06, .07, WOOD);
+        for (let i = 0; i < 4; i++) put(P.cyl, rx - .3 + i * .2, py + .62, rz + .1, .22, 0, 0, .02, 1.35, .02, WOOD);               // spears leaning on the rail
+      }
+    }
     /* ---- supply crates / scrap pickups / toppling trees ---- */
     for (const c of G.crates) {
       if (c.x < vx0 || c.x > vx1 || c.y < vy0 || c.y > vy1) continue;
@@ -15536,7 +15587,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b96';
+const BUILD_TAG = 'b97';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
