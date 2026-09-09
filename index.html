@@ -6526,6 +6526,7 @@ function npLerp(u, dt) {
   u.ang = (u.ang || 0) + da * Math.min(1, dt * 10); u.tang = u.ang;
   if (d > 1.5) { u.tread = (u.tread || 0) + dt * 6; u.step = (u.step || 0) + dt * 9; u.bob = (u.bob || 0) + dt * 6; }
   if (u.altK2 !== undefined) { if (u.altK === undefined) u.altK = u.altK2; u.altK += (u.altK2 - u.altK) * Math.min(1, dt * 2.2); if (Math.abs(u.altK2 - u.altK) < .003) u.altK = u.altK2; }   // ease the ghost aircraft's altitude toward the streamed target so its descent/landing (and downwash) show smoothly
+  if (u.roping > 0) u.roping = Math.max(0, u.roping - dt * 150);   // ally trooper fast-roping: slide the figure down the line continuously between snapshots (the owner streams the height ~every .18s; easing it here shows a smooth rappel, not a stepped one). Each snapshot re-syncs the authoritative height.
   if (typeof groundFx === 'function') groundFx(u, dt);   // ally ghosts leave the same tuft trails & rotor downwash on my screen, in real time
 }
 function npGhostZed(z, dt) {
@@ -16073,7 +16074,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b123';
+const BUILD_TAG = 'b124';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
