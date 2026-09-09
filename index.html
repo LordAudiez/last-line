@@ -6385,7 +6385,7 @@ function broadcastState() {
   const U = [], B = [];
   for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0)]); }   // [.. , stance, altK, air-flags] so ally helicopters show the same landing/downwash
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
-  const snap = { u: U, b: B };
+  const snap = { u: U, b: B, v: (typeof BUILD_TAG !== 'undefined' ? BUILD_TAG : '') };   // tag every snapshot with our build so peers can detect a version mismatch
   if (NP.host) {
     const Z = [];
     for (const z of G.zeds) { if (z.dead || z.remote || z.def.struct || z.def.worker) continue; Z.push([z.id, z.t, Math.round(z.x), Math.round(z.y), Math.round((z.ang || 0) * 100), Math.round(z.hp)]); }
@@ -6409,6 +6409,12 @@ function broadcastState() {
 function reconcilePeer(pid, snap) {
   const seats = LOBBY.room && LOBBY.room.seats; if (!seats) return;
   const pIdx = seats.findIndex(s => s.id === pid); if (pIdx < 0) return;
+  // a peer on a different build won't send/read the same effect data (helicopter downwash, tuft trails, etc.) — warn once so both refresh
+  if (snap.v && typeof BUILD_TAG !== 'undefined' && snap.v !== BUILD_TAG && !NP._verWarned) {
+    NP._verWarned = true;
+    const who = (seats[pIdx] && seats[pIdx].name) || 'A player';
+    if (typeof alertMsg === 'function') alertMsg('⚠ ' + who + ' is on build ' + snap.v + ', you are on ' + BUILD_TAG + ' — both should refresh the page so all effects match.', 'bad');
+  }
   let pg = NP.peerG[pid]; if (!pg) { pg = { u: new Map(), b: new Map() }; NP.peerG[pid] = pg; }
 
   const seenU = new Set();
@@ -16069,7 +16075,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b119';
+const BUILD_TAG = 'b120';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
