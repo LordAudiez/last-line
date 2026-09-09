@@ -7740,14 +7740,15 @@ function groundFx(u, dt) {
     if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
       grassStamp(u.x, u.y, u.r * (1.2 + 3.3 * wash));
       u._wash = (u._wash || 0) - dt * (.55 + wash);
-      if (u._wash <= 0) { u._wash = .14; part('ring', u.x, u.y, 0, 0, 1.0, u.r * 1.2, 'rgba(214,206,150,' + (.5 * wash).toFixed(2) + ')', { grow: u.r * (3 + 7 * wash) });
-        const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.35, nP = Math.max(1, Math.round(4 * wash));
+      if (u._wash <= 0) { u._wash = .5;   // ONE soft, faint dust wave every half-second — not a stack of hard concentric rings
+        part('dust', u.x, u.y, 0, 0, .55, u.r * 1.6, 'rgba(210,202,150,' + (.32 * wash).toFixed(2) + ')', { grow: u.r * (2.4 + 3.2 * wash), z: .5 });
+        const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.2, nP = Math.max(1, Math.round(3 * wash));
         for (let side = -1; side <= 1; side += 2) {
           const cvx = u.x + ox * off * side, cvy = u.y + oy * off * side, swirl = side;
           for (let k = 0; k < nP && G.parts.length < PMAX * .85; k++) {
-            const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.7) * (.5 + .5 * wash), rx = Math.cos(an), ry = Math.sin(an);
-            const tx = -ry * swirl, ty = rx * swirl, sp = 40 + rnd(90, 190) * wash, out = rnd(20, 55);
-            part(Math.random() < .5 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.5, 1.1), rnd(2.6, 6), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 7), vz: rnd(14, 46), vr: rnd(-16, 16) * swirl, grow: 10, g: 120, drag: .95, wind: 1 });
+            const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.5) * (.5 + .5 * wash), rx = Math.cos(an), ry = Math.sin(an);
+            const tx = -ry * swirl, ty = rx * swirl, sp = 40 + rnd(80, 160) * wash, out = rnd(16, 44);
+            part(Math.random() < .45 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.4, .85), rnd(1.2, 2.8), Math.random() < .45 ? '#6a8c3c' : 'rgba(206,196,150,.9)', { z: rnd(0, 6), vz: rnd(12, 40), vr: rnd(-16, 16) * swirl, grow: 7, g: 130, drag: .95, wind: 1 });
           }
         }
       }
@@ -16066,7 +16067,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b116';
+const BUILD_TAG = 'b117';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
