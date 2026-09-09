@@ -5221,7 +5221,8 @@ function damage(e, amt, srcAng, opts) {
       }
       return;
     }
-    e.hurt = .22;   // remote unit/building: hit-flash only
+    e.hurt = .22;                                                     // hit-flash on my screen…
+    if (typeof netDamage === 'function' && !opts.net) netDamage(e, amt);   // …and the hit itself goes to the unit's owner, who takes the damage for real (PvP)
     return;
   }
   let a = amt;
@@ -6165,8 +6166,14 @@ function myAllies() { const t = myTeam(); return G.players.map((p, i) => ({ p, i
    ================================================================================ */
 const NP = {
   on: false, host: true, sendT: 0.3, SEND: 0.18,
-  peers: {}, peerG: {}, zG: new Map(), shots: [], killZ: [], deadZ: new Set(), deaths: [], hits: []
+  peers: {}, peerG: {}, zG: new Map(), shots: [], killZ: [], deadZ: new Set(), deaths: [], hits: [], dmg: []
 };
+/* PvP over the wire: a hit on another player's unit/building (a ghost on my screen) is sent to its OWNER, who applies it to the
+   real thing — the lower hp then comes back in their next snapshot. [ownerIdx, isBuilding, ownerUnitId, amount] */
+function netDamage(e, amt) {
+  if (!NP.on || e.rid === undefined) return;
+  if (NP.dmg.length < 120) NP.dmg.push([e.owner || 0, e.kind === 'build' ? 1 : 0, e.rid, Math.round(amt * 10) / 10]);
+}
 /* co-op: a flesh hit I caused (or took) — everyone hears it. hits carry a type: 0 = normal round, 1 = shoot-through, 2 = ancient blade */
 function netFlesh(x, y, pierce) {
   if (typeof AU !== 'undefined' && AU.fleshHit) AU.fleshHit(x, y, pierce);
@@ -6212,7 +6219,7 @@ function npGhostBullet(x, y, a, spd, sfx) {
 function npStart() {
   NP.on = !!(G.mp && typeof NET !== 'undefined' && NET.transport && typeof LOBBY !== 'undefined' && LOBBY.room);
   NP.host = (typeof amHost === 'function') ? !!amHost() : true;
-  NP.peers = {}; NP.peerG = {}; NP.zG = new Map(); NP.shots = []; NP.killZ = []; NP.deadZ = new Set(); NP.sendT = 0.3;
+  NP.peers = {}; NP.peerG = {}; NP.zG = new Map(); NP.shots = []; NP.killZ = []; NP.deadZ = new Set(); NP.deaths = []; NP.hits = []; NP.dmg = []; NP.sendT = 0.3;
   if (!NP.on) return;
   if (typeof NET !== 'undefined') NET._stateCbs = [];   // fresh listener for this match
   NET.onState((pid, snap) => { try { if (pid === LOBBY.myId) return; if (!snap) removePeer(pid); else reconcilePeer(pid, snap); } catch (e) { } });
@@ -6227,7 +6234,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0]); }
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0]); }   // [.. , stance]
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B };
   if (NP.host) {
@@ -6245,6 +6252,7 @@ function broadcastState() {
   if (NP.shots.length) { snap.f = NP.shots; NP.shots = []; }   // my gunfire this interval, for allies to draw
   if (NP.deaths.length) { snap.d = NP.deaths; NP.deaths = []; }   // units/enemies that fell this interval — allies hear them go down
   if (NP.hits.length) { snap.h = NP.hits; NP.hits = []; }         // bullets striking flesh this interval — allies hear the impacts
+  if (NP.dmg.length) { snap.dm = NP.dmg; NP.dmg = []; }           // damage I dealt to other players' units/buildings — their owners apply it
   NET.publishState(snap);
 }
 
@@ -6257,15 +6265,15 @@ function reconcilePeer(pid, snap) {
   const seenU = new Set();
   for (const a of (snap.u || [])) {
     const id = a[0]; seenU.add(id); let g = pg.u.get(id);
-    if (!g || g.dead) { g = makeGhostUnit(a[1], a[2], a[3], pIdx); if (!g) continue; pg.u.set(id, g); }
-    g.tx2 = a[2]; g.ty2 = a[3]; g.tang2 = (a[4] || 0) / 100; g.hp = a[5]; if (g.hp > g.maxHp) g.maxHp = g.hp; g.inside = a[6] ? (g.inside || {}) : null;
+    if (!g || g.dead) { g = makeGhostUnit(a[1], a[2], a[3], pIdx); if (!g) continue; g.rid = id; pg.u.set(id, g); }
+    g.tx2 = a[2]; g.ty2 = a[3]; g.tang2 = (a[4] || 0) / 100; g.hp = a[5]; if (g.hp > g.maxHp) g.maxHp = g.hp; g.inside = a[6] ? (g.inside || {}) : null; g.pose = a[7] === 2 ? 'prone' : a[7] === 1 ? 'crouch' : 'stand';   // their stance, so it shows on my screen
   }
   for (const [id, g] of pg.u) { if (!seenU.has(id)) { g.dead = true; pg.u.delete(id); } }
 
   const seenB = new Set();
   for (const a of (snap.b || [])) {
     const id = a[0]; seenB.add(id); let g = pg.b.get(id);
-    if (!g || g.dead) { g = makeGhostBuild(a[1], a[2], a[3], pIdx); if (!g) continue; pg.b.set(id, g); }
+    if (!g || g.dead) { g = makeGhostBuild(a[1], a[2], a[3], pIdx); if (!g) continue; g.rid = id; pg.b.set(id, g); }
     g.hp = a[4]; g.prog = (a[5] || 0) / 100; g.done = !!a[6]; if (g.hp > g.maxHp) g.maxHp = g.hp;
   }
   for (const [id, g] of pg.b) { if (!seenB.has(id)) { g.dead = true; pg.b.delete(id); } }
@@ -6288,6 +6296,12 @@ function reconcilePeer(pid, snap) {
   if (NP.host && snap.kz) { for (const id of snap.kz) { const z = G.zeds.find(q => !q.remote && q.id == id); if (z) z.dead = true; } }
   // draw this ally's gunfire as tracers
   if (snap.f) for (const s of snap.f) npGhostBullet(s[0], s[1], (s[2] || 0) / 100, s[3] || 900, s[4]);
+  // damage another player dealt to MY units/buildings: apply it to the real thing (armour etc. happen here, on the owner)
+  if (snap.dm) for (const d of snap.dm) {
+    if (d[0] !== G.me) continue;
+    const list = d[1] ? G.builds : G.units;
+    for (let i = 0; i < list.length; i++) { const e = list[i]; if (!e.remote && !e.dead && e.id === d[2]) { damage(e, d[3], Math.random() * 6.28, { net: true }); break; } }
+  }
   // a body fell somewhere on an ally's screen — play it here too so every player shares the same soundscape.
   // code 0 = a foot soldier, 1 = a vehicle brew-up, 2 = an enemy/zombie
   if (snap.d) for (const d of snap.d) {
@@ -8694,7 +8708,7 @@ function updateBullets(dt) {
             if (!b._hit[z.id]) {
               b._hit[z.id] = 1; b._hn = (b._hn || 0) + 1;
               if (b.pn && b._hn >= b.pn) { hit = z; break; }                              // limited-penetration round: the last body it can pass stops it (hit handled below)
-              damage(z, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (b.inc) ignite(z, b); fxSpark(b.x, b.y, b.ang + Math.PI, 3, '#ffe0a8'); netFlesh(b.x, b.y, true);   // a round punching through a body: the shoot-through impact (heard by everyone in co-op)
+              damage(z, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (b.inc) ignite(z, b); fxBlood(b.x, b.y, b.ang, 6, '#b32020'); netFlesh(b.x, b.y, true);   // a round punching through a body: the shoot-through impact (heard by everyone in co-op)
             }
           }
         }
@@ -8742,7 +8756,8 @@ function updateBullets(dt) {
         if (b.inc && hit.kind !== 'build') ignite(hit, b);
         if (arrowFoot) { if (!hit.dead) { hit._arrowHit = 0; netFlesh(b.x, b.y, false); } }   // non-lethal arrow: a flesh thud; a lethal one already sounded as the archer kill
         else if (b.kind === 'bullet' && (hit.kind === 'zed' || (hit.kind === 'unit' && !hit.def.veh && !hit.def.fly))) netFlesh(b.x, b.y, b.pierce > 0);   // a round striking a body: the flesh impact (heard by everyone in co-op)
-        fxSpark(b.x, b.y, b.ang + Math.PI, 4, hit.kind === 'build' ? '#c9a86a' : b.inc ? '#ffb03a' : '#ff9a6a');
+        if (hit.kind === 'zed' || (hit.kind === 'unit' && !hit.def.veh && !hit.def.fly)) fxBlood(b.x, b.y, b.ang, 7, '#b32020');   // a round into a body: a blood splat
+        else fxSpark(b.x, b.y, b.ang + Math.PI, 4, hit.kind === 'build' ? '#c9a86a' : b.inc ? '#ffb03a' : '#ff9a6a');
       } else {
         terrainHit(b.x, b.y, b.ang);      // splash on water, chips on rock, dirt puff, etc.
         // every round fired down from an aircraft (helicopter minigun etc.)
@@ -12936,7 +12951,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const FIG = new Map(), SIGK = new Map(); let figDrawn = 0, figStagger = 1, figReplayed = 0;
   const sigId = v => { if (v == null) return 0; let k = SIGK.get(v); if (k === undefined) { k = SIGK.size + 1; SIGK.set(v, k); } return k; };
   function figSig(S, o) {                                            // discrete state that changes the assembled parts
-    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0) | (o.ride ? 4096 : 0) | (o.prone ? 8192 : 0) | (o.pistol ? 16384 : 0);
+    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0) | (o.ride ? 4096 : 0) | (o.prone ? 8192 : 0) | (o.pistol ? 16384 : 0) | (o.crawl ? 32768 : 0) | (o.turn ? 65536 : 0);
     h = h * 131 + sigId(o.gun); h = h * 131 + sigId(o.ut); h = h * 131 + sigId(o.mk); h = h * 131 + sigId(o.zt); h = h * 131 + sigId(o.kind);
     h = h * 131 + ((S.tier || 0) | 0); h = h * 131 + sigId(o.idle && o.idle.act);
     if (o.dead) h = h * 131 + Math.round((o.tilt || 0) * 200);       // air-tumbling corpses change their tilt → rebuild
@@ -13043,16 +13058,21 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const vid = o.id || 0, h1 = hash2(vid, 3), h2 = hash2(vid, 11);
     if (o.prone) {
       // prone shooting: flat on the belly along the facing, legs straight back, elbows planted, rifle laid forward at head height, head up behind the sights
-      const base = y + 1.2 * sc, ya = ry, gz = base + torsoD * .5;
-      put(bodyPool, X(torsoH * .1, 0), gz, Z(torsoH * .1, 0), 0, ya, 0, torsoH, torsoD * .7, torsoW, uni);                                              // torso
+      // crawling: legs kick alternately and the arms go hand-over-hand, the body rocking side to side with them;
+      // pivoting on the spot: the elbows brace wide and the chest lifts a touch as he swings the rifle round
+      const cr = o.crawl ? Math.sin(walk * 1.7) : 0, crA = Math.abs(cr), pivot = o.turn ? 1 : 0;
+      const roll = cr * .09, lift = pivot * torsoD * .18 + crA * torsoD * .05;
+      const base = y + 1.2 * sc, ya = ry, gz = base + torsoD * .5 + lift;
+      put(bodyPool, X(torsoH * .1, 0), gz, Z(torsoH * .1, 0), roll, ya, 0, torsoH, torsoD * .7, torsoW, uni);                                           // torso
       put(P.box, X(torsoH * .1, 0), gz + torsoD * .35, Z(torsoH * .1, 0), 0, ya, 0, torsoH * .6, torsoD * .25, torsoW * .9, gear);                       // plate carrier on the back
-      if (lm & L_LL) put(bodyPool, X(-torsoH * .5 - legL * .45, -legW * .9), base + legW * .4, Z(-torsoH * .5 - legL * .45, -legW * .9), 0, ya + .12, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, -legW), base + legW * .4, Z(-torsoH * .5, -legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
-      if (lm & L_RL) put(bodyPool, X(-torsoH * .5 - legL * .45, legW * .9), base + legW * .4, Z(-torsoH * .5 - legL * .45, legW * .9), 0, ya - .12, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, legW), base + legW * .4, Z(-torsoH * .5, legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
-      for (const s2 of [-1, 1]) { put(P.box, X(-torsoH * .5 - legL * .95, s2 * legW * .9), base + legW * .5, Z(-torsoH * .5 - legL * .95, s2 * legW * .9), 0, ya, 0, legW * .9, legW * .7, legW * 1.05, BOOT); }   // boots, toes down
+      const kL = cr * legL * .3, kR = -cr * legL * .3;                                                                                                  // each leg draws up and kicks back in turn while crawling
+      if (lm & L_LL) put(bodyPool, X(-torsoH * .5 - legL * .45 + kL, -legW * .9 - crA * legW * .3), base + legW * .4 + crA * legW * .25, Z(-torsoH * .5 - legL * .45 + kL, -legW * .9 - crA * legW * .3), 0, ya + .12 + cr * .35, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, -legW), base + legW * .4, Z(-torsoH * .5, -legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
+      if (lm & L_RL) put(bodyPool, X(-torsoH * .5 - legL * .45 + kR, legW * .9 + crA * legW * .3), base + legW * .4 + crA * legW * .25, Z(-torsoH * .5 - legL * .45 + kR, legW * .9 + crA * legW * .3), 0, ya - .12 - cr * .35, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, legW), base + legW * .4, Z(-torsoH * .5, legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
+      for (const s2 of [-1, 1]) { const kk = s2 < 0 ? kL : kR; put(P.box, X(-torsoH * .5 - legL * .95 + kk, s2 * legW * .9), base + legW * .5, Z(-torsoH * .5 - legL * .95 + kk, s2 * legW * .9), 0, ya, 0, legW * .9, legW * .7, legW * 1.05, BOOT); }   // boots, toes down
       const hf = torsoH * .6, hy = gz + headR * .9;
       put(P.head, X(hf + headR * .4, 0), hy, Z(hf + headR * .4, 0), 0, ya, 0, headR, headR * 1.05, headR * .95, skin);                                   // head raised behind the sights
       put(P.helm, X(hf + headR * .35, 0), hy + headR * .16, Z(hf + headR * .35, 0), 0, ya, -.1, headR * 1.2, headR * 1.02, headR * 1.2, col3(S.helm || '#6f8757'));
-      for (const s2 of [-1, 1]) { const bit = s2 < 0 ? L_LA : L_RA; if (lm & bit) { put(bodyPool, X(hf - armL * .1, s2 * (torsoW * .5 + armW * .3)), base + armW * .6, Z(hf - armL * .1, s2 * (torsoW * .5 + armW * .3)), 0, ya - s2 * .5, 0, armL * .8, armW, armW, sleeve); put(P.box, X(hf + armL * .3, s2 * torsoW * .25), base + armW * .9, Z(hf + armL * .3, s2 * torsoW * .25), 0, ya, 0, armW * .9, armW * .9, armW * .9, skin); } }   // elbows out, hands on the weapon
+      for (const s2 of [-1, 1]) { const bit = s2 < 0 ? L_LA : L_RA; if (lm & bit) { const reach = -s2 * cr * armL * .35, wide = pivot * armW * .8; put(bodyPool, X(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), base + armW * .6 + lift * .5, Z(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), 0, ya - s2 * (.5 + pivot * .25), 0, armL * .8, armW, armW, sleeve); put(P.box, X(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), base + armW * .9 + lift * .5, Z(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), 0, ya, 0, armW * .9, armW * .9, armW * .9, skin); } }   // elbows out; hand-over-hand when crawling, braced wide when pivoting
       const Wp = S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }, wlp = Wp.len * sc, wwp = Math.max(1.4 * sc, Wp.wid * sc * .6), wc2 = col3(Wp.col || '#2b2e32');
       put(P.box, X(hf + wlp * .35, torsoW * .12), base + armW * 1.1, Z(hf + wlp * .35, torsoW * .12), 0, ya, 0, wlp, wwp * .9, wwp * .8, wc2); put(P.box, X(hf + wlp * .05, torsoW * .12), base + armW * .7, Z(hf + wlp * .05, torsoW * .12), 0, ya, 0, wwp * 1.2, armW * .9, wwp * .7, col3('#1a1c1e'));   // rifle on its magazine, muzzle forward
       return;
@@ -14624,7 +14644,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bud = { x: b.x * K - Math.sin(b.ang) * rt, y: groundY(b.x, b.y) + bodyH * hMul, z: b.y * K + Math.cos(b.ang) * rt };
           }
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
-          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: u.pose === 'prone' && !u.def.veh && !u.sitting, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
+          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: u.pose === 'prone' && !u.def.veh && !u.sitting, crawl: u.pose === 'prone' && Math.hypot(u.vx || 0, u.vy || 0) > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
+          u._pang = u.ang;   // last facing, for the prone pivot animation
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
           const fa = u.ang, ca = Math.cos(fa), sa = Math.sin(fa), L = 7.5, dk = .5 + (1 - dayNow) * .5;
@@ -15430,7 +15451,7 @@ function lobbyJoin(code) {
     if (!LOBBY.room) { NET.leave(); LOBBY.open = false; LOBBY.stage = null; mpShow('mp-home'); alertLobby('Room "' + LOBBY.code + '" not found — check the code'); }
   }, 6000);
 }
-function seat(id, name, spawn) { return { id, name, team: 'A', spawn: spawn || 0, ready: false, loaded: 0, t: Date.now() }; }   // CO-OP by default: everyone lands on team A so no friendly fire — the per-seat Team button splits players for PvP
+function seat(id, name, spawn) { return { id, name, team: 'ABCD'[(spawn || 0) % 4], spawn: spawn || 0, ready: false, loaded: 0, t: Date.now() }; }   // each seat its own team by default (players can fight each other); the per-seat Team button puts friends on one side for pure co-op
 function playerName() { try { return localStorage.getItem('ll_name') || ('Cmdr-' + (Math.random() * 900 + 100 | 0)); } catch (e) { return 'Cmdr'; } }
 const mySeat = () => LOBBY.room && LOBBY.room.seats.find(s => s.id === LOBBY.myId);
 const amHost = () => LOBBY.room && LOBBY.room.hostId === LOBBY.myId;
@@ -15515,7 +15536,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b95';
+const BUILD_TAG = 'b96';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
