@@ -5381,6 +5381,7 @@ function killZed(z, ang) {
   fxGore(z.x, z.y, ang, 8, M ? M.blood : '#8f1414');
   AU.killed(z.x, z.y);
   if (typeof NP !== 'undefined' && NP.on && !z.remote) NP.deaths.push([Math.round(z.x), Math.round(z.y), 2]);   // co-op: everyone hears this enemy go down
+  if ((z.host || z.muster) && !z.remote && typeof hostAlarm === 'function') hostAlarm(z, ang);   // his comrades look for whoever did it
   if (z.def.elephant && z._blast !== undefined && G.t - z._blast < .1) {
     // torn apart by a blast: the carcass goes up in pieces — head, trunk, legs, slabs of flank — that arc out and thump down, and the riders with them
     const a = z.ang, EU = 32 * .6 * 1.55;
@@ -8393,6 +8394,27 @@ function updateHostFormations(dt) {
 /* the host breaks step: from the first man attacked or the first sighting of a player unit, the fixed marching pace is
    cancelled for the whole host and every man closes at double time on his own legs */
 function hostEngage(id) { if (!id) return; G.hostHot = G.hostHot || {}; if (!G.hostHot[id]) { G.hostHot[id] = true; alertMsg('⚠ The host has broken into a run — double time!', 'bad'); } }
+/* a man in the ranks (marching or mustering) has just been killed. If the killer is in plain view the survivors already fight
+   him; if not — a sniper, a hidden gun — the men round the body are ALARMED: they break from their slots and search, fanning
+   out from the body and leaning toward where the shot came from, the search ring widening the longer they find nothing.
+   The first to spot a player unit shouts, and the rest converge on it at the double. Nothing found → back to the march. */
+function hostAlarm(z, srcAng) {
+  const from = srcAng !== undefined ? srcAng + Math.PI : rnd(TAU);        // the round flew along srcAng, so the shooter is behind it
+  let n = 0; const list = G.hZeds.near(z.x, z.y, 9 * TS, _q);
+  for (let i = 0; i < list.length && n < 12; i++) {
+    const q = list[i]; if (q === z || q.dead || q.remote || !q.med || q.def.struct || q.def.worker || q.def.ranged || q.search) continue;
+    if (!q.host && !q.muster) continue;
+    if (q.target && q.target.kind === 'unit' && !q.target.dead) continue;   // already fighting someone he can see
+    q.search = { x: z.x, y: z.y, from, sec: from + (n - 5.5) * .27 + rnd(-.1, .1), t: rnd(9, 14), r: 4 * TS, gx: null, gy: null, called: false }; q.target = null; n++;   // each man takes his own sector of the fan
+    if (n <= 3) popText(q.x, q.y - 18, '?', '#ffd08a');
+  }
+}
+function hostCallToArms(z, u) {
+  const list = G.hZeds.near(z.x, z.y, 14 * TS, _q); let n = 0;
+  for (let i = 0; i < list.length; i++) { const q = list[i]; if (q.dead || q.remote || !q.med || q.def.struct || q.def.worker) continue; if (!(q.search || q.host || q.muster)) continue; q.search = null; q.target = u; q.mode = 'hunt'; q.mission = 'raid'; n++; }
+  if (z.host) hostEngage(z.host);
+  if (n > 2) popText(z.x, z.y - 22, 'THERE!', '#ff9a6a');
+}
 /* a spawn spot in the crowd around an assembly point: passable ground within `rad` px of it */
 function nearPoint(o, rad) {
   for (let a = 0; a < 12; a++) { const an = rnd(TAU), r = rnd(0, rad); const x = clamp(o.x + Math.cos(an) * r, TS * 2, WW - TS * 2), y = clamp(o.y + Math.sin(an) * r, TS * 2, WH - TS * 2); if (!IMPASSABLE(terrainAt(x, y)) && !solidAt(x, y, false)) return { x, y }; }
@@ -8467,6 +8489,27 @@ function updateZeds(dt) {
         continue;
       }
       if (dist2(z.target.x, z.target.y, H_ORIGIN(z).x, H_ORIGIN(z).y) > (z.guard.r * 2.2) ** 2) { z.target = null; }   // never chase far from home
+    }
+    /* ---- alarmed: a comrade fell and the killer isn't in sight — search for him ---- */
+    if (z.search) {
+      const S = z.search; S.t -= dtz; S.r = Math.min(14 * TS, S.r + dtz * TS * .7);                        // the search ring spreads
+      if (z.target && z.target.kind === 'unit' && !z.target.dead) { hostCallToArms(z, z.target); }             // found him: shout and the rest converge
+      else {
+        if (((i + G.frame) % 6) === 0) {                                                                        // eyes peeled at full sense range
+          const R = zedSense(z) * 1.1, ul = G.hUnits.near(z.x, z.y, R, _q); let best = null, bd = R * R;
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
+          if (best) { z.target = best; hostCallToArms(z, best); continue; }
+        }
+        if (S.t <= 0) { z.search = null; continue; }                                                            // nothing — back to the ranks
+        if (S.gx === null || dist2(z.x, z.y, S.gx, S.gy) < 14 * 14 || (z.stuckT || 0) > .6) {                  // pick the next spot to check, leaning toward the shot
+          const a = (S.sec !== undefined ? S.sec : S.from) + rnd(-.5, .5), d = rnd(Math.min(2 * TS, S.r * .5), S.r); let gx = S.x + Math.cos(a) * d, gy = S.y + Math.sin(a) * d;
+          if (solidAt(gx, gy, false)) { gx = z.x + rnd(-2 * TS, 2 * TS); gy = z.y + rnd(-2 * TS, 2 * TS); }
+          S.gx = gx; S.gy = gy;
+        }
+        z.spd = z.def.spd * 1.15 * nightSpd; steer(z, dtz, S.gx, S.gy, false, 8); z.bob += dtz * 6; z.step += dtz * 7; z.lunge = Math.max(0, z.lunge - dtz);
+        if (solidAt(z.x, z.y, false)) unstick(z, false);
+        continue;
+      }
     }
     /* ---- on the march: hold my slot in the moving block until the host is engaged (or something blocks my way) ---- */
     if (z.host && z.slot && G.hostFm && G.hostFm[z.host] && !(G.hostHot && G.hostHot[z.host])) {
@@ -15743,7 +15786,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b101';
+const BUILD_TAG = 'b102';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
