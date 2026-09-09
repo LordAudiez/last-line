@@ -3498,6 +3498,52 @@ function chooseBaseSite() {
   const [tx, ty, h0] = best || [MW >> 1, MH >> 1, 130];
   BASE_TX = tx; BASE_TY = ty; BASE_X = tx * TS; BASE_Y = ty * TS;
   levelCompound(tx, ty, h0);
+  ensureSpawnSurroundings(tx, ty);
+}
+/* the country round a spawn: within ~40 tiles of the post there is always some WATER (10% of the ground) and some WOOD
+   (5% forest — the tree planter fills it). If the map didn't put them there, a pond is dug and a grove planted a little way
+   out from the compound, clear of the road, the pad and the open fields. */
+function ensureSpawnSurroundings(tx, ty) {
+  const R = 40, area = [];
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { if (dx * dx + dy * dy > R * R) continue; const x = tx + dx, y = ty + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue; area.push(y * MW + x); }
+  const total = area.length; if (!total) return;
+  const count = pred => { let n = 0; for (const i of area) if (pred(MAP.t[i])) n++; return n; };
+  const nearRoad = (x, y) => MAP.roadY && Math.abs(y - MAP.roadY[x]) < 7;
+  const spot = (dMin, dMax, ok) => { let best = null, bs = -1e9; for (let a = 0; a < 64; a++) { const ang = a / 64 * TAU + hash2(tx + a, ty) * .1, d = dMin + hash2(a, tx * 3 + ty) * (dMax - dMin); const cx = Math.round(tx + Math.cos(ang) * d), cy = Math.round(ty + Math.sin(ang) * d); if (cx < 14 || cy < 14 || cx >= MW - 14 || cy >= MH - 14) continue; const sc = ok(cx, cy); if (sc > bs) { bs = sc; best = [cx, cy]; } } return best; };
+  // --- water: a tenth of the ground ---
+  let water = count(WATER);
+  if (water < total * .10) {
+    const c = spot(22, 31, (x, y) => { const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD) return -1e9; return (WATER(t) ? 40 : 0) + (MAP.f[i] ? -8 : 0) + (nearRoad(x, y) ? -60 : 0) + (t === T_SAND ? 10 : 0); });
+    if (c) for (let r = 5; r <= 19 && water < total * .10; r++) {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const d = Math.hypot(dx, dy); if (d > r) continue; const x = c[0] + dx, y = c[1] + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
+        const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD) continue;
+        const wob = (hash2(x * 7, y * 11) - .5) * 2.4;                                         // a ragged natural bank, not a circle
+        if (d + wob < r - 2.5) { MAP.t[i] = d + wob < r * .45 ? T_DEEP : T_SEA; MAP.h[i] = d + wob < r * .45 ? SEA - 22 : SEA - 8; MAP.f[i] = 0; }
+        else if (d + wob < r && !WATER(t)) { MAP.t[i] = T_SAND; MAP.h[i] = Math.min(MAP.h[i], SHORE + 1); MAP.f[i] = 0; }
+      }
+      water = count(WATER);
+    }
+  }
+  // --- wood: a twentieth of the ground as forest (the prop planter puts the trees on it) ---
+  let forest = count(t => t === T_FOREST);
+  if (forest < total * .05) {
+    // first try to grow the grove on ordinary ground; the post sits beside the open fields, so if that isn't enough the
+    // grove takes a bite of the field edge (those tiles stop being field, so the planter can put trees there)
+    for (const allowField of [false, true]) {
+      if (forest >= total * .05) break;
+      const c = spot(18, 30, (x, y) => { const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD || WATER(t) || (!allowField && MAP.f[i])) return -1e9; return (t === T_FOREST ? 30 : t === T_GRASS ? 15 : 0) + (nearRoad(x, y) ? -40 : 0) + (MAP.f[i] ? -5 : 0); });
+      if (!c) continue;
+      for (let r = 4; r <= 18 && forest < total * .05; r++) {
+        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+          const d = Math.hypot(dx, dy) + (hash2(dx * 5 + 3, dy * 9 + 1) - .5) * 2; if (d > r) continue; const x = c[0] + dx, y = c[1] + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
+          const i = y * MW + x, t = MAP.t[i]; if ((!allowField && MAP.f[i]) || t === T_ROAD || t === T_PAD || WATER(t) || t === T_ROCK || t === T_SNOW) continue;
+          if (t === T_GRASS || t === T_DIRT || t === T_SWAMP) { MAP.t[i] = T_FOREST; MAP.f[i] = 0; }
+        }
+        forest = count(t => t === T_FOREST);
+      }
+    }
+  }
 }
 /* flatten + pave a compound so the opening minutes are never blocked */
 function levelCompound(tx, ty, h0) {
@@ -15087,7 +15133,7 @@ function newGame(opts) {
   for (let pi = 0; pi < G.players.length; pi++) {
     if (coop && pi !== G.me) continue;                              // don't spawn allies locally — they come over the network
     G.cur = pi; const [tx, ty] = sites[pi];
-    if (G.mp) levelCompound(tx, ty, sites[pi][2]);
+    if (G.mp) { levelCompound(tx, ty, sites[pi][2]); if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(tx, ty); }   // every spawn gets its pond and its grove
     const hq = addBuilding('hq', tx - 3, ty - 3, true); G.players[pi].hq = hq; if (pi === G.me) myHQ = hq;
     const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = tx + dx + rndi(-2, 3), by = ty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
     place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
@@ -15099,6 +15145,7 @@ function newGame(opts) {
   }
   G.cur = G.me; const hq = myHQ;
   BASE_TX = sites[G.me][0]; BASE_TY = sites[G.me][1]; BASE_X = BASE_TX * TS; BASE_Y = BASE_TY * TS;
+  if (G.mp) makeMiniBase();                                                   // the spawns' ponds and groves were carved after the first minimap pass
 
   if (iHost) {                                       // only the host seeds the shared enemy world in co-op
     if (G.mode === 'invaders') { setupInvaders(); }  // camps, villages + a roaming garrison
@@ -15668,7 +15715,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b99';
+const BUILD_TAG = 'b100';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
