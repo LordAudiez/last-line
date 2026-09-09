@@ -3510,17 +3510,29 @@ function ensureSpawnSurroundings(tx, ty) {
   const count = pred => { let n = 0; for (const i of area) if (pred(MAP.t[i])) n++; return n; };
   const nearRoad = (x, y) => MAP.roadY && Math.abs(y - MAP.roadY[x]) < 7;
   const spot = (dMin, dMax, ok) => { let best = null, bs = -1e9; for (let a = 0; a < 64; a++) { const ang = a / 64 * TAU + hash2(tx + a, ty) * .1, d = dMin + hash2(a, tx * 3 + ty) * (dMax - dMin); const cx = Math.round(tx + Math.cos(ang) * d), cy = Math.round(ty + Math.sin(ang) * d); if (cx < 14 || cy < 14 || cx >= MW - 14 || cy >= MH - 14) continue; const sc = ok(cx, cy); if (sc > bs) { bs = sc; best = [cx, cy]; } } return best; };
-  // --- water: a tenth of the ground ---
+  // --- water: a tenth of the ground, as a shallow BEACH LAKE flush with the land, not a deep walled pit ---
   let water = count(WATER);
   if (water < total * .10) {
-    const c = spot(22, 31, (x, y) => { const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD) return -1e9; return (WATER(t) ? 40 : 0) + (MAP.f[i] ? -8 : 0) + (nearRoad(x, y) ? -60 : 0) + (t === T_SAND ? 10 : 0); });
-    if (c) for (let r = 5; r <= 19 && water < total * .10; r++) {
-      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-        const d = Math.hypot(dx, dy); if (d > r) continue; const x = c[0] + dx, y = c[1] + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
+    const c = spot(28, 36, (x, y) => { const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD) return -1e9; return (WATER(t) ? 40 : 0) + (MAP.f[i] ? -8 : 0) + (nearRoad(x, y) ? -60 : 0) + (t === T_SAND ? 10 : 0); });
+    if (c) {
+      // size the pool so the water reaches ~10% of the ground, then wrap it in a WIDE gently-sloping sandy beach that eases
+      // from the waterline up to the surrounding ground over ~9 tiles — a shallow shore level with the land, never a cliff
+      let wr = 5; for (let w = water; wr <= 9 && w < total * .10; wr++) { let add = 0; for (let dy = -wr; dy <= wr; dy++) for (let dx = -wr; dx <= wr; dx++) if (dx * dx + dy * dy <= wr * wr) add++; w = water + add; }
+      const band = 9, R = wr + band;
+      // the surrounding ground height, so the outer rim of the beach meets the land seamlessly
+      let hs = 0, hn = 0; for (let a = 0; a < 48; a++) { const an = a / 48 * TAU, x = Math.round(c[0] + Math.cos(an) * R), y = Math.round(c[1] + Math.sin(an) * R); if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue; const i = y * MW + x; if (!WATER(MAP.t[i])) { hs += MAP.h[i]; hn++; } }
+      const h0 = hn ? clamp((hs / hn) | 0, SHORE + 2, MOUNT - 40) : SHORE + 8;
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+        const dc = Math.hypot(dx, dy); if (dc > R) continue;
+        const x = c[0] + dx, y = c[1] + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
         const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD) continue;
-        const wob = (hash2(x * 7, y * 11) - .5) * 2.4;                                         // a ragged natural bank, not a circle
-        if (d + wob < r - 2.5) { MAP.t[i] = T_SEA; MAP.h[i] = SEA - 4; MAP.f[i] = 0; }        // a shallow, sandy-bottomed beach lake beside the base — never a deep pit, its surface sitting level just below the shore
-        else if (d + wob < r && !WATER(t)) { MAP.t[i] = T_SAND; MAP.h[i] = Math.min(MAP.h[i], SHORE + 1); MAP.f[i] = 0; }
+        const d = dc + (hash2(x * 7, y * 11) - .5) * 2.0;                                       // a ragged natural bank, not a perfect circle
+        if (d < wr) { MAP.t[i] = T_SEA; MAP.h[i] = SEA - 2; MAP.f[i] = 0; }                     // shallow, sandy-bottomed water
+        else if (d < R && !WATER(t)) {                                                          // gentle beach: ease the ground down to the waterline with a smoothstep, sand near the water, grass toward the rim
+          const f = clamp((d - wr) / band, 0, 1), sm = f * f * (3 - 2 * f), th = Math.round(SEA + 1 + sm * (h0 - (SEA + 1)));
+          MAP.h[i] = Math.min(MAP.h[i], th);
+          if (f < .5) { MAP.t[i] = T_SAND; MAP.f[i] = 0; }
+        }
       }
       water = count(WATER);
     }
@@ -15883,7 +15895,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b110';
+const BUILD_TAG = 'b111';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
