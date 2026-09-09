@@ -7669,14 +7669,24 @@ function updateUnits(dt) {
       G.lights.push({ x: hx, y: hy, r: 130, c: [255, 232, 176], i: 1.05, beam: u.ang });     // amber floodlight tint, aimed along the beam
     }
     if (solidAt(u.x, u.y, true)) unstick(u, true);
-    // rotor downwash: a low / landing helicopter flattens a wide ring of grass beneath it
-    if (u.def.fly && u.def.rotor && (u.landed || (u.altK !== undefined && u.altK < .22))) {
+    // rotor downwash: a low / landing / roping helicopter flattens a wide ring of grass beneath it
+    if (u.def.fly && u.def.rotor && (u.landed || u.rope || (u.altK !== undefined && u.altK < .22))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
       if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        grassStamp(u.x, u.y, u.r * 2.4);                                       // a wide matted trail is beaten flat beneath it
-        u._wash = (u._wash || 0) - dt;                                          // and a downwash wind ring blows out, kicking up torn grass and dust
-        if (u._wash <= 0) { u._wash = .18; part('ring', u.x, u.y, 0, 0, 1.0, u.r * .8, 'rgba(214,206,150,.5)', { grow: u.r * 3.4 });
-          for (let k = 0; k < 5 && G.parts.length < PMAX * .85; k++) { const an = rnd(TAU), sp = rnd(60, 150); part(Math.random() < .5 ? 'leaf' : 'dust', u.x + Math.cos(an) * u.r * .7, u.y + Math.sin(an) * u.r * .7, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.5, 1), rnd(2.4, 5.5), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 5), vz: rnd(12, 40), vr: rnd(-10, 10), grow: 8, g: 120, drag: .93, wind: 1 }); } }
+        grassStamp(u.x, u.y, u.r * 4.5);                                       // a wide matted circle is beaten flat beneath it
+        u._wash = (u._wash || 0) - dt;                                          // and a big downwash wind ring blows out, kicking up torn grass and dust
+        if (u._wash <= 0) { u._wash = .14; part('ring', u.x, u.y, 0, 0, 1.0, u.r * 1.2, 'rgba(214,206,150,.5)', { grow: u.r * 10 });
+          // twin counter-rotating tip vortices: dust and torn grass spiral around two centres either side of the fuselage
+          const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.35;
+          for (let side = -1; side <= 1; side += 2) {
+            const cvx = u.x + ox * off * side, cvy = u.y + oy * off * side, swirl = side;
+            for (let k = 0; k < 4 && G.parts.length < PMAX * .85; k++) {
+              const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.7), rx = Math.cos(an), ry = Math.sin(an);
+              const tx = -ry * swirl, ty = rx * swirl, sp = rnd(90, 190), out = rnd(20, 55);                       // tangential swirl + a little outward drift
+              part(Math.random() < .5 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.5, 1.1), rnd(2.6, 6), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 7), vz: rnd(14, 46), vr: rnd(-16, 16) * swirl, grow: 10, g: 120, drag: .95, wind: 1 });
+            }
+          }
+        }
       }
       else if (WATER(gt) && !u.landed) {                                       // over water the downwash blows a spreading ring of spray and ripples
         u._wash = (u._wash || 0) - dt;
@@ -7809,7 +7819,9 @@ function updateAircraft(u, dt) {
     else if (!o && (u.landed || boardReq)) wantAlt = 0;
     if (o && o.type !== 'land' && !(o.type === 'pickup' && u.landReqT)) { u.landed = false; if (u.rope) { u.rope = null; u._ropeCX = undefined; } }
     const prev = u.altK;
-    u.altK = clamp(u.altK + clamp(wantAlt - u.altK, -dt * .55, dt * .6), 0, 1);
+    // a longer, eased climb / descent: gentle off the ground and gentle into the flare, quicker through the middle (~4 s end to end)
+    const eased = .34 + 4.0 * u.altK * (1 - u.altK), spd = (wantAlt > u.altK ? .30 : .26) * eased;
+    u.altK = clamp(u.altK + clamp(wantAlt - u.altK, -spd * dt, spd * dt), 0, 1);
     if (u.altK < .75) rotorWash(u, 1 - u.altK, dt);
     if (u.altK <= .001 && wantAlt === 0) { if (!u.landed) { u.landed = true; addShake(u.x, u.y, 2); AU.ui('ok'); } }
     if (o && o.type === 'land') { if (u.landed) { unloadCargo(u); u.order = null; } return; }
@@ -9070,7 +9082,7 @@ function updateParticles(dt) {
   if (G.parts.length) {
     SMOV = []; SDOWN = [];
     for (const u of G.units) { if (u.dead || u.inside) continue;
-      if (u.def.fly && u.def.rotor && (u.landed || (u.altK !== undefined && u.altK < .32))) SDOWN.push(u);   // low / landing helicopter: rotor downwash
+      if (u.def.fly && u.def.rotor && (u.landed || u.rope || (u.altK !== undefined && u.altK < .32))) SDOWN.push(u);   // low / landing / roping helicopter: rotor downwash
       const sv = (u.vx || 0) * (u.vx || 0) + (u.vy || 0) * (u.vy || 0); if (sv > 400) SMOV.push(u); }        // moving faster than 20 px/s
     for (const z of G.zeds) { if (z.dead || z.def.struct) continue; const sv = (z.vx || 0) * (z.vx || 0) + (z.vy || 0) * (z.vy || 0); if (sv > 900) SMOV.push(z); }   // fast movers (runners) stir it too
     SBUL = G.bullets;
@@ -13027,14 +13039,15 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     '  float ph = uTime * 2.4 + tile.x * (uTS * 0.02) + tile.y * (uTS * 0.017) + sd * 0.9;',  // one ripple phase per tile + a little per-tuft jitter
     '  float sway = uWind.z * (0.2 + sin(ph) * 0.14);',
     '  float td = sd * 6.2831853;',
-    '  float df = 0.0; vec2 dvec = vec2(0.0);',                                               // rotor downwash: strongest source over this tuft and the outward direction
+    '  float df = 0.0; vec2 dvec = vec2(0.0); float ddBest = 0.0;',                           // rotor downwash: strongest source over this tuft, the outward direction, and its distance
     '  for (int i = 0; i < 4; i++) {',
     '    if (i >= uDownN) break;',
     '    vec2 rel = gRoot.xz - uDown[i].xy; float dd = length(rel); float rr = uDown[i].z;',
-    '    if (rr > 0.0 && dd < rr) { float s = uDown[i].w * (1.0 - dd / rr); if (s > df) { df = s; dvec = dd > 1e-3 ? rel / dd : vec2(1.0, 0.0); } }',
+    '    if (rr > 0.0 && dd < rr) { float s = uDown[i].w * (1.0 - dd / rr); if (s > df) { df = s; dvec = dd > 1e-3 ? rel / dd : vec2(1.0, 0.0); ddBest = dd; } }',
     '  }',
+    '  float wave = sin(ddBest * 1.5 - uTime * 6.0) * 0.6 + sin(ddBest * 0.7 - uTime * 3.2) * 0.4;',   // two broad, low-frequency ripples travelling smoothly outward through the ring (a fast, gusting flow)
     '  float ff = max(f, df * 0.92);',                                                        // downwash presses the tufts flat like a trample
-    '  vec2 tilt = uWind.xy * sway * (1.0 - ff) + vec2(cos(td), sin(td)) * (1.5 * f) + dvec * (df * 1.7);',   // and lays them flowing radially OUTWARD in a ring
+    '  vec2 tilt = uWind.xy * sway * (1.0 - ff) + vec2(cos(td), sin(td)) * (1.5 * f) + dvec * (df * (1.45 + wave * 0.55));',   // and lays them flowing radially OUTWARD in a smoothly rippling ring
     '  float ang = length(tilt);',
     '  float hgt = (mvPosition.y - gRoot.y) * (1.0 - ff * 0.82);',                            // pressed grass is shorter
     '  if (ang > 1e-4) { vec2 dir = tilt / ang; float sa = sin(ang), ca = cos(ang); mvPosition.xz += dir * sa * hgt; mvPosition.y = gRoot.y + ca * hgt; }',
@@ -14693,7 +14706,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         uploadGrassTex();
         GU.uTime.value = tt; GU.uWind.value.set(wdx, wdz, wm);
         let dn = 0;                                                                            // feed the shader the low/landing helicopters so the tufts flow outward from under the rotor
-        for (let ui = 0; ui < G.units.length && dn < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; if (!(u.landed || (u.altK !== undefined && u.altK < .28))) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; const near = 1 - (u.altK === undefined ? 0 : Math.max(0, Math.min(1, u.altK / .28))); GU.uDown.value[dn].set(u.x * K, u.y * K, u.r * 3.4 * K, .7 + near * .6); dn++; }
+        for (let ui = 0; ui < G.units.length && dn < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; if (!(u.landed || u.rope || (u.altK !== undefined && u.altK < .28))) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; const near = u.rope ? .55 : 1 - (u.altK === undefined ? 0 : Math.max(0, Math.min(1, u.altK / .28))); GU.uDown.value[dn].set(u.x * K, u.y * K, u.r * 10.2 * K, .7 + near * .6); dn++; }   // ring 300% wider than the rotor
         GU.uDownN.value = dn;
         updateGrassChunks(gtx0, gtx1, gty0, gty1, per);
       } else if (grassChunks.size) for (const c of grassChunks.values()) { if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false; }   // CPU fallback active: park the GPU chunks
@@ -15804,7 +15817,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b105';
+const BUILD_TAG = 'b106';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
