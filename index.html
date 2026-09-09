@@ -3519,7 +3519,7 @@ function ensureSpawnSurroundings(tx, ty) {
         const d = Math.hypot(dx, dy); if (d > r) continue; const x = c[0] + dx, y = c[1] + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
         const i = y * MW + x, t = MAP.t[i]; if (t === T_ROAD || t === T_PAD) continue;
         const wob = (hash2(x * 7, y * 11) - .5) * 2.4;                                         // a ragged natural bank, not a circle
-        if (d + wob < r - 2.5) { MAP.t[i] = d + wob < r * .45 ? T_DEEP : T_SEA; MAP.h[i] = d + wob < r * .45 ? SEA - 22 : SEA - 8; MAP.f[i] = 0; }
+        if (d + wob < r - 2.5) { MAP.t[i] = T_SEA; MAP.h[i] = SEA - 4; MAP.f[i] = 0; }        // a shallow, sandy-bottomed beach lake beside the base — never a deep pit, its surface sitting level just below the shore
         else if (d + wob < r && !WATER(t)) { MAP.t[i] = T_SAND; MAP.h[i] = Math.min(MAP.h[i], SHORE + 1); MAP.f[i] = 0; }
       }
       water = count(WATER);
@@ -15883,7 +15883,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b109';
+const BUILD_TAG = 'b110';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
