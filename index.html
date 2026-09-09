@@ -1139,7 +1139,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     <div class="mhd">LOBBY <span id="lobCode" class="mdim"></span></div>
     <div class="lobwrap">
       <div class="lobslots" id="lobSlots"></div>
-      <div class="lobmid"><div class="lobmaphd">SPAWN POINTS <span class="mdim">— tap the map to choose yours</span></div><canvas id="lobMap" width="320" height="200"></canvas></div>
+      <div class="lobmid"><div class="lobmaphd">DEPLOYMENT <span class="mdim">— site your HQ once the match starts</span></div><canvas id="lobMap" width="320" height="200"></canvas></div>
       <div class="lobcfg" id="lobCfg">
         <div class="lobg"><label>Mode</label><div class="segb" id="cfgMode"></div></div>
         <div class="lobg"><label>Enemy</label><div class="segb" id="cfgEnemy"></div></div>
@@ -5757,15 +5757,18 @@ function setupInvaders() {
   G.villages = []; G.camps = [];
   if (!MAP.structs) MAP.structs = [];
   if (!MAP.blk) MAP.blk = new Uint8Array(MW * MH);
-  const bx = G.hq ? G.hq.x : BASE_X, by = G.hq ? G.hq.y : BASE_Y;
+  // plot against EVERY commander's post (from the deploy phase), not just one — the stronghold sits far from their average
+  const hqList = (G.playerHQs && G.playerHQs.length) ? G.playerHQs.slice() : [{ x: G.hq ? G.hq.x : BASE_X, y: G.hq ? G.hq.y : BASE_Y }];
+  const bx = hqList[0].x, by = hqList[0].y;
+  const minDToPlayers = (x, y) => { let m = 1e18; for (const p of hqList) { const d = dist2(x, y, p.x, p.y); if (d < m) m = d; } return m; };
   const houseKinds = ['stilt1', 'stilt2', 'stilt1', 'stilt3'];                       // Ayutthaya-era country: thatched houses on stilts
-  const placed = [[bx, by, 900]];
+  const placed = hqList.map(p => [p.x, p.y, 900]);                                   // keep the villages clear of every player's base
   const farOK = (x, y, r) => { for (const p of placed) if (dist2(x, y, p[0], p[1]) < (p[2] + r) * (p[2] + r)) return false; return true; };
 
   // 20 small friendly villages, spread across the map, clear of the base
   for (let v = 0; v < 20; v++) {
     let p = null;
-    for (let a = 0; a < 80; a++) { const q = randomLandPoint(); if (q && farOK(q.x, q.y, 620) && dist2(q.x, q.y, bx, by) > 1500 * 1500) { p = q; break; } }
+    for (let a = 0; a < 80; a++) { const q = randomLandPoint(); if (q && farOK(q.x, q.y, 620) && minDToPlayers(q.x, q.y) > 1500 * 1500) { p = q; break; } }
     if (!p) continue;
     placed.push([p.x, p.y, 520]);
     const vil = { kind: 'village', x: p.x, y: p.y, r: 128, owner: G.players.length > 1 ? 'contested' : 'A', cap: G.players.length > 1 ? 0 : 1, name: VILLAGE_NAMES[v] || ('Village ' + (v + 1)), _acc: 0, structs: [], dead: false, flag: 0 };
@@ -5784,8 +5787,8 @@ function setupInvaders() {
     G.villages.push(vil);
   }
 
-  // the stronghold: the host's fortified compound, as far from the player's post as the land allows
-  setupStronghold(bx, by, placed);
+  // the stronghold: the host's fortified compound, as far from the players' posts (their average) as the land allows
+  setupStronghold(hqList, placed);
   // vassal villages: the six villages nearest the stronghold are sworn to the host — they start in its hands and raise militia
   if (G.stronghold) { G.villages.slice().sort((a, b) => dist2(a.x, a.y, G.stronghold.x, G.stronghold.y) - dist2(b.x, b.y, G.stronghold.x, G.stronghold.y)).slice(0, 6).forEach(v => { v.owner = 'invader'; v.cap = -1; v.vassal = true; v.milT = rnd(4, 12); for (let i = 0; i < 4; i++) spawnMilitia(v); }); }
 
@@ -5828,18 +5831,22 @@ function setupInvaders() {
    builders raise fast, in order, and rebuild when they are burned. The compound is capped at 30% of the map's area (and
    at 44 tiles a side), and sits as far from the player's command post as open ground allows. */
 const STRONGHOLD_MAX_SIDE = 44;
-function setupStronghold(bx, by, placed) {
+function setupStronghold(hqList, placed) {
   G.stronghold = null;
+  if (!hqList || !hqList.length) hqList = [{ x: BASE_X, y: BASE_Y }];
   const side = Math.min(STRONGHOLD_MAX_SIDE, Math.floor(Math.sqrt(.3 * MW * MH)) & ~1), half = side / 2;
   if (side < 16) return;
-  // site: the farthest open, mostly-passable square from the player's post
-  let best = null, bd = 0;
-  for (let a = 0; a < 90; a++) {
+  // site: the open, mostly-passable square whose summed distance to every commander's post is greatest — i.e. as far
+  // across the map from the players' average position as the land allows (and never lopsided toward one of them)
+  let best = null, bd = -1;
+  for (let a = 0; a < 140; a++) {
     const q = randomLandPoint(); if (!q) continue;
     const tx = clamp(Math.round(q.x / TS), half + 3, MW - half - 3), ty = clamp(Math.round(q.y / TS), half + 3, MH - half - 3);
     let bad = 0, n = 0; for (let yy = -half; yy <= half; yy += 3) for (let xx = -half; xx <= half; xx += 3) { n++; if (IMPASSABLE(MAP.t[tileIdx(tx + xx, ty + yy)])) bad++; }
     if (bad > n * .12) continue;
-    const d = dist2(tx * TS, ty * TS, bx, by); if (d > bd) { bd = d; best = { tx, ty }; }
+    const px = tx * TS, py = ty * TS; let sum = 0, near = 1e18; for (const p of hqList) { const d2 = dist2(px, py, p.x, p.y); sum += Math.sqrt(d2); if (d2 < near) near = d2; }
+    const score = sum / hqList.length + Math.sqrt(near) * .5;      // reward a big average distance, but keep it from hugging the nearest post
+    if (score > bd) { bd = score; best = { tx, ty }; }
   }
   if (!best) return;
   const cx = (best.tx + .5) * TS, cy = (best.ty + .5) * TS;
@@ -9376,6 +9383,7 @@ function updateCamps(dt) {
 
 /* ==================== MAIN STEP ==================== */
 function step(dt) {
+  if (G.deploy && G.deploy.active) { G.frame++; if (typeof updateDeploy === 'function') updateDeploy(dt); return; }   // deployment phase: the world is frozen while the commanders site their posts
   G.t += dt; G.frame++; G.pathBudget = 4;                 // route plans the horde may run this frame
   G.lights.length = 0;
   if (!G.flareDecoys) G.flareDecoys = [];
@@ -11789,6 +11797,7 @@ function cancelQueue() {
 
 function tryPlace(wx, wy) {
   const t = UI.place; if (!t) return;
+  if (t === 'hq') { if (typeof deployPlaceHQ === 'function') deployPlaceHQ(wx, wy); return; }   // deployment phase: site the Command Post
   if (t === 'camp') { if (typeof makeCamp === 'function') makeCamp(wx, wy); UI.place = null; refreshCard(true); return; }
   const d = BDEF[t];
   const tx = Math.floor(wx / TS - (d.w - 1) / 2), ty = Math.floor(wy / TS - (d.h - 1) / 2);
@@ -15182,7 +15191,12 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     /* ---- placement ghosts ---- */
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
     ghostBegin();
-    if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = canPlace(UI.place, gx, gy2) && (UI.queue.length ? true : affordable(d.cost)); ghost3(gx, gy2, d, ok); }
+    if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = canPlace(UI.place, gx, gy2) && (UI.deploy || UI.queue.length ? true : affordable(d.cost)); ghost3(gx, gy2, d, ok); }
+    if (G.deploy && G.deploy.active) {                                                        // allies' live cursors & pending / placed Command Posts during the deploy phase
+      const D = G.deploy;
+      for (const k in D.hqPos) { if (+k === G.me) continue; const q = D.hqPos[k]; const gx = Math.floor(q.x / TS - 2), gy2 = Math.floor(q.y / TS - 2); ghost3(gx, gy2, BDEF.hq, true, true); }
+      for (const k in D.cursor) { const q = D.cursor[k]; if (!q || +k === G.me || D.hqPos[k]) continue; const gx = Math.floor(q.x / TS - 2), gy2 = Math.floor(q.y / TS - 2); ghost3(gx, gy2, BDEF.hq, true); }
+    }
     if (UI.place === 'camp' && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = 4.2 * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ffc27a')); }
     if (UI.moving) { const d = UI.moving.def, gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); ghost3(gx, gy2, d, canPlace(UI.moving.t, gx, gy2, UI.moving)); }
     if (UI.queue) for (const q of UI.queue) ghost3(q.tx, q.ty, BDEF[q.t], true, true);
@@ -15307,13 +15321,34 @@ function newGame(opts) {
   const coop = G.mp && typeof LOBBY !== 'undefined' && LOBBY.room && typeof NET !== 'undefined' && NET.transport;
   const iHost = !coop || (typeof amHost === 'function' && amHost());
   if (typeof NP !== 'undefined') { NP.on = !!coop; NP.host = iHost; }
-  // each player gets a levelled compound at a distinct spawn site (spread across the map in MP)
+
+  // A real match (opts.deploy) opens with a DEPLOY phase: the player sites their Command Post anywhere on the map by
+  // clicking. In multiplayer each commander's cursor and pending post show live so friends can settle in together, and
+  // nothing is built and the enemy is not seeded until every commander has placed — then the invaders' base is plotted
+  // as far as the land allows from the AVERAGE of all the players' posts (see finishDeploy → setupInvaders).
+  // The menu showcase (newGame() with no opts) skips this and builds a base straight away so a scene exists behind the menu.
+  if (opts.deploy) {
+    G.deploy = { active: true, coop, iHost, res, hqPos: {}, cursor: {}, curT: 0 };
+    G.cur = G.me;
+    const c0 = findSpawn(.5, .5) || [MW >> 1, MH >> 1, MAP.h[(MH >> 1) * MW + (MW >> 1)]];
+    BASE_TX = c0[0]; BASE_TY = c0[1]; BASE_X = BASE_TX * TS; BASE_Y = BASE_TY * TS;
+    rebuildBGrid(); refreshCap();
+    CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
+    centerOn(BASE_X, BASE_Y);
+    UI.place = 'hq'; UI.tab = null; UI.deploy = true;
+    refreshCard(true);
+    alertMsg('Deploy your Command Post — click anywhere on the map to build it.' + (G.mp ? ' Your allies’ cursors show live, so you can settle in together.' : ''), 'good');
+    return;
+  }
+
+  // --- immediate build (menu showcase / any non-deploy start): every player gets a levelled compound right away ---
+  G.deploy = null;
   let myHQ = null;
   const sites = G.mp ? G.players.map(p => { const sp = SPAWN_SITES[p.spawn % SPAWN_SITES.length]; return findSpawn(sp[0], sp[1]); }) : [[BASE_TX, BASE_TY, MAP.h[BASE_TY * MW + BASE_TX]]];
   for (let pi = 0; pi < G.players.length; pi++) {
-    if (coop && pi !== G.me) continue;                              // don't spawn allies locally — they come over the network
+    if (coop && pi !== G.me) continue;
     G.cur = pi; const [tx, ty] = sites[pi];
-    if (G.mp) { levelCompound(tx, ty, sites[pi][2]); if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(tx, ty); }   // every spawn gets its pond and its grove
+    if (G.mp) { levelCompound(tx, ty, sites[pi][2]); if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(tx, ty); }
     const hq = addBuilding('hq', tx - 3, ty - 3, true); G.players[pi].hq = hq; if (pi === G.me) myHQ = hq;
     const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = tx + dx + rndi(-2, 3), by = ty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
     place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
@@ -15325,16 +15360,75 @@ function newGame(opts) {
   }
   G.cur = G.me; const hq = myHQ;
   BASE_TX = sites[G.me][0]; BASE_TY = sites[G.me][1]; BASE_X = BASE_TX * TS; BASE_Y = BASE_TY * TS;
-  if (G.mp) makeMiniBase();                                                   // the spawns' ponds and groves were carved after the first minimap pass
-
-  if (iHost) {                                       // only the host seeds the shared enemy world in co-op
-    if (G.mode === 'invaders') { setupInvaders(); }  // camps, villages + a roaming garrison
-    else seedWorld(280);      // zombie mode: the world is already full of them
-  }
+  if (G.mp) makeMiniBase();
+  G.playerHQs = G.players.filter(p => p.hq).map(p => ({ x: p.hq.x, y: p.hq.y }));
+  if (iHost) { if (G.mode === 'invaders') { setupInvaders(); } else seedWorld(280); }
   rebuildBGrid();
   refreshCap();
   CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
-  centerOn(hq.x + 120, hq.y);
+  if (hq) centerOn(hq.x + 120, hq.y);
+  refreshCard(true);
+  alertMsg(G.mode === 'invaders' ? 'Command post established. Hold the villages and repel the invaders.' : 'Command post established. Wall the highway before dark.', 'good');
+}
+/* build one commander's compound (HQ + a couple of defences), starting units and supply crates, with its footprint
+   top-left at (gx,gy) — matching the placement ghost the player clicked. */
+function spawnPlayerBaseAt(pi, gx, gy) {
+  const prev = G.cur; G.cur = pi;
+  const d = BDEF.hq, ctx = gx + (d.w >> 1), cty = gy + (d.h >> 1);
+  levelCompound(ctx, cty, MAP.h[cty * MW + ctx]);
+  if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(ctx, cty);
+  const hq = addBuilding('hq', gx, gy, true); G.players[pi].hq = hq;
+  const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = ctx + dx + rndi(-2, 3), by = cty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
+  place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
+  const hx = ctx * TS, hy = cty * TS;
+  for (let i = 0; i < 3; i++) spawnUnit('engineer', hx + rnd(-70, 90), hy + rnd(-70, 70), true);
+  for (let i = 0; i < 4; i++) spawnUnit('rifleman', hx + rnd(40, 150), hy + rnd(-90, 90), true);
+  for (let i = 0; i < 2; i++) spawnUnit('support', hx + rnd(-40, 60), hy + rnd(-70, 70), true);
+  for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
+  G.cur = prev; return hq;
+}
+/* the local commander clicks the map to site their post */
+function deployPlaceHQ(wx, wy) {
+  const D = G.deploy; if (!D || !D.active) return;
+  if (G.players[G.me] && G.players[G.me].hq) return;                 // already placed — wait for the others
+  const d = BDEF.hq, gx = Math.floor(wx / TS - (d.w - 1) / 2), gy = Math.floor(wy / TS - (d.h - 1) / 2);
+  if (!canPlace('hq', gx, gy)) { AU.ui('no'); alertMsg('Can’t build there — pick clear, dry, level ground.', ''); return; }
+  const cx = (gx + d.w / 2) * TS, cy = (gy + d.h / 2) * TS;
+  for (const k in D.hqPos) { const q = D.hqPos[k]; if (Math.hypot(q.x - cx, q.y - cy) < 26 * TS) { AU.ui('no'); alertMsg('Too close to another commander’s post — give it more room.', ''); return; } }   // blocked overlap
+  const hq = spawnPlayerBaseAt(G.me, gx, gy);
+  D.hqPos[G.me] = { x: hq.x, y: hq.y };
+  BASE_TX = (hq.x / TS) | 0; BASE_TY = (hq.y / TS) | 0; BASE_X = hq.x; BASE_Y = hq.y;
+  UI.place = null; UI.deploy = false; AU.ui('build');
+  alertMsg('Command Post sited.' + (G.mp ? ' Waiting for the other commanders…' : ''), 'good');
+  if (D.coop && typeof NET !== 'undefined' && NET.publishCmd) NET.publishCmd({ t: 'depHQ', idx: G.me, x: hq.x, y: hq.y });
+  makeMiniBase();
+  deployMaybeFinish(); refreshCard(true);
+}
+function deployMaybeFinish() {
+  const D = G.deploy; if (!D) return;
+  const need = G.mp ? G.players.length : 1; let n = 0; for (const k in D.hqPos) n++;
+  if (n >= need) finishDeploy();
+}
+function netDeployHQ(idx, x, y) { const D = G.deploy; if (!D || !D.active) return; D.hqPos[idx] = { x, y }; if (D.cursor[idx]) D.cursor[idx].placed = true; deployMaybeFinish(); }
+function netDeployCursor(idx, x, y) { const D = G.deploy; if (!D || !D.active || idx === G.me) return; const c = (D.cursor[idx] = D.cursor[idx] || {}); c.x = x; c.y = y; }
+function updateDeploy(dt) {
+  const D = G.deploy; if (!D || !D.active) return;
+  if (D.coop && typeof NET !== 'undefined' && NET.publishCmd && !(G.players[G.me] && G.players[G.me].hq) && typeof s2wx === 'function') {
+    D.curT -= dt; if (D.curT <= 0) { D.curT = .12; NET.publishCmd({ t: 'depCur', idx: G.me, x: s2wx(IN.mx, IN.my), y: s2wy(IN.my, IN.mx) }); }   // stream my cursor so allies can see where I'm about to build
+  }
+}
+/* everyone has placed: seed the enemy against all the players' posts and let the match run */
+function finishDeploy() {
+  const D = G.deploy; if (!D) return;
+  const iHost = D.iHost;
+  G.deploy = null; UI.place = null; UI.deploy = false;
+  const myHQb = G.players[G.me] && G.players[G.me].hq;
+  if (myHQb) { BASE_TX = (myHQb.x / TS) | 0; BASE_TY = (myHQb.y / TS) | 0; BASE_X = myHQb.x; BASE_Y = myHQb.y; }
+  G.playerHQs = []; for (const k in D.hqPos) G.playerHQs.push(D.hqPos[k]);           // every commander's post, for the invaders to plot against
+  if (G.mp) makeMiniBase();
+  if (iHost) { if (G.mode === 'invaders') setupInvaders(); else seedWorld(280); }   // only the host seeds the shared enemy world in co-op
+  rebuildBGrid(); refreshCap(); G.cur = G.me;
+  if (myHQb) centerOn(myHQb.x + 120, myHQb.y);
   refreshCard(true);
   alertMsg(G.mode === 'invaders' ? 'Command post established. Hold the villages and repel the invaders.' : 'Command post established. Wall the highway before dark.', 'good');
 }
@@ -15468,6 +15562,7 @@ function boot() {
 
 /* start a fresh game with the chosen mode/size/seed and drop into it */
 function startGame(opts) {
+  opts = opts || {}; opts.deploy = true;                 // real matches open with the HQ deployment phase
   newGame(opts);
   AU.init();
   AU.stopMenu();
@@ -15480,11 +15575,11 @@ function startGame(opts) {
   const creative = (opts && opts.diff === 'creative');
   openDev(creative);
   if (creative) refreshDevToggles();
-  if (G.mode === 'invaders') startWarpCutscene();       // time-warp intro before the battle
+  if (G.mode === 'invaders' && !G.deploy) startWarpCutscene();       // time-warp intro before the battle (the deploy phase is the intro when placing)
   alertMsg(creative ? 'Creative mode — dev panel on the left (`)' : (G.mode === 'invaders' ? 'The host gathers beyond the borders' : 'Contacts inbound from the east'), creative ? 'info' : '');
 }
 function deploy(dev) { startGame({ diff: dev ? 'creative' : 'normal', size: MAP_PRESETS.average, seed: 1 }); }
-$('play2').onclick = () => { newGame(G._lastOpts || { diff: 'normal', size: MAP_PRESETS.average, seed: 1 }); G.started = true; $('over').style.display = 'none'; };
+$('play2').onclick = () => { newGame(Object.assign({ diff: 'normal', size: MAP_PRESETS.average, seed: 1 }, G._lastOpts || {}, { deploy: true })); G.started = true; $('over').style.display = 'none'; };
 openDev(false);
 
 /* ---------------- main-menu flow ---------------- */
@@ -15826,6 +15921,8 @@ function bindRoom() {
     else if (c.t === 'seat') { const st = LOBBY.room.seats.find(s => s.id === c.id); if (st) { if (c.team) st.team = c.team; if (c.spawn !== undefined) st.spawn = c.spawn; if (c.name) st.name = c.name; if (amHost()) NET.publishRoom(LOBBY.room); } renderLobby(); }
     else if (c.t === 'give') { if (typeof applyGive === 'function') applyGive(c.from, c.to, c.kind, c.amt); }   // ally resource gift — applied on every client so the recipient actually gets it
     else if (c.t === 'world') { if (((typeof NP !== 'undefined' && NP.host) || amHost()) && typeof netWorldApply === 'function') netWorldApply(c); }   // a client's dev change to time/weather/wind: the host adopts it, then re-streams it to everyone
+    else if (c.t === 'depHQ') { if (typeof netDeployHQ === 'function') netDeployHQ(c.idx, c.x, c.y); }        // a commander sited their post during the deploy phase
+    else if (c.t === 'depCur') { if (typeof netDeployCursor === 'function') netDeployCursor(c.idx, c.x, c.y); }   // a commander's live cursor during the deploy phase
     else if (c.t === 'begin') beginLoading(); });
 }
 
@@ -15895,7 +15992,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b111';
+const BUILD_TAG = 'b112';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -15926,33 +16023,18 @@ function buildCfgControls() {
 function stepNum(k, d) { if (!amHost()) return; const step = k === 'sup' || k === 'scr' ? 50 : 5; LOBBY.room.cfg[k] = Math.max(0, (LOBBY.room.cfg[k] || 0) + d * step); NET.publishRoom(LOBBY.room); renderLobby(); }
 
 /* ---------------- spawn-point map (click to pick your spawn) ---------------- */
-function bindSpawnMap() {
-  const cv2 = $('lobMap'); if (!cv2 || cv2._bound) return; cv2._bound = 1;
-  cv2.addEventListener('click', e => {
-    const r = cv2.getBoundingClientRect(), mx = (e.clientX - r.left) / r.width, my = (e.clientY - r.top) / r.height;
-    let bi = -1, bd = 1e9; SPAWN_SITES.forEach((sp, i) => { const d = Math.hypot(sp[0] - mx, sp[1] - my); if (d < bd) { bd = d; bi = i; } });
-    if (bi < 0 || bd > .16) return;
-    const my2 = mySeat(); if (!my2) return;
-    if (LOBBY.room.seats.some(s => s.id !== my2.id && s.spawn === bi)) { alertLobby('That spawn is taken'); return; }
-    my2.spawn = bi; pushSeat(my2);
-  });
-}
+function bindSpawnMap() { /* spawn points are gone — commanders site their own HQ in-match */ }
 function drawSpawnMap() {
-  const cv2 = $('lobMap'); if (!cv2 || !LOBBY.room) return; const g = cv2.getContext('2d'), W = cv2.width, H = cv2.height;
+  const cv2 = $('lobMap'); if (!cv2) return; const g = cv2.getContext('2d'), W = cv2.width, H = cv2.height;
   g.clearRect(0, 0, W, H);
   g.fillStyle = '#16261f'; g.fillRect(0, 0, W, H);
-  // faint terrain hint
   g.strokeStyle = 'rgba(120,160,140,.12)'; g.lineWidth = 1; for (let i = 1; i < 6; i++) { g.beginPath(); g.moveTo(W / 6 * i, 0); g.lineTo(W / 6 * i, H); g.stroke(); }
-  const taken = {}; for (const s of LOBBY.room.seats) taken[s.spawn] = s;
-  SPAWN_SITES.forEach((sp, i) => {
-    const x = sp[0] * W, y = sp[1] * H, s = taken[i];
-    g.beginPath(); g.arc(x, y, 13, 0, TAU);
-    g.fillStyle = s ? (TEAM_COL[s.team] || '#8dffbe') : 'rgba(40,60,50,.7)'; g.fill();
-    g.lineWidth = s && s.id === LOBBY.myId ? 3 : 1.5; g.strokeStyle = s && s.id === LOBBY.myId ? '#fff' : '#2f4a3e'; g.stroke();
-    g.fillStyle = s ? '#08120d' : '#7ea294'; g.font = 'bold 12px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(String(i + 1), x, y + .5);
-    if (s) { g.fillStyle = '#dfe6ea'; g.font = '10px ui-sans-serif'; g.fillText(s.name.slice(0, 10), x, y + 24); }
-  });
+  g.fillStyle = '#8dffbe'; g.font = 'bold 15px ui-sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('🚩  Deploy on the map', W / 2, H / 2 - 16);
+  g.fillStyle = '#9fc4b4'; g.font = '11px ui-sans-serif';
+  g.fillText('When the match starts, click anywhere', W / 2, H / 2 + 8);
+  g.fillText('to build your Command Post.', W / 2, H / 2 + 24);
+  g.fillText('You’ll see your allies’ cursors live.', W / 2, H / 2 + 40);
 }
 /* ---------------- render the lobby ---------------- */
 function renderLobby() {
@@ -15972,10 +16054,8 @@ function renderLobby() {
       else row.innerHTML = dot + '<div class="nm">' + s.name + (s.id === r.hostId ? ' ★' : '') + '</div>';
       const tm = document.createElement('button'); tm.className = 'tm'; tm.textContent = 'Team ' + s.team; tm.title = 'Change team';
       tm.onclick = () => { if (!canEdit) return; s.team = 'ABCD'[('ABCD'.indexOf(s.team) + 1) % 4]; pushSeat(s); };
-      const sp = document.createElement('button'); sp.className = 'sp'; sp.textContent = 'Spawn ' + (s.spawn + 1); sp.title = 'Change spawn point';
-      sp.onclick = () => { if (!canEdit) return; s.spawn = (s.spawn + 1) % 6; pushSeat(s); };
       const rd = document.createElement('div'); rd.className = 'rd ' + (s.ready ? 'y' : 'n'); rd.textContent = s.ready ? 'READY' : 'WAIT';
-      row.append(tm, sp, rd);
+      row.append(tm, rd);   // no spawn-point button any more — every commander sites their own HQ on the map once the match starts
     } else { row.innerHTML = '<div class="dot" style="background:#233"></div><div class="nm">— open slot —</div>'; }
     el.appendChild(row);
   }
