@@ -13010,7 +13010,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   /* section profiler: G.prof = true fills G.renderProf with ms per render section */
   let pfT = 0; const PF = name => { if (!G.prof) return; const t = performance.now(); if (name !== 'props_begin') (G.renderProf || (G.renderProf = {}))[name] = +(t - pfT).toFixed(2); pfT = t; };
   const GPU_GRASS_OK = !!(renderer.capabilities && renderer.capabilities.isWebGL2);
-  const GU = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3(1, 0, 0) }, uTr: { value: null }, uTrInv: { value: new THREE.Vector2(1, 1) }, uTS: { value: TS }, uCell: { value: GRASS_CELL } };
+  const GU = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3(1, 0, 0) }, uTr: { value: null }, uTrInv: { value: new THREE.Vector2(1, 1) }, uTS: { value: TS }, uCell: { value: GRASS_CELL },
+    uDown: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uDownN: { value: 0 } };   // up to 4 rotor-downwash sources: xz centre (mesh units), radius, strength
   const GRASS_PROJECT = [
     'vec4 mvPosition = vec4( transformed, 1.0 );',
     '#ifdef USE_INSTANCING',
@@ -13026,9 +13027,16 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     '  float ph = uTime * 2.4 + tile.x * (uTS * 0.02) + tile.y * (uTS * 0.017) + sd * 0.9;',  // one ripple phase per tile + a little per-tuft jitter
     '  float sway = uWind.z * (0.2 + sin(ph) * 0.14);',
     '  float td = sd * 6.2831853;',
-    '  vec2 tilt = uWind.xy * sway * (1.0 - f) + vec2(cos(td), sin(td)) * (1.5 * f);',      // lean into the wind; pressed tufts lie down in a fixed direction
+    '  float df = 0.0; vec2 dvec = vec2(0.0);',                                               // rotor downwash: strongest source over this tuft and the outward direction
+    '  for (int i = 0; i < 4; i++) {',
+    '    if (i >= uDownN) break;',
+    '    vec2 rel = gRoot.xz - uDown[i].xy; float dd = length(rel); float rr = uDown[i].z;',
+    '    if (rr > 0.0 && dd < rr) { float s = uDown[i].w * (1.0 - dd / rr); if (s > df) { df = s; dvec = dd > 1e-3 ? rel / dd : vec2(1.0, 0.0); } }',
+    '  }',
+    '  float ff = max(f, df * 0.92);',                                                        // downwash presses the tufts flat like a trample
+    '  vec2 tilt = uWind.xy * sway * (1.0 - ff) + vec2(cos(td), sin(td)) * (1.5 * f) + dvec * (df * 1.7);',   // and lays them flowing radially OUTWARD in a ring
     '  float ang = length(tilt);',
-    '  float hgt = (mvPosition.y - gRoot.y) * (1.0 - f * 0.82);',                             // pressed grass is shorter
+    '  float hgt = (mvPosition.y - gRoot.y) * (1.0 - ff * 0.82);',                            // pressed grass is shorter
     '  if (ang > 1e-4) { vec2 dir = tilt / ang; float sa = sin(ang), ca = cos(ang); mvPosition.xz += dir * sa * hgt; mvPosition.y = gRoot.y + ca * hgt; }',
     '  else mvPosition.y = gRoot.y + hgt;',
     '#endif',
@@ -13039,7 +13047,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   GMAT.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, GU);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform vec3 uWind; uniform sampler2D uTr; uniform vec2 uTrInv; uniform float uTS; uniform float uCell;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform vec3 uWind; uniform sampler2D uTr; uniform vec2 uTrInv; uniform float uTS; uniform float uCell; uniform vec4 uDown[4]; uniform int uDownN;')
       .replace('#include <project_vertex>', GRASS_PROJECT);
     GMAT.userData.sh = sh;
   };
@@ -14684,6 +14692,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         if (!G.grassTex || G.grassTex.ww !== WW || G.grassTex.wh !== WH) allocGrassTex();
         uploadGrassTex();
         GU.uTime.value = tt; GU.uWind.value.set(wdx, wdz, wm);
+        let dn = 0;                                                                            // feed the shader the low/landing helicopters so the tufts flow outward from under the rotor
+        for (let ui = 0; ui < G.units.length && dn < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; if (!(u.landed || (u.altK !== undefined && u.altK < .28))) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; const near = 1 - (u.altK === undefined ? 0 : Math.max(0, Math.min(1, u.altK / .28))); GU.uDown.value[dn].set(u.x * K, u.y * K, u.r * 3.4 * K, .7 + near * .6); dn++; }
+        GU.uDownN.value = dn;
         updateGrassChunks(gtx0, gtx1, gty0, gty1, per);
       } else if (grassChunks.size) for (const c of grassChunks.values()) { if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false; }   // CPU fallback active: park the GPU chunks
       const swayBase = tt * 2.4, swayKx = TS * .02, swayKy = TS * .017;                        // wind sway is computed once per tile (not per blade) — one Math.sin instead of thousands, identical-looking ripple
@@ -15793,7 +15804,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b104';
+const BUILD_TAG = 'b105';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
