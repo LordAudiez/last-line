@@ -7755,12 +7755,12 @@ function flyTo(u, tx, ty, dt, arrive, boost) {
    so it can never warp. It leads its own current angle around the ring, which
    makes it trace the circle continuously. */
 /* the gunship is a fixed-wing aircraft: it always flies forward and can only turn so fast — no pivoting on the spot.
-   It banks into every turn, never past 70° either way, and rolls level again on a straight leg. */
+   It banks gently into every turn, never past 30° either way, and rolls level again on a straight leg. */
 function flyHeading(u, want, dt, boost) {
   const spd = u.spd * (boost || 1);
   let diff = want - u.ang; diff = Math.atan2(Math.sin(diff), Math.cos(diff)); const tr = spd / (u.def.turnR || 230);
   u.ang = Math.atan2(Math.sin(u.ang + clamp(diff, -tr * dt, tr * dt)), Math.cos(u.ang + clamp(diff, -tr * dt, tr * dt)));
-  const bankWant = clamp(diff * 1.4, -1.222, 1.222);                                   // ±70°
+  const bankWant = clamp(diff * 1.4, -0.5236, 0.5236);                                 // ±30°
   u.bank = (u.bank || 0) + (bankWant - (u.bank || 0)) * Math.min(1, dt * 2.2);
   u.vx = Math.cos(u.ang) * spd; u.vy = Math.sin(u.ang) * spd;
   u.x = clamp(u.x + u.vx * dt, 8, WW - 8); u.y = clamp(u.y + u.vy * dt, 8, WH - 8);
@@ -7770,7 +7770,7 @@ function circleAround(u, cx, cy, R, dt, boost) {
   if (u.def && u.def.orbit) {
     /* gunship orbit: hold the ring at radius R — heading = the ring's tangent, bent toward the centre when outside the
        ring and away from it when inside, so the aircraft settles onto a steady circle instead of spiralling */
-    const rad = Math.atan2(u.y - cy, u.x - cx), r = Math.hypot(u.x - cx, u.y - cy), dir = u.orbitDir || (u.orbitDir = 1);
+    const rad = Math.atan2(u.y - cy, u.x - cx), r = Math.hypot(u.x - cx, u.y - cy), dir = u.orbitDir || (u.orbitDir = -1);   // counter-clockwise orbit
     const RR = Math.max(R, (u.def.turnR || 230) * 1.25);
     const err = clamp((r - RR) / RR, -1, 2), k = clamp(err * 1.6, -1.2, 1.35);
     flyHeading(u, rad + dir * (Math.PI / 2 + k), dt, boost);
@@ -15883,7 +15883,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b108';
+const BUILD_TAG = 'b109';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
