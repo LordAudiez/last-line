@@ -6845,7 +6845,9 @@ function updateAmbient(dt) {
 
   // expire old grass trample marks (they've fully regrown by now)
   G.grassPruneT -= dt;
-  if (G.grassPruneT <= 0) { G.grassPruneT = 2.5; for (const [k, ts] of G.grass) if (G.t - ts > 30) G.grass.delete(k); }
+  if (G.grassPruneT <= 0) { G.grassPruneT = 2.5; for (const [k, ts] of G.grass) if (G.t - ts > 30) G.grass.delete(k);
+    if (G.grassBlood && G.grassBlood.length) { const before = G.grassBlood.length; G.grassBlood = G.grassBlood.filter(b => G.t - b.t < 60); if (G.grassBlood.length !== before) G.grassBloodGen = (G.grassBloodGen | 0) + 1; }   // the blood on the tufts washes out after a minute
+  }
 
   G.ambT -= dt;
   if (G.ambT > 0) return;
@@ -7670,7 +7672,12 @@ function updateUnits(dt) {
     // rotor downwash: a low / landing helicopter flattens a wide ring of grass beneath it
     if (u.def.fly && u.def.rotor && (u.landed || (u.altK !== undefined && u.altK < .22))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
-      if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(u.x, u.y, u.r * 2.4);
+      if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
+        grassStamp(u.x, u.y, u.r * 2.4);                                       // a wide matted trail is beaten flat beneath it
+        u._wash = (u._wash || 0) - dt;                                          // and a downwash wind ring blows out, kicking up torn grass and dust
+        if (u._wash <= 0) { u._wash = .18; part('ring', u.x, u.y, 0, 0, 1.0, u.r * .8, 'rgba(214,206,150,.5)', { grow: u.r * 3.4 });
+          for (let k = 0; k < 5 && G.parts.length < PMAX * .85; k++) { const an = rnd(TAU), sp = rnd(60, 150); part(Math.random() < .5 ? 'leaf' : 'dust', u.x + Math.cos(an) * u.r * .7, u.y + Math.sin(an) * u.r * .7, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.5, 1), rnd(2.4, 5.5), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 5), vz: rnd(12, 40), vr: rnd(-10, 10), grow: 8, g: 120, drag: .93, wind: 1 }); } }
+      }
       else if (WATER(gt) && !u.landed) {                                       // over water the downwash blows a spreading ring of spray and ripples
         u._wash = (u._wash || 0) - dt;
         if (u._wash <= 0) { u._wash = .16; part('ring', u.x, u.y, 0, 0, 1.1, u.r * .6, 'rgba(210,235,245,.55)', { grow: u.r * 2.2 }); for (let k = 0; k < 4; k++) { const an = rnd(TAU), sp = rnd(40, 120); part('dust', u.x + Math.cos(an) * u.r * .5, u.y + Math.sin(an) * u.r * .5, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.5, .9), rnd(4, 7), 'rgba(220,236,244,1)', { z: rnd(0, 4), vz: rnd(8, 26), grow: 12, drag: .9, white: 1 }); } }
@@ -7682,8 +7689,8 @@ function updateUnits(dt) {
     if (!u.def.fly && (G.mp || (u.x > CAM.x - 120 && u.x < CAM.x + CAM.vw + 120 && u.y > CAM.y - 120 && u.y < CAM.y + CAM.vh + 160))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
       if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r * 1.15); }   // the whole hull flattens the grass, not just its centre
-        else grassStamp(u.x, u.y, Math.max(u.r * 2.3, 26));   // part the tufts in a clear ring so the man stands IN the field, not buried behind blades in front of him
+        if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r); }   // a vehicle mats a trail its own full width
+        else grassStamp(u.x, u.y, u.r * .5);   // a man leaves a narrow trail, about half his own width
         if (u.def.veh) {
           const moved = Math.hypot(u.x - (u._lx != null ? u._lx : u.x), u.y - (u._ly != null ? u._ly : u.y));
           u._lx = u.x; u._ly = u.y;
@@ -8691,7 +8698,7 @@ function updateZeds(dt) {
     z.step += dtz * (z.def.spd > 60 ? 13 : 7);
     if (solidAt(z.x, z.y, false)) unstick(z, false);
     if (G.mp || (z.x > CAM.x - 120 && z.x < CAM.x + CAM.vw + 120 && z.y > CAM.y - 120 && z.y < CAM.y + CAM.vh + 160)) {
-      const gt = MAP.t[tileIdx((z.x / TS) | 0, (z.y / TS) | 0)]; if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(z.x, z.y, z.def.struct ? z.r : Math.max(z.r * 2.3, 26));   // enemy infantry part the tufts too, so they read as standing in the field
+      const gt = MAP.t[tileIdx((z.x / TS) | 0, (z.y / TS) | 0)]; if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(z.x, z.y, z.def.struct ? z.r : z.r * .5);   // enemy infantry leave the same narrow trail
     }
 
     const b = buildingAtTile((z.x / TS) | 0, (z.y / TS) | 0);
@@ -15786,7 +15793,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b103';
+const BUILD_TAG = 'b104';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
