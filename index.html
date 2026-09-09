@@ -7669,20 +7669,22 @@ function updateUnits(dt) {
       G.lights.push({ x: hx, y: hy, r: 130, c: [255, 232, 176], i: 1.05, beam: u.ang });     // amber floodlight tint, aimed along the beam
     }
     if (solidAt(u.x, u.y, true)) unstick(u, true);
-    // rotor downwash: a low / landing / roping helicopter flattens a wide ring of grass beneath it
-    if (u.def.fly && u.def.rotor && (u.landed || u.rope || (u.altK !== undefined && u.altK < .22))) {
+    // rotor downwash: fades in smoothly as the helicopter descends (no sudden pop) — full on the deck, ramping from half-height, gentle while roping
+    let wash = 0;
+    if (u.def.fly && u.def.rotor) { if (u.landed) wash = 1; else if (u.rope) wash = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; wash = t * t * (3 - 2 * t); } }
+    if (wash > .02) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
       if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        grassStamp(u.x, u.y, u.r * 4.5);                                       // a wide matted circle is beaten flat beneath it
-        u._wash = (u._wash || 0) - dt;                                          // and a big downwash wind ring blows out, kicking up torn grass and dust
-        if (u._wash <= 0) { u._wash = .14; part('ring', u.x, u.y, 0, 0, 1.0, u.r * 1.2, 'rgba(214,206,150,.5)', { grow: u.r * 10 });
-          // twin counter-rotating tip vortices: dust and torn grass spiral around two centres either side of the fuselage
-          const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.35;
+        grassStamp(u.x, u.y, u.r * (1.2 + 3.3 * wash));                        // the matted circle grows in as it settles, shrinks as it climbs
+        u._wash = (u._wash || 0) - dt * (.55 + wash);                          // the ring beats faster the lower it gets
+        if (u._wash <= 0) { u._wash = .14; part('ring', u.x, u.y, 0, 0, 1.0, u.r * 1.2, 'rgba(214,206,150,' + (.5 * wash).toFixed(2) + ')', { grow: u.r * (3 + 7 * wash) });
+          // twin counter-rotating tip vortices: dust and torn grass spiral around two centres either side of the fuselage — intensity scales with the wash
+          const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.35, nP = Math.max(1, Math.round(4 * wash));
           for (let side = -1; side <= 1; side += 2) {
             const cvx = u.x + ox * off * side, cvy = u.y + oy * off * side, swirl = side;
-            for (let k = 0; k < 4 && G.parts.length < PMAX * .85; k++) {
-              const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.7), rx = Math.cos(an), ry = Math.sin(an);
-              const tx = -ry * swirl, ty = rx * swirl, sp = rnd(90, 190), out = rnd(20, 55);                       // tangential swirl + a little outward drift
+            for (let k = 0; k < nP && G.parts.length < PMAX * .85; k++) {
+              const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.7) * (.5 + .5 * wash), rx = Math.cos(an), ry = Math.sin(an);
+              const tx = -ry * swirl, ty = rx * swirl, sp = 40 + rnd(90, 190) * wash, out = rnd(20, 55);           // tangential swirl + a little outward drift, both fading with height
               part(Math.random() < .5 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.5, 1.1), rnd(2.6, 6), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 7), vz: rnd(14, 46), vr: rnd(-16, 16) * swirl, grow: 10, g: 120, drag: .95, wind: 1 });
             }
           }
@@ -7791,9 +7793,45 @@ function rotorWash(u, k, dt) {
   }
   if (Math.random() < dt * 4 * k) part('leaf', u.x + rnd(-20, 20), u.y + rnd(-14, 14), rnd(-120, 120), rnd(-90, 90), rnd(.8, 1.5), rnd(1.2, 2.2), '#5e6a34', { z: rnd(2, 10), vz: rnd(20, 60), g: 120, vr: rnd(-10, 10), drag: .96, wind: 1 });
 }
+/* Fixed-wing (AC-130, F-16) landing & take-off: no vertical drop like a helicopter — a long, straight, shallow
+   runway approach. On a LAND order it locks its current heading, glides straight ahead while the altitude bleeds
+   off over a long distance, touches down and rolls out to a stop. Given any other order it does a take-off roll:
+   accelerate straight, climb out, then resume normal flight. Returns true while it is still busy landing/climbing. */
+function fixedWingLand(u, dt) {
+  if (u.altK === undefined) u.altK = 1;
+  if (u.landed) {                                                         // rolling out (or parked) — bleed off the ground speed to a stop
+    u.vx *= Math.pow(.04, dt); u.vy *= Math.pow(.04, dt);
+    if (Math.hypot(u.vx, u.vy) < 5) { u.vx = u.vy = 0; } else { u.x += u.vx * dt; u.y += u.vy * dt; }
+    return true;
+  }
+  if (u._appAng === undefined) u._appAng = u.ang || 0;                    // lock the approach heading dead straight
+  const a = u._appAng; u.ang = a;
+  u.altK = Math.max(0, u.altK - dt * .17);                               // long, shallow glide (~6 s from cruise to the deck)
+  const gs = u.spd * (.5 + .5 * u.altK);
+  u.vx = Math.cos(a) * gs; u.vy = Math.sin(a) * gs; u.x += u.vx * dt; u.y += u.vy * dt;
+  if (u.altK <= .001) {                                                  // touchdown
+    u.landed = true; u._appAng = undefined; addShake(u.x, u.y, 3); AU.ui('ok');
+    if (typeof grassStamp === 'function') { const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(u.x, u.y, u.r * 1.2); }
+  }
+  return true;
+}
+/* take-off roll for a parked fixed-wing given a flying order: accelerate straight and climb out before normal flight resumes. */
+function fixedWingTakeoff(u, dt) {
+  if (u.altK === undefined) u.altK = 0;
+  const a = u.ang || 0, gs = u.spd * (.45 + .55 * u.altK);
+  u.vx = Math.cos(a) * gs; u.vy = Math.sin(a) * gs; u.x += u.vx * dt; u.y += u.vy * dt;
+  u.altK += dt * .24;                                                    // long climb-out
+  if (u.altK >= 1) { u.altK = 1; u.landed = false; return false; }       // airborne — hand back to normal flight
+  return true;
+}
 function updateAircraft(u, dt) {
   u.hurt = Math.max(0, u.hurt - dt * 4);
   u.rot = (u.rot || 0) + dt * 26;                 // rotor / prop spin
+  if (u.def.orbit) {                                                     // AC-130 and other fixed-wing aircraft: runway-style landing, never a vertical set-down
+    flareTick(u, dt);
+    if (u.order && u.order.type === 'land') { fixedWingLand(u, dt); return; }
+    if (u.landed) { if (!u.order) { u.vx = u.vy = 0; u.rot = (u.rot || 0) + dt * 26; return; } if (fixedWingTakeoff(u, dt)) return; }   // climbing out
+  }
   if (!u.home) u.home = { x: u.x, y: u.y };       // last place it was told to be
   flareTick(u, dt);                                 // every aircraft can run flares
   const o = u.order;
@@ -7805,28 +7843,29 @@ function updateAircraft(u, dt) {
 
   /* ---- helicopter altitude: 1 = cruising, 0 = on the ground. Landing / take-off are animated, and the
      rotor wash gets violent close to the ground. Anything but a land/pickup/board order means "take off". ---- */
-  if (u.def.carry) {
+  if (u.def.rotor) {                                                            // every helicopter can land / take off; the cargo & fast-rope parts only apply to carriers
+    const carry = u.def.carry;
     if (u.altK === undefined) u.altK = 1;
-    u.cargo = u.cargo || [];
-    const boardReq = (G.frame - (u.boardReq || -99)) < 3;                       // infantry are walking over to board
+    if (carry) u.cargo = u.cargo || [];
+    const boardReq = carry && (G.frame - (u.boardReq || -99)) < 3;              // infantry are walking over to board
     const stationary = !o || o.type === 'land';
     let wantAlt = 1;
-    if (!(o && o.type === 'pickup')) u.landReqT = 0;
-    if (u.rope && !u.cargo.length) { u.rope = null; u._ropeCX = undefined; }
+    if (carry && !(o && o.type === 'pickup')) u.landReqT = 0;
+    if (carry && u.rope && !u.cargo.length) { u.rope = null; u._ropeCX = undefined; }
     if (o && o.type === 'land') wantAlt = 0;
-    else if (o && o.type === 'pickup' && u.landReqT) wantAlt = 0;
-    else if (!o && u.rope) { wantAlt = .5; u.landed = false; }
+    else if (carry && o && o.type === 'pickup' && u.landReqT) wantAlt = 0;
+    else if (carry && !o && u.rope) { wantAlt = .5; u.landed = false; }
     else if (!o && (u.landed || boardReq)) wantAlt = 0;
-    if (o && o.type !== 'land' && !(o.type === 'pickup' && u.landReqT)) { u.landed = false; if (u.rope) { u.rope = null; u._ropeCX = undefined; } }
+    if (o && o.type !== 'land' && !(carry && o.type === 'pickup' && u.landReqT)) { u.landed = false; if (u.rope) { u.rope = null; u._ropeCX = undefined; } }
     const prev = u.altK;
     // a longer, eased climb / descent: gentle off the ground and gentle into the flare, quicker through the middle (~4 s end to end)
     const eased = .34 + 4.0 * u.altK * (1 - u.altK), spd = (wantAlt > u.altK ? .30 : .26) * eased;
     u.altK = clamp(u.altK + clamp(wantAlt - u.altK, -spd * dt, spd * dt), 0, 1);
     if (u.altK < .75) rotorWash(u, 1 - u.altK, dt);
     if (u.altK <= .001 && wantAlt === 0) { if (!u.landed) { u.landed = true; addShake(u.x, u.y, 2); AU.ui('ok'); } }
-    if (o && o.type === 'land') { if (u.landed) { unloadCargo(u); u.order = null; } return; }
+    if (o && o.type === 'land') { if (u.landed) { if (carry) unloadCargo(u); u.order = null; } return; }
     /* fast-rope: hover low and send the passengers down the ropes one at a time */
-    if (u.rope && !o) {
+    if (carry && u.rope && !o) {
       if (u.rope.fresh) { u.rope.fresh = false; u._ropeCX = undefined; }                                                       // a NEW rope call always re-centres the ring on where the helicopter is now
       if (Math.abs(u.altK - .5) < .08 && u.cargo.length) {
         if (u._ropeCX === undefined) { u._ropeCX = u.x; u._ropeCY = u.y; u._ropeTotal = u.cargo.length; u._ropeIdx = 0; }     // lock the ring's centre + count the whole stick before anyone goes down
@@ -7836,7 +7875,7 @@ function updateAircraft(u, dt) {
       if (!u.cargo.length) { u.rope = null; u._ropeCX = undefined; }
       u.vx *= .9; u.vy *= .9; updateWeapons(u, dt, null); return;
     }
-    if (u.altK < .75 && !(o && (o.type === 'pickup' || o.type === 'dropoff') && u.altK > .3)) {   // too low to fly anywhere: sit (or climb) in place
+    if (u.altK < .75 && !(carry && o && (o.type === 'pickup' || o.type === 'dropoff') && u.altK > .3)) {   // too low to fly anywhere: sit (or climb) in place
       if (u.landed || stationary) { u.vx = u.vy = 0; if (u.landed) return; }
     }
     if (u.landed && !o) return;
@@ -7906,6 +7945,8 @@ function updateJet(u, dt) {
   if (!u.home) u.home = { x: u.x, y: u.y };
   flareTick(u, dt);
   const o = u.order;
+  if (o && o.type === 'land') { fixedWingLand(u, dt); return; }          // straight runway landing, not a hover
+  if (u.landed) { if (!o) { u.vx = u.vy = 0; return; } if (fixedWingTakeoff(u, dt)) return; }   // take-off roll before resuming flight
   const spd = u.spd;
   const rng = u.def.wep.rng * rngMul(u);
   const turnRate = spd / (u.def.turnR || 240);      // limited turn -> wide U-turn
@@ -12021,6 +12062,14 @@ function cardFor() {
       const heli = units.filter(u => u.def.fly && u.def.rotor), on = heli.every(u => u.flash);
       btns.push({ g: '🔦', n: on ? 'Spotlight On' : 'Spotlight', k: 'O', act: on, tip: 'Toggle the helicopter\'s searchlight — a bright pool of light cast straight down onto the ground below to light up the area at night.', fn: () => { const v = !on; for (const u of heli) u.flash = v; AU.ui('ok'); refreshCard(true); } });
     }
+    {
+      // land / take off for any aircraft that isn't a troop carrier (carriers get their cargo-aware button above): helis set straight down, fixed-wing fly a runway approach
+      const airL = units.filter(u => u.def.fly && !u.def.carry);
+      if (airL.length) {
+        const down = airL.every(u => u.landed), fw = airL.some(u => u.def.orbit || u.def.jet);
+        btns.push({ g: down ? '🛫' : '🛬', n: down ? 'Take Off' : 'Land', k: 'K', act: down, tip: fw ? 'Fixed-wing aircraft (AC-130, F-16) fly a long, straight runway approach to land and a take-off roll to launch — they can\'t hover.' : 'Set the helicopter down where it is.', fn: () => { for (const u of airL) { if (down) { u.order = { type: 'move', x: u.x + Math.cos(u.ang || 0) * 60, y: u.y + Math.sin(u.ang || 0) * 60 }; } else { u.order = { type: 'land' }; u.rope = null; } } AU.ui('ok'); refreshCard(true); } });
+      }
+    }
     if (units.some(u => u.inside)) btns.push({ g: '🚪', n: 'Exit', k: 'U', tip: 'Leave the culvert.', fn: () => { for (const u of units) if (u.inside) unloadOne(u); } });
     return btns;
   }
@@ -14706,7 +14755,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         uploadGrassTex();
         GU.uTime.value = tt; GU.uWind.value.set(wdx, wdz, wm);
         let dn = 0;                                                                            // feed the shader the low/landing helicopters so the tufts flow outward from under the rotor
-        for (let ui = 0; ui < G.units.length && dn < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; if (!(u.landed || u.rope || (u.altK !== undefined && u.altK < .28))) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; const near = u.rope ? .55 : 1 - (u.altK === undefined ? 0 : Math.max(0, Math.min(1, u.altK / .28))); GU.uDown.value[dn].set(u.x * K, u.y * K, u.r * 10.2 * K, .7 + near * .6); dn++; }   // ring 300% wider than the rotor
+        for (let ui = 0; ui < G.units.length && dn < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; let fade = 0; if (u.landed) fade = 1; else if (u.rope) fade = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; fade = t * t * (3 - 2 * t); } if (fade <= .01) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; GU.uDown.value[dn].set(u.x * K, u.y * K, u.r * 10.2 * K * (.45 + .55 * fade), 1.3 * fade); dn++; }   // ring 300% wider than the rotor; strength and radius grow in smoothly with descent (no pop)
         GU.uDownN.value = dn;
         updateGrassChunks(gtx0, gtx1, gty0, gty1, per);
       } else if (grassChunks.size) for (const c of grassChunks.values()) { if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false; }   // CPU fallback active: park the GPU chunks
@@ -15817,7 +15866,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b106';
+const BUILD_TAG = 'b107';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
