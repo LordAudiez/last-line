@@ -3431,8 +3431,21 @@ function genWorld() {
       const want = Math.min(nLand, Math.round(landAll * .35));                                                   // 35% of ALL the land becomes field
       const fs = land.map(i => fv[i]).sort((a, b) => a - b), cut = fs[Math.max(0, nLand - want)];
       const field = land.filter(i => fv[i] >= cut);
-      const ws = field.map(i => wv[i]).sort((a, b) => a - b), wcut = ws[Math.min(ws.length - 1, Math.floor(ws.length * (18 / 35)))];   // 18 : 17 split
-      for (const i of field) { MAP.f[i] = wv[i] < wcut ? 1 : 2; MAP.t[i] = T_GRASS; }
+      for (const i of field) { MAP.f[i] = 1; MAP.t[i] = T_GRASS; }
+      // every field is a PAIR: flood-fill each blob and divide it across its long axis (with a wavy seam) into a green
+      // meadow on one side and a white silvergrass field on the other — 18 : 17 — so wherever you find one, the other is beside it
+      const seen = new Uint8Array(N), stack = [];
+      for (const i0 of field) {
+        if (seen[i0]) continue; const comp = []; stack.length = 0; stack.push(i0); seen[i0] = 1;
+        while (stack.length) { const i = stack.pop(); comp.push(i); const x = i % MW, y = (i / MW) | 0;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue; const j = ny * MW + nx; if (!seen[j] && MAP.f[j]) { seen[j] = 1; stack.push(j); } } }
+        if (comp.length < 40) continue;                                                                       // a sliver stays green
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const i of comp) { const x = i % MW, y = (i / MW) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        const alongX = (x1 - x0) >= (y1 - y0);
+        const key = i => { const x = i % MW, y = (i / MW) | 0; return (alongX ? x : y) + (vnoise((x + S) / 9 + 77, (y + S) / 9 + 31) - .5) * 9; };   // a wavy dividing line
+        const ks = comp.map(key).sort((a, b) => a - b), split = ks[Math.min(ks.length - 1, Math.floor(ks.length * (18 / 35)))];
+        for (const i of comp) if (key(i) >= split) MAP.f[i] = 2;
+      }
     }
   }
 
@@ -3458,6 +3471,12 @@ function genWorld() {
   if (typeof placePOIs === 'function') placePOIs();
 }
 
+/* how much green meadow and white silvergrass lies within ~34 tiles of a spot (sampled every 4th tile) */
+function fieldsNear(tx, ty) {
+  let g = 0, w = 0; if (!MAP.f) return { g, w };
+  for (let dy = -30; dy <= 30; dy += 4) for (let dx = -34; dx <= 34; dx += 4) { const x = tx + dx, y = ty + dy; if (x < 0 || y < 0 || x >= MW || y >= MH) continue; const f = MAP.f[y * MW + x]; if (f === 1) g++; else if (f === 2) w++; }
+  return { g, w };
+}
 function chooseBaseSite() {
   let best = null, bestScore = -1e9;
   for (let a = 0; a < 900; a++) {
@@ -3470,9 +3489,10 @@ function chooseBaseSite() {
       if (!IMPASSABLE(MAP.t[i])) land++;
       if (Math.abs(MAP.h[i] - h0) < 14) flat++;
     }
-    // prefer flat, dry ground that still sits near the road
+    // prefer flat, dry ground that still sits near the road — and beside the open fields (both kinds within reach)
     const near = 1 - Math.min(1, Math.abs(ty - MAP.roadY[tx]) / 40);
-    const score = land * 2 + flat * 2 + near * 40;
+    const fn = fieldsNear(tx, ty);
+    const score = land * 2 + flat * 2 + near * 40 + fn.g * 1.4 + fn.w * 1.4 + (fn.g && fn.w ? 60 : 0);
     if (score > bestScore) { bestScore = score; best = [tx, ty, h0]; }
   }
   const [tx, ty, h0] = best || [MW >> 1, MH >> 1, 130];
@@ -3502,7 +3522,8 @@ function findSpawn(fx, fy) {
     let land = 0, flat = 0;
     for (let dy = -12; dy <= 12; dy += 3) for (let dx = -14; dx <= 14; dx += 3) { const i = (ty + dy) * MW + (tx + dx); if (i < 0 || i >= MW * MH) continue; if (!IMPASSABLE(MAP.t[i])) land++; if (Math.abs(MAP.h[i] - h0) < 16) flat++; }
     const near = 1 - Math.min(1, Math.hypot(tx - cx, ty - cy) / 90);
-    const score = land * 2 + flat * 2 + near * 30;
+    const fn = fieldsNear(tx, ty);
+    const score = land * 2 + flat * 2 + near * 30 + fn.g * 1.2 + fn.w * 1.2 + (fn.g && fn.w ? 40 : 0);
     if (score > bestScore) { bestScore = score; best = [tx, ty, h0]; }
   }
   return best || [cx, cy, MAP.h[cy * MW + cx]];
@@ -3620,6 +3641,8 @@ function tileBase(tx, ty) {
   }
   const tone = (.90 + vnoise(tx / 7, ty / 7) * .17 + vnoise(tx / 2.3, ty / 2.3) * .06) * sh;
   let r = base[0], gg = base[1], b = base[2];
+  if (MAP.f && MAP.f[i] === 2) { r = 150; gg = 146; b = 96; }                            // straw-pale ground under the silvergrass
+  else if (MAP.f && MAP.f[i] === 1) { r = 96; gg = 118; b = 58; }                        // a lusher green under the meadow
   if (t === T_GRASS || t === T_FOREST || t === T_SWAMP) {
     const pv = vnoise(tx / 13 + 50, ty / 13 + 30), pv2 = vnoise(tx / 5 + 9, ty / 5 + 4);
     const dry = clamp((pv - .45) * 2.2 + (pv2 - .5) * .5, 0, 1), lush = clamp((.42 - pv) * 2.4, 0, 1);
@@ -10872,7 +10895,7 @@ function makeMiniBase() {
   const g = c.getContext('2d');
   const img = g.createImageData(MW, MH), d = img.data;
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-    const i = tileIdx(x, y), col = TERR[MAP.t[i]];
+    const i = tileIdx(x, y), f = MAP.f ? MAP.f[i] : 0, col = f === 2 ? [222, 214, 172] : f === 1 ? [118, 160, 66] : TERR[MAP.t[i]];   // fields read on the minimap: pale straw = silvergrass, bright green = meadow
     // keep the relief legible on the minimap too
     let k = 1;
     if (x > 0 && y > 0 && x < MW - 1 && y < MH - 1)
@@ -15645,7 +15668,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b98';
+const BUILD_TAG = 'b99';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
