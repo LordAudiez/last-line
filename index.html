@@ -6383,7 +6383,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0]); }   // [.. , stance]
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0)]); }   // [.. , stance, altK, air-flags] so ally helicopters show the same landing/downwash
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B };
   if (NP.host) {
@@ -6416,6 +6416,7 @@ function reconcilePeer(pid, snap) {
     const id = a[0]; seenU.add(id); let g = pg.u.get(id);
     if (!g || g.dead) { g = makeGhostUnit(a[1], a[2], a[3], pIdx); if (!g) continue; g.rid = id; pg.u.set(id, g); }
     g.tx2 = a[2]; g.ty2 = a[3]; g.tang2 = (a[4] || 0) / 100; g.hp = a[5]; if (g.hp > g.maxHp) g.maxHp = g.hp; g.inside = a[6] ? (g.inside || {}) : null; g.pose = a[7] === 2 ? 'prone' : a[7] === 1 ? 'crouch' : 'stand';   // their stance, so it shows on my screen
+    if (a[8] !== undefined) { g.altK = a[8] / 100; g.landed = !!(a[9] & 1); g.rope = (a[9] & 2) ? (g.rope || { t: 0 }) : null; }   // ally aircraft altitude / landing, so their downwash shows on my screen
   }
   for (const [id, g] of pg.u) { if (!seenU.has(id)) { g.dead = true; pg.u.delete(id); } }
 
@@ -6518,6 +6519,7 @@ function npLerp(u, dt) {
   let da = (u.tang2 || 0) - (u.ang || 0); while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
   u.ang = (u.ang || 0) + da * Math.min(1, dt * 10); u.tang = u.ang;
   if (d > 1.5) { u.tread = (u.tread || 0) + dt * 6; u.step = (u.step || 0) + dt * 9; u.bob = (u.bob || 0) + dt * 6; }
+  if (typeof groundFx === 'function') groundFx(u, dt);   // ally ghosts leave the same tuft trails & rotor downwash on my screen, in real time
 }
 function npGhostZed(z, dt) {
   if (z.tx2 != null) {
@@ -7722,54 +7724,52 @@ function updateUnits(dt) {
       G.lights.push({ x: hx, y: hy, r: 130, c: [255, 232, 176], i: 1.05, beam: u.ang });     // amber floodlight tint, aimed along the beam
     }
     if (solidAt(u.x, u.y, true)) unstick(u, true);
-    // rotor downwash: fades in smoothly as the helicopter descends (no sudden pop) — full on the deck, ramping from half-height, gentle while roping
-    let wash = 0;
-    if (u.def.fly && u.def.rotor) { if (u.landed) wash = 1; else if (u.rope) wash = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; wash = t * t * (3 - 2 * t); } }
-    if (wash > .02) {
-      const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
-      if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        grassStamp(u.x, u.y, u.r * (1.2 + 3.3 * wash));                        // the matted circle grows in as it settles, shrinks as it climbs
-        u._wash = (u._wash || 0) - dt * (.55 + wash);                          // the ring beats faster the lower it gets
-        if (u._wash <= 0) { u._wash = .14; part('ring', u.x, u.y, 0, 0, 1.0, u.r * 1.2, 'rgba(214,206,150,' + (.5 * wash).toFixed(2) + ')', { grow: u.r * (3 + 7 * wash) });
-          // twin counter-rotating tip vortices: dust and torn grass spiral around two centres either side of the fuselage — intensity scales with the wash
-          const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.35, nP = Math.max(1, Math.round(4 * wash));
-          for (let side = -1; side <= 1; side += 2) {
-            const cvx = u.x + ox * off * side, cvy = u.y + oy * off * side, swirl = side;
-            for (let k = 0; k < nP && G.parts.length < PMAX * .85; k++) {
-              const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.7) * (.5 + .5 * wash), rx = Math.cos(an), ry = Math.sin(an);
-              const tx = -ry * swirl, ty = rx * swirl, sp = 40 + rnd(90, 190) * wash, out = rnd(20, 55);           // tangential swirl + a little outward drift, both fading with height
-              part(Math.random() < .5 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.5, 1.1), rnd(2.6, 6), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 7), vz: rnd(14, 46), vr: rnd(-16, 16) * swirl, grow: 10, g: 120, drag: .95, wind: 1 });
-            }
+    groundFx(u, dt);                                                          // rotor downwash + grass trample + water ripples (shared with ghost allies so everyone sees the same)
+  }
+}
+/* the ground effects a unit leaves — rotor downwash (wash ring + tuft flatten + twin vortices), grass trample trail and
+   water ripples. Runs for LOCAL units in updateUnits AND for remote ally ghosts in npLerp, so every player sees the same
+   helicopter downwash and tuft trails in real time. */
+function groundFx(u, dt) {
+  if (!u.def) return;
+  let wash = 0;
+  if (u.def.fly && u.def.rotor) { if (u.landed) wash = 1; else if (u.rope) wash = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; wash = t * t * (3 - 2 * t); } }
+  if (wash > .02) {
+    const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
+    if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
+      grassStamp(u.x, u.y, u.r * (1.2 + 3.3 * wash));
+      u._wash = (u._wash || 0) - dt * (.55 + wash);
+      if (u._wash <= 0) { u._wash = .14; part('ring', u.x, u.y, 0, 0, 1.0, u.r * 1.2, 'rgba(214,206,150,' + (.5 * wash).toFixed(2) + ')', { grow: u.r * (3 + 7 * wash) });
+        const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.35, nP = Math.max(1, Math.round(4 * wash));
+        for (let side = -1; side <= 1; side += 2) {
+          const cvx = u.x + ox * off * side, cvy = u.y + oy * off * side, swirl = side;
+          for (let k = 0; k < nP && G.parts.length < PMAX * .85; k++) {
+            const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.7) * (.5 + .5 * wash), rx = Math.cos(an), ry = Math.sin(an);
+            const tx = -ry * swirl, ty = rx * swirl, sp = 40 + rnd(90, 190) * wash, out = rnd(20, 55);
+            part(Math.random() < .5 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.5, 1.1), rnd(2.6, 6), Math.random() < .5 ? '#6a8c3c' : 'rgba(206,196,150,1)', { z: rnd(0, 7), vz: rnd(14, 46), vr: rnd(-16, 16) * swirl, grow: 10, g: 120, drag: .95, wind: 1 });
           }
         }
       }
-      else if (WATER(gt) && !u.landed) {                                       // over water the downwash blows a spreading ring of spray and ripples
-        u._wash = (u._wash || 0) - dt;
-        if (u._wash <= 0) { u._wash = .16; part('ring', u.x, u.y, 0, 0, 1.1, u.r * .6, 'rgba(210,235,245,.55)', { grow: u.r * 2.2 }); for (let k = 0; k < 4; k++) { const an = rnd(TAU), sp = rnd(40, 120); part('dust', u.x + Math.cos(an) * u.r * .5, u.y + Math.sin(an) * u.r * .5, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.5, .9), rnd(4, 7), 'rgba(220,236,244,1)', { z: rnd(0, 4), vz: rnd(8, 26), grow: 12, drag: .9, white: 1 }); } }
-      }
     }
-    // wading / driving through water: ripple rings spread from every step
-    if (!u.def.fly && Math.hypot(u.vx || 0, u.vy || 0) > 3) { const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt === T_SWAMP || WATER(gt)) { u._rip = (u._rip || 0) - dt; if (u._rip <= 0) { u._rip = u.def.veh ? .12 : .28; part('ring', u.x, u.y, 0, 0, .9, u.r * .5, 'rgba(200,228,240,.5)', { grow: u.r * 1.6 }); } } }
-    // flatten grass underfoot; vehicles throw a spray of torn grass out behind them
-    if (!u.def.fly && (G.mp || (u.x > CAM.x - 120 && u.x < CAM.x + CAM.vw + 120 && u.y > CAM.y - 120 && u.y < CAM.y + CAM.vh + 160))) {
-      const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
-      if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r); }   // a vehicle mats a trail its own full width
-        else grassStamp(u.x, u.y, u.r * .5);   // a man leaves a narrow trail, about half his own width
-        if (u.def.veh) {
-          const moved = Math.hypot(u.x - (u._lx != null ? u._lx : u.x), u.y - (u._ly != null ? u._ly : u.y));
-          u._lx = u.x; u._ly = u.y;
-          // only while actually rolling — a small flick of grass from a random
-          // point along the rear axle line, not a burst from the centre
-          if (moved > .5 && G.parts.length < PMAX * .8 && Math.random() < .45) {
-            const back = u.ang + Math.PI, perp = u.ang + Math.PI / 2;
-            const off = rnd(-1, 1) * u.r * .72;
-            const bx = u.x + Math.cos(back) * u.r * .8 + Math.cos(perp) * off;
-            const by = u.y + Math.sin(back) * u.r * .8 + Math.sin(perp) * off;
-            const a = back + rnd(-.35, .35), sp = rnd(26, 62);
-            part('leaf', bx, by, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(.4, .8), rnd(1.0, 1.7),
-              Math.random() < .5 ? '#5f8035' : '#3c5730', { z: rnd(1, 5), vz: rnd(18, 48), vr: rnd(-9, 9), g: 230, drag: .95 });
-          }
+    else if (WATER(gt) && !u.landed) {
+      u._wash = (u._wash || 0) - dt;
+      if (u._wash <= 0) { u._wash = .16; part('ring', u.x, u.y, 0, 0, 1.1, u.r * .6, 'rgba(210,235,245,.55)', { grow: u.r * 2.2 }); for (let k = 0; k < 4; k++) { const an = rnd(TAU), sp = rnd(40, 120); part('dust', u.x + Math.cos(an) * u.r * .5, u.y + Math.sin(an) * u.r * .5, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.5, .9), rnd(4, 7), 'rgba(220,236,244,1)', { z: rnd(0, 4), vz: rnd(8, 26), grow: 12, drag: .9, white: 1 }); } }
+    }
+  }
+  if (!u.def.fly && Math.hypot(u.vx || 0, u.vy || 0) > 3) { const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt === T_SWAMP || WATER(gt)) { u._rip = (u._rip || 0) - dt; if (u._rip <= 0) { u._rip = u.def.veh ? .12 : .28; part('ring', u.x, u.y, 0, 0, .9, u.r * .5, 'rgba(200,228,240,.5)', { grow: u.r * 1.6 }); } } }
+  if (!u.def.fly && (G.mp || (u.x > CAM.x - 120 && u.x < CAM.x + CAM.vw + 120 && u.y > CAM.y - 120 && u.y < CAM.y + CAM.vh + 160))) {
+    const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
+    if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
+      if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r); }
+      else grassStamp(u.x, u.y, u.r * .5);
+      if (u.def.veh) {
+        const moved = Math.hypot(u.x - (u._lx != null ? u._lx : u.x), u.y - (u._ly != null ? u._ly : u.y));
+        u._lx = u.x; u._ly = u.y;
+        if (moved > .5 && G.parts.length < PMAX * .8 && Math.random() < .45) {
+          const back = u.ang + Math.PI, perp = u.ang + Math.PI / 2, off = rnd(-1, 1) * u.r * .72;
+          const bx = u.x + Math.cos(back) * u.r * .8 + Math.cos(perp) * off, by = u.y + Math.sin(back) * u.r * .8 + Math.sin(perp) * off;
+          const a = back + rnd(-.35, .35), sp = rnd(26, 62);
+          part('leaf', bx, by, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(.4, .8), rnd(1.0, 1.7), Math.random() < .5 ? '#5f8035' : '#3c5730', { z: rnd(1, 5), vz: rnd(18, 48), vr: rnd(-9, 9), g: 230, drag: .95 });
         }
       }
     }
@@ -11926,9 +11926,16 @@ function cardFor() {
     btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Clear the marked spot.', fn: cancelPending });
     return btns;
   }
+  // deployment phase: the map is free to drag until you ARM placement with this toggle (so mobile can look around first)
+  if (G.deploy && G.deploy.active && !(G.players[G.me] && G.players[G.me].hq)) {
+    btns.title = 'deploy';
+    if (UI.place === 'hq') btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Stop placing — drag to look around the map.', fn: () => { UI.place = null; refreshCard(true); } });
+    else btns.push({ g: '🚩', n: 'Place HQ', k: 'B', cls: 'blink', tip: 'Arm Command Post placement, then tap the map to choose the spot. Drag to look around the map first.', fn: () => { UI.place = 'hq'; AU.ui('ok'); refreshCard(true); } });
+    return btns;
+  }
   if (UI.place) {
     btns.title = 'placing · ' + (BDEF[UI.place] ? BDEF[UI.place].name : 'Command Post');
-    btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Stop placing.', fn: () => { if (UI.deploy) return; UI.place = null; refreshCard(true); } });
+    btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Stop placing.', fn: () => { UI.place = null; refreshCard(true); } });
     if (UI.queue.length) {
       btns.push({ g: '✔', n: 'Confirm ' + UI.queue.length, k: '⏎', tip: 'Commit every queued blueprint and start building.', fn: commitQueue });
       btns.push({ g: '🗑', n: 'Discard', k: 'Del', tip: 'Throw away the queued blueprints.', fn: cancelQueue });
@@ -12432,7 +12439,7 @@ cv.addEventListener('mousedown', e => {
     if (UI.clearMode) { UI.clearMode = false; refreshCard(true); AU.ui('no'); return; }
     if (UI.pending) { cancelPending(); return; }
     if (UI.queue.length) { cancelQueue(); return; }
-    if (UI.place && !UI.deploy) { UI.place = null; UI.tab = null; refreshCard(true); return; }
+    if (UI.place) { UI.place = null; UI.tab = null; refreshCard(true); return; }   // un-arm placement (deploy stays; the Place HQ button re-arms)
     if (UI.attackMove) { UI.attackMove = false; refreshCard(true); return; }
     const now = performance.now();
     const dbl = (now - (IN.lastRC || 0) < 350) && Math.hypot(x - (IN.lastRCx || 0), y - (IN.lastRCy || 0)) < 30;
@@ -12525,7 +12532,7 @@ window.addEventListener('keydown', e => {
   if (!G.started) return;
 
   if (e.code === 'Space') { focusHQ(); e.preventDefault(); return; }
-  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.pending = null; if (!UI.deploy) UI.place = null; UI.tab = null; UI.attackMove = false; refreshConfirm(); refreshCard(true); return; }
+  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.pending = null; UI.place = null; UI.tab = null; UI.attackMove = false; refreshConfirm(); refreshCard(true); return; }
   if (k === 'enter') { if (UI.pending) commitPending(); else commitQueue(); return; }
   if (k === 'p') { if (G.mp) { alertMsg('No pause in multiplayer', 'info'); return; } setSpeed(G.speed === 0 ? 1 : 0); alertMsg(G.speed === 0 ? 'PAUSED' : 'RESUMED', 'info'); return; }
   const bSel = G.sel.some(x => x.kind === 'build' && !x.dead);
@@ -15387,9 +15394,9 @@ function newGame(opts) {
     rebuildBGrid(); refreshCap();
     CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
     centerOn(BASE_X, BASE_Y);
-    UI.place = 'hq'; UI.tab = null; UI.deploy = true;
+    UI.place = null; UI.pending = null; UI.tab = null; UI.deploy = true;   // NOT armed yet — drag to look around; press "Place HQ" to arm placement
     refreshCard(true);
-    alertMsg('Deploy your Command Post — tap the map to place it, then press ✓ Confirm.' + (G.mp ? ' Your allies’ cursors show live, so you can settle in together.' : ''), 'good');
+    alertMsg('Deploy your Command Post — drag to look around, press 🚩 Place HQ, then tap the spot and ✓ Confirm.' + (G.mp ? ' Allies’ cursors show live.' : ''), 'good');
     return;
   }
 
@@ -16058,7 +16065,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b114';
+const BUILD_TAG = 'b115';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
