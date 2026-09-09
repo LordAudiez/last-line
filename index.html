@@ -97,6 +97,21 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 .btn:hover{border-color:#8dffbe;background:linear-gradient(180deg,#1f3830,#12201a);transform:translateY(-1px)}
 .btn.dis{opacity:.36;cursor:not-allowed;transform:none;border-color:#26332c}
 .btn.act{border-color:#ffbe63;box-shadow:0 0 14px rgba(255,190,99,.35)}
+/* the construction toggle pulses so it's easy to spot */
+.btn.blink{animation:btnBlink 1.15s ease-in-out infinite;border-color:#8dffbe}
+@keyframes btnBlink{0%,100%{box-shadow:0 0 4px rgba(141,255,190,.25);border-color:#3f6d55}50%{box-shadow:0 0 18px rgba(141,255,190,.8);border-color:#8dffbe;background:linear-gradient(180deg,#1f3830,#14241d)}}
+/* the three construction categories each get their own colour-coded look, so their type reads at a glance */
+.btn.cat{border-width:2px}
+.btn.cat .n{font-weight:700;letter-spacing:.02em}
+.btn.cat-unit{border-color:#6fb0ff;background:linear-gradient(180deg,rgba(60,110,170,.30),rgba(20,34,50,.35))}
+.btn.cat-unit:hover{border-color:#a9d2ff;box-shadow:0 0 14px rgba(111,176,255,.4)}
+.btn.cat-unit .g{filter:drop-shadow(0 0 6px rgba(111,176,255,.6))}
+.btn.cat-infra{border-color:#ffc861;background:linear-gradient(180deg,rgba(150,110,40,.30),rgba(46,34,16,.35))}
+.btn.cat-infra:hover{border-color:#ffdd9a;box-shadow:0 0 14px rgba(255,200,97,.4)}
+.btn.cat-infra .g{filter:drop-shadow(0 0 6px rgba(255,200,97,.6))}
+.btn.cat-def{border-color:#ff7d7d;background:linear-gradient(180deg,rgba(150,50,50,.30),rgba(46,18,18,.35))}
+.btn.cat-def:hover{border-color:#ffb0b0;box-shadow:0 0 14px rgba(255,125,125,.4)}
+.btn.cat-def .g{filter:drop-shadow(0 0 6px rgba(255,125,125,.6))}
 .btn .g{font-size:23px;line-height:1}
 .btn .g .uico,.port .uico{display:block;width:30px;height:30px;overflow:visible}
 /* ---- UI polish: smoother motion on the command card + panels ---- */
@@ -3100,7 +3115,7 @@ const BDEF = {
     desc: 'Trains infantry, supply Support teams, combat Medics, marksmen, snipers and mortar crews. Right-click the map to set a rally point.'
   },
   armory: {
-    name: 'Research Lab', key: 'Y', g: '🔬', cat: 'unit', w: 7, h: 7, mw: 3, mh: 3, hgt: 62, hp: 850, armor: 2, cost: { s: 180, c: 80 }, time: 18,
+    name: 'Research Lab', key: 'Y', g: '🔬', cat: 'infra', w: 7, h: 7, mw: 3, mh: 3, hgt: 62, hp: 850, armor: 2, cost: { s: 180, c: 80 }, time: 18,
     col: ['#3f4a50', '#2c343a'], roof: '#4f5d64', light: 140, research: true,
     desc: 'Research lab with a live test range: unlocks permanent upgrades for weapons, armour, optics and traps.'
   },
@@ -3152,7 +3167,7 @@ const BDEF = {
     desc: 'Rotary and fixed-wing airpower: Little Birds, the Blackhawk transport, the Apache, the AC-130 gunship and the F-16 strike fighter. Requires a Vehicle Bay.'
   },
   flood: {
-    name: 'Floodlight', key: 'L', g: '💡', cat: 'infra', w: 1, h: 1, hgt: 10, hp: 220, armor: 0, cost: { s: 40, c: 0 }, time: 6,
+    name: 'Floodlight', key: 'L', g: '💡', cat: 'def', w: 1, h: 1, hgt: 10, hp: 220, armor: 0, cost: { s: 40, c: 0 }, time: 6,
     col: ['#4a4a3c', '#33332a'], roof: '#5c5c48', light: 330, lamp: true,
     desc: 'Pushes back the night. Units fight noticeably better inside the light.'
   },
@@ -3558,6 +3573,19 @@ function ensureSpawnSurroundings(tx, ty) {
   }
 }
 /* flatten + pave a compound so the opening minutes are never blocked */
+/* a player's Command Post keeps its grassy field — no paved bare pad. The immediate footprint is gently levelled so the
+   building sits flat, the trees & bushes in the compound are felled (the tufts stay), and water underfoot turns to dirt. */
+function settleHQ(tx, ty) {
+  const h0 = MAP.h[ty * MW + tx];
+  for (let dy = -6; dy <= 6; dy++) for (let dx = -7; dx <= 7; dx++) {
+    const x = tx + dx, y = ty + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
+    const i = y * MW + x, d = Math.max(Math.abs(dx) / 7, Math.abs(dy) / 6);
+    MAP.h[i] = clamp(lerp(h0, MAP.h[i], clamp((d - .35) / .65, 0, 1)), SHORE + 4, MOUNT - 20) | 0;   // flatten only the footprint, feathered at the edge
+    if (IMPASSABLE(MAP.t[i])) MAP.t[i] = T_DIRT;                                                      // no puddle under the HQ, but grass elsewhere is kept
+  }
+  if (typeof clearProps === 'function') clearProps(tx * TS, ty * TS, 18 * TS);                        // fell the trees & bushes around the base — the grass tufts remain
+  MAP._grassDirty = true;
+}
 function levelCompound(tx, ty, h0) {
   for (let dy = -20; dy <= 20; dy++) for (let dx = -26; dx <= 26; dx++) {
     const x = tx + dx, y = ty + dy;
@@ -11278,8 +11306,8 @@ window.applySmokeOp = applySmokeOp;
 /* ---------------- floating placement Cancel/Confirm (mobile: the rest of the HUD is hidden while placing) ---------------- */
 (function () {
   const cancel = $('pbCancel'), confirm = $('pbConfirm');
-  const doCancel = () => { if (UI.moving && typeof cancelRelocate === 'function') cancelRelocate(); if (UI.spawnDrop && typeof cancelSpawnDrop === 'function') cancelSpawnDrop(); UI.place = null; if (UI.queue) UI.queue.length = 0; UI.spawnPlace = 0; refreshCard(true); AU.ui && AU.ui('no'); };
-  const doConfirm = () => { if (UI.queue && UI.queue.length && typeof commitQueue === 'function') commitQueue(); else { UI.place = null; refreshCard(true); } };
+  const doCancel = () => { if (UI.moving && typeof cancelRelocate === 'function') cancelRelocate(); if (UI.spawnDrop && typeof cancelSpawnDrop === 'function') cancelSpawnDrop(); UI.pending = null; UI.place = null; if (UI.queue) UI.queue.length = 0; UI.spawnPlace = 0; if (typeof refreshConfirm === 'function') refreshConfirm(); refreshCard(true); AU.ui && AU.ui('no'); };
+  const doConfirm = () => { if (UI.pending && typeof commitPending === 'function') commitPending(); else if (UI.queue && UI.queue.length && typeof commitQueue === 'function') commitQueue(); else { UI.place = null; refreshCard(true); } };
   const wire = (el, fn) => { if (!el) return; el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false }); el.addEventListener('click', e => { e.stopPropagation(); fn(); }); };
   wire(cancel, doCancel); wire(confirm, doConfirm);
 })();
@@ -11288,8 +11316,8 @@ function nudgeSpeed(dir) {
   let i = SPEEDS.indexOf(G.speed); if (i < 0) i = 2;
   setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]);
 }
-$('qok').onclick = e => { e.stopPropagation(); commitQueue(); };
-$('qno').onclick = e => { e.stopPropagation(); cancelQueue(); };
+$('qok').onclick = e => { e.stopPropagation(); if (UI.pending) commitPending(); else commitQueue(); };
+$('qno').onclick = e => { e.stopPropagation(); if (UI.pending) cancelPending(); else cancelQueue(); };
 
 
 /* ============================ DEVELOPER MODE ============================
@@ -11769,6 +11797,12 @@ function queueCost() {
   return { s: s2, c: c2 };
 }
 function refreshConfirm() {
+  if (UI.pending) {                                            // a single tapped-down blueprint waiting on Confirm
+    const P = UI.pending; elConfirm.style.display = 'flex'; $('qn').textContent = '1';
+    if (P.t === 'hq') { $('qc').textContent = 'Command Post — tap to move, ✓ to build'; $('qok').classList.remove('no'); }
+    else { const d = BDEF[P.t], cost = (d.cost && (d.cost.s ? d.cost.s + ' supply' : '') + (d.cost.s && d.cost.c ? ' + ' : '') + (d.cost.c ? d.cost.c + ' scrap' : '')) || 'free'; $('qc').textContent = d.name + ' · ' + cost; $('qok').classList.toggle('no', !(canPlace(P.t, P.tx, P.ty) && affordable(d.cost))); }
+    return;
+  }
   if (!UI.queue.length) { elConfirm.style.display = 'none'; return; }
   const c = queueCost();
   elConfirm.style.display = 'flex';
@@ -11797,9 +11831,10 @@ function cancelQueue() {
 
 function tryPlace(wx, wy) {
   const t = UI.place; if (!t) return;
-  if (t === 'hq') { if (typeof deployPlaceHQ === 'function') deployPlaceHQ(wx, wy); return; }   // deployment phase: site the Command Post
+  const d = BDEF[t] || (t === 'hq' ? BDEF.hq : null);
+  // deployment phase / any building: FIRST TAP positions a ghost, THEN Confirm (✓) commits it — the same on desktop and mobile
+  if (t === 'hq') { const gx = Math.floor(wx / TS - (d.w - 1) / 2), gy = Math.floor(wy / TS - (d.h - 1) / 2); UI.pending = { t: 'hq', tx: gx, ty: gy }; AU.ui('ok'); refreshConfirm(); refreshCard(true); return; }
   if (t === 'camp') { if (typeof makeCamp === 'function') makeCamp(wx, wy); UI.place = null; refreshCard(true); return; }
-  const d = BDEF[t];
   const tx = Math.floor(wx / TS - (d.w - 1) / 2), ty = Math.floor(wy / TS - (d.h - 1) / 2);
 
   /* Walls / fences / gates: dragging lays out an unpaid blueprint row first. The row snaps to a straight
@@ -11819,22 +11854,30 @@ function tryPlace(wx, wy) {
     refreshConfirm(); refreshCard(true);
     return;
   }
-  if (!canPlace(t, tx, ty)) { AU.ui('no'); return; }
-
-  /* Shift-place lays an unpaid blueprint — nothing is built or charged
-     until the player hits Confirm. */
+  /* Shift-place lays an unpaid blueprint straight into the queue — nothing is built or charged until Confirm. */
   if (IN.keys.shift) {
-    UI.queue.push({ t, tx, ty });
-    AU.ui('ok');
+    if (canPlace(t, tx, ty)) { UI.queue.push({ t, tx, ty }); AU.ui('ok'); } else AU.ui('no');
     refreshConfirm(); refreshCard(true);
     return;
   }
-  if (!affordable(d.cost)) { alertMsg('Not enough ' + (G.sup < (d.cost.s || 0) ? 'supply' : 'scrap'), ''); AU.ui('no'); return; }
-  startBuild(t, tx, ty);
-  AU.ui('build');
-  if (!d.wall && !d.trap) UI.place = null;
-  refreshCard(true);
+  // otherwise: set / move the single pending blueprint and show the Confirm bar. Tapping again repositions it.
+  UI.pending = { t, tx, ty };
+  AU.ui(canPlace(t, tx, ty) && affordable(d.cost) ? 'ok' : 'no');
+  refreshConfirm(); refreshCard(true);
 }
+/* commit the pending single placement (a building, or the deploy-phase Command Post) */
+function commitPending() {
+  const P = UI.pending; if (!P) return;
+  if (P.t === 'hq') { const d = BDEF.hq; UI.pending = null; if (typeof deployPlaceHQ === 'function') deployPlaceHQ((P.tx + (d.w - 1) / 2) * TS, (P.ty + (d.h - 1) / 2) * TS); refreshConfirm(); return; }
+  const d = BDEF[P.t];
+  if (!canPlace(P.t, P.tx, P.ty)) { AU.ui('no'); alertMsg('Can’t build there — move it to clear ground.', ''); return; }
+  if (!affordable(d.cost)) { alertMsg('Not enough ' + (G.sup < (d.cost.s || 0) ? 'supply' : 'scrap'), ''); AU.ui('no'); return; }
+  startBuild(P.t, P.tx, P.ty); AU.ui('build');
+  UI.pending = null;
+  if (!(d.wall || d.trap)) UI.place = null;                 // walls/traps stay armed to place more; everything else finishes
+  refreshConfirm(); refreshCard(true);
+}
+function cancelPending() { if (!UI.pending) return; UI.pending = null; AU.ui('no'); refreshConfirm(); refreshCard(true); }
 
 /* ---------------- relocation ---------------- */
 function beginRelocate(b) {
@@ -11876,9 +11919,16 @@ function cardFor() {
     btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Leave the structure where it is.', fn: cancelRelocate });
     return btns;
   }
+  if (UI.pending) {
+    const nm = UI.pending.t === 'hq' ? 'Command Post' : BDEF[UI.pending.t].name;
+    btns.title = 'place · ' + nm;
+    btns.push({ g: '✔', n: 'Confirm', k: '⏎', tip: 'Build ' + nm + ' at the marked spot. (Tap the map again to move it.)', fn: commitPending });
+    btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Clear the marked spot.', fn: cancelPending });
+    return btns;
+  }
   if (UI.place) {
-    btns.title = 'placing · ' + BDEF[UI.place].name;
-    btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Stop placing.', fn: () => { UI.place = null; refreshCard(true); } });
+    btns.title = 'placing · ' + (BDEF[UI.place] ? BDEF[UI.place].name : 'Command Post');
+    btns.push({ g: '✖', n: 'Cancel', k: 'Esc', tip: 'Stop placing.', fn: () => { if (UI.deploy) return; UI.place = null; refreshCard(true); } });
     if (UI.queue.length) {
       btns.push({ g: '✔', n: 'Confirm ' + UI.queue.length, k: '⏎', tip: 'Commit every queued blueprint and start building.', fn: commitQueue });
       btns.push({ g: '🗑', n: 'Discard', k: 'Del', tip: 'Throw away the queued blueprints.', fn: cancelQueue });
@@ -11998,12 +12048,12 @@ function cardFor() {
     if (UI.tab === 'build' && hasEng) {
       // construction is split by purpose: pick a category first, then the structure
       const CATS = [
-        { id: 'unit', n: 'Unit Buildings', k: '1', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Research Lab, Vehicle Bay, Airbase.' },
-        { id: 'infra', n: 'Infrastructure', k: '2', g: '🏭', tip: 'Economy and utilities: Scrap Refinery, Scrap Factory, Supply Warehouse, Floodlights.' },
-        { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, walls, fences, gates, traps and the Culvert bunker.' }];
+        { id: 'unit', n: 'Unit Buildings', k: '1', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Vehicle Bay, Airbase.' },
+        { id: 'infra', n: 'Infrastructure', k: '2', g: '🏭', tip: 'Economy and tech: Research Lab, Scrap Refinery, Scrap Factory, Supply Warehouse.' },
+        { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, Floodlights, walls, fences, gates, traps and the Culvert bunker.' }];
       if (!UI.bcat) {
         btns.title = 'construction';
-        for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, fn: () => { UI.bcat = c.id; AU.ui('ok'); refreshCard(true); } });
+        for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, cls: 'cat cat-' + c.id, fn: () => { UI.bcat = c.id; AU.ui('ok'); refreshCard(true); } });
         btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.tab = null; UI.place = null; refreshCard(true); } });
         return btns;
       }
@@ -12021,7 +12071,7 @@ function cardFor() {
       return btns;
     }
     btns.title = units.length > 1 ? units.length + ' units selected' : units[0].def.name;
-    if (hasEng) btns.push({ g: '🏗️', n: 'Build', k: 'B', tip: 'Open the construction menu.', fn: () => { UI.tab = 'build'; refreshCard(true); } });
+    if (hasEng) btns.push({ g: '🏗️', n: 'Build', k: 'B', tip: 'Open the construction menu.', cls: 'blink', fn: () => { UI.tab = 'build'; refreshCard(true); } });
     if (hasEng) {
       btns.push({ g: '🪓', n: UI.clearMode ? 'Clearing…' : 'Clear Terrain', k: 'X', act: !!UI.clearMode, tip: 'Paint the ground to permanently clear trees and keep the area from growing back. Drag to paint; use Brush to resize; right-click to stop.', fn: () => { UI.clearMode = !UI.clearMode; if (UI.clearMode) { UI.place = null; UI.attackMove = false; } AU.ui('ok'); refreshCard(true); } });
       if (UI.clearMode) btns.push({ g: '⭕', n: 'Brush ' + (UI.clearSize || 2), k: 'Z', tip: 'Cycle the clearing brush radius (1–6 tiles).', fn: () => { UI.clearSize = ((UI.clearSize || 2) % 6) + 1; AU.ui('ok'); refreshCard(true); } });
@@ -12146,7 +12196,7 @@ function refreshCard(force) {
   shown.forEach((b, i) => { if (paged) b.k = String((i + 1) % 10); });
   for (const b of shown) {
     const el = document.createElement('div');
-    el.className = 'btn' + (b.dis ? ' dis' : '') + (b.act ? ' act' : '');
+    el.className = 'btn' + (b.dis ? ' dis' : '') + (b.act ? ' act' : '') + (b.cls ? ' ' + b.cls : '');
     el.innerHTML = '<span class="g">' + b.g + '</span><span class="n">' + b.n + '</span>' +
       (b.k ? '<span class="k">' + b.k + '</span>' : '') +
       (b.cost ? '<span class="c">' + (b.cost.s ? b.cost.s : '') + (b.cost.c ? '<em>' + b.cost.c + '</em>' : '') + '</span>' : '') +
@@ -12259,11 +12309,11 @@ function updateBuildPopup() {
    (CSS is scoped to html.touch, so toggling these classes is a no-op on desktop.) */
 function updateMobileChrome() {
   const root = document.documentElement;
-  const placing = !!(UI.place || UI.moving || UI.spawnPlace || UI.spawnDrop || (UI.queue && UI.queue.length));
+  const placing = !!(UI.place || UI.pending || UI.moving || UI.spawnPlace || UI.spawnDrop || (UI.queue && UI.queue.length));
   const selecting = !placing && G.sel && G.sel.length > 0;
   root.classList.toggle('placing', placing);
   root.classList.toggle('u-selected', !!selecting);
-  const cf = $('pbConfirm'); if (cf) cf.hidden = !(UI.queue && UI.queue.length);   // Confirm appears only when blueprints are queued
+  const cf = $('pbConfirm'); if (cf) cf.hidden = !(UI.pending || (UI.queue && UI.queue.length));   // Confirm appears once a blueprint is positioned or queued
 }
 function updateHUD(dt) {
   updateBuildPopup();
@@ -12380,8 +12430,9 @@ cv.addEventListener('mousedown', e => {
     if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); alertMsg('Spawn placement cancelled', ''); return; }
     if (UI.moving) { cancelRelocate(); return; }
     if (UI.clearMode) { UI.clearMode = false; refreshCard(true); AU.ui('no'); return; }
+    if (UI.pending) { cancelPending(); return; }
     if (UI.queue.length) { cancelQueue(); return; }
-    if (UI.place) { UI.place = null; UI.tab = null; refreshCard(true); return; }
+    if (UI.place && !UI.deploy) { UI.place = null; UI.tab = null; refreshCard(true); return; }
     if (UI.attackMove) { UI.attackMove = false; refreshCard(true); return; }
     const now = performance.now();
     const dbl = (now - (IN.lastRC || 0) < 350) && Math.hypot(x - (IN.lastRCx || 0), y - (IN.lastRCy || 0)) < 30;
@@ -12474,8 +12525,8 @@ window.addEventListener('keydown', e => {
   if (!G.started) return;
 
   if (e.code === 'Space') { focusHQ(); e.preventDefault(); return; }
-  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.place = null; UI.tab = null; UI.attackMove = false; refreshCard(true); return; }
-  if (k === 'enter') { commitQueue(); return; }
+  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.pending = null; if (!UI.deploy) UI.place = null; UI.tab = null; UI.attackMove = false; refreshConfirm(); refreshCard(true); return; }
+  if (k === 'enter') { if (UI.pending) commitPending(); else commitQueue(); return; }
   if (k === 'p') { if (G.mp) { alertMsg('No pause in multiplayer', 'info'); return; } setSpeed(G.speed === 0 ? 1 : 0); alertMsg(G.speed === 0 ? 'PAUSED' : 'RESUMED', 'info'); return; }
   const bSel = G.sel.some(x => x.kind === 'build' && !x.dead);
   if (bSel && !e.ctrlKey && /^[0-9]$/.test(k)) {                    // structure selected: digits pick from its menu
@@ -15191,7 +15242,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     /* ---- placement ghosts ---- */
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
     ghostBegin();
-    if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = canPlace(UI.place, gx, gy2) && (UI.deploy || UI.queue.length ? true : affordable(d.cost)); ghost3(gx, gy2, d, ok); }
+    if (UI.pending) { const d = BDEF[UI.pending.t] || BDEF.hq; const ok = canPlace(UI.pending.t === 'hq' ? 'hq' : UI.pending.t, UI.pending.tx, UI.pending.ty) && (UI.pending.t === 'hq' || affordable(d.cost)); ghost3(UI.pending.tx, UI.pending.ty, d, ok); }   // the tapped-down blueprint sits fixed until Confirm
+    else if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = canPlace(UI.place, gx, gy2) && (UI.deploy || UI.queue.length ? true : affordable(d.cost)); ghost3(gx, gy2, d, ok); }
     if (G.deploy && G.deploy.active) {                                                        // allies' live cursors & pending / placed Command Posts during the deploy phase
       const D = G.deploy;
       for (const k in D.hqPos) { if (+k === G.me) continue; const q = D.hqPos[k]; const gx = Math.floor(q.x / TS - 2), gy2 = Math.floor(q.y / TS - 2); ghost3(gx, gy2, BDEF.hq, true, true); }
@@ -15309,7 +15361,7 @@ function newGame(opts) {
   G.waveT = 42; G.waveTMax = 42; G.waveQueue = null; G.waveAlive = 0;
   G.research = null; G.bigT = 55; G.shake = 0; G.over = false; G.killed = 0; G.lost = 0;
   G.towers.length = 0; G.speed = 1; G.paused = false; G.ambT = 0;
-  UI.queue.length = 0; UI.moving = null; UI.place = null; UI.tab = null;
+  UI.queue.length = 0; UI.moving = null; UI.place = null; UI.pending = null; UI.deploy = false; UI.tab = null;
   if (typeof refreshConfirm === 'function') refreshConfirm();
   $('over').style.display = 'none';
 
@@ -15337,7 +15389,7 @@ function newGame(opts) {
     centerOn(BASE_X, BASE_Y);
     UI.place = 'hq'; UI.tab = null; UI.deploy = true;
     refreshCard(true);
-    alertMsg('Deploy your Command Post — click anywhere on the map to build it.' + (G.mp ? ' Your allies’ cursors show live, so you can settle in together.' : ''), 'good');
+    alertMsg('Deploy your Command Post — tap the map to place it, then press ✓ Confirm.' + (G.mp ? ' Your allies’ cursors show live, so you can settle in together.' : ''), 'good');
     return;
   }
 
@@ -15375,8 +15427,8 @@ function newGame(opts) {
 function spawnPlayerBaseAt(pi, gx, gy) {
   const prev = G.cur; G.cur = pi;
   const d = BDEF.hq, ctx = gx + (d.w >> 1), cty = gy + (d.h >> 1);
-  levelCompound(ctx, cty, MAP.h[cty * MW + ctx]);
-  if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(ctx, cty);
+  if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(ctx, cty);   // pond + grove nearby (resources)
+  if (typeof settleHQ === 'function') settleHQ(ctx, cty); else levelCompound(ctx, cty, MAP.h[cty * MW + ctx]);   // keep the grass, fell the trees, no paved pad
   const hq = addBuilding('hq', gx, gy, true); G.players[pi].hq = hq;
   const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = ctx + dx + rndi(-2, 3), by = cty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
   place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
@@ -15409,7 +15461,13 @@ function deployMaybeFinish() {
   const need = G.mp ? G.players.length : 1; let n = 0; for (const k in D.hqPos) n++;
   if (n >= need) finishDeploy();
 }
-function netDeployHQ(idx, x, y) { const D = G.deploy; if (!D || !D.active) return; D.hqPos[idx] = { x, y }; if (D.cursor[idx]) D.cursor[idx].placed = true; deployMaybeFinish(); }
+function hqTerrain(wx, wy) {   // prep the ground at a Command Post spot the SAME way on every client (deterministic): pond + grove, level the footprint, fell the trees, keep the grass
+  const ctx = (wx / TS) | 0, cty = (wy / TS) | 0;
+  if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(ctx, cty);
+  if (typeof settleHQ === 'function') settleHQ(ctx, cty);
+  if (typeof makeMiniBase === 'function') makeMiniBase();
+}
+function netDeployHQ(idx, x, y) { const D = G.deploy; if (!D || !D.active) return; D.hqPos[idx] = { x, y }; if (D.cursor[idx]) D.cursor[idx].placed = true; if (idx !== G.me) hqTerrain(x, y); deployMaybeFinish(); }
 function netDeployCursor(idx, x, y) { const D = G.deploy; if (!D || !D.active || idx === G.me) return; const c = (D.cursor[idx] = D.cursor[idx] || {}); c.x = x; c.y = y; }
 function updateDeploy(dt) {
   const D = G.deploy; if (!D || !D.active) return;
@@ -15688,7 +15746,7 @@ function applyGame(s) {
   G.units.length = 0; G.zeds.length = 0; G.builds.length = 0; G.bullets.length = 0; G.parts.length = 0;
   G.crates.length = 0; G.pickups.length = 0; G.corpses.length = 0; G.texts.length = 0; G.sel.length = 0;
   G.lamps.length = 0; G.towers.length = 0; G.groups = {}; G.hq = null; G.pop = 0; G.gridB.fill(0); G.air.length = 0; G.grass.clear(); if (G.grassTex) G.grassTex.clear(); G.grassGen = (G.grassGen | 0) + 1;
-  UI.queue.length = 0; UI.moving = null; UI.place = null; UI.tab = null;
+  UI.queue.length = 0; UI.moving = null; UI.place = null; UI.pending = null; UI.deploy = false; UI.tab = null;
   G.sup = s.sup; G.scr = s.scr; G.wave = s.wave; G.waveT = s.waveT != null ? s.waveT : 42; G.waveTMax = s.waveTMax != null ? s.waveTMax : 42;
   G.day = s.day; G.days = s.days || 0; G.rainDay = s.rainDay || 7; G.dropT = s.dropT != null ? s.dropT : 22; G.bigT = s.bigT != null ? s.bigT : 55; G.killed = s.killed || 0; G.t = s.t || 0;
   G.over = false; G.waveQueue = null; G.waveAlive = 0; G.research = null;
@@ -15992,7 +16050,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b112';
+const BUILD_TAG = 'b113';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
