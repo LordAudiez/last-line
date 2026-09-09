@@ -7682,8 +7682,8 @@ function updateUnits(dt) {
     if (!u.def.fly && (G.mp || (u.x > CAM.x - 120 && u.x < CAM.x + CAM.vw + 120 && u.y > CAM.y - 120 && u.y < CAM.y + CAM.vh + 160))) {
       const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
       if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-        if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r * .95); }   // the whole hull flattens the grass, not just its centre
-        else grassStamp(u.x, u.y, u.r);
+        if (u.def.veh) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang), L = u.r * .8; for (let k = -1; k <= 1; k++) grassStamp(u.x + ca * k * L, u.y + sa * k * L, u.r * 1.15); }   // the whole hull flattens the grass, not just its centre
+        else grassStamp(u.x, u.y, Math.max(u.r * 2.3, 26));   // part the tufts in a clear ring so the man stands IN the field, not buried behind blades in front of him
         if (u.def.veh) {
           const moved = Math.hypot(u.x - (u._lx != null ? u._lx : u.x), u.y - (u._ly != null ? u._ly : u.y));
           u._lx = u.x; u._ly = u.y;
@@ -8691,7 +8691,7 @@ function updateZeds(dt) {
     z.step += dtz * (z.def.spd > 60 ? 13 : 7);
     if (solidAt(z.x, z.y, false)) unstick(z, false);
     if (G.mp || (z.x > CAM.x - 120 && z.x < CAM.x + CAM.vw + 120 && z.y > CAM.y - 120 && z.y < CAM.y + CAM.vh + 160)) {
-      const gt = MAP.t[tileIdx((z.x / TS) | 0, (z.y / TS) | 0)]; if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(z.x, z.y, z.r);
+      const gt = MAP.t[tileIdx((z.x / TS) | 0, (z.y / TS) | 0)]; if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(z.x, z.y, z.def.struct ? z.r : Math.max(z.r * 2.3, 26));   // enemy infantry part the tufts too, so they read as standing in the field
     }
 
     const b = buildingAtTile((z.x / TS) | 0, (z.y / TS) | 0);
@@ -13085,7 +13085,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         const white = MAP.f && MAP.f[ti] === 2 && h1 < .66;                 // a silvergrass field is ~2/3 white plumes with plain green tufts mixed through, so it isn't a solid white cap
         const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;
         const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS;
-        const bh = (.34 + h1 * .22) * (white ? 1.25 : 1), thick = 1.1 + h2 * .7;   // silvergrass stands taller
+        const bh = (.30 + h1 * .19) * (white ? 1.1 : 1), thick = 1.1 + h2 * .7;   // knee-to-chest height so a man stands clear above the field; silvergrass only a little taller
         _p.set(wx * K, groundY(wx, wy), wy * K); _gq.setFromAxisAngle(_gUP, h2 * TAU); _s.set(thick, bh, thick);
         _m.compose(_p, _gq, _s);
         const stained = bloodTuft(wx, wy, hash2(tx * 17 + k * 3, ty * 19 + k * 7));
@@ -15786,7 +15786,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b102';
+const BUILD_TAG = 'b103';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
