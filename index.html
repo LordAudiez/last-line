@@ -11799,7 +11799,7 @@ function queueCost() {
 function refreshConfirm() {
   if (UI.pending) {                                            // a single tapped-down blueprint waiting on Confirm
     const P = UI.pending; elConfirm.style.display = 'flex'; $('qn').textContent = '1';
-    if (P.t === 'hq') { $('qc').textContent = 'Command Post — tap to move, ✓ to build'; $('qok').classList.remove('no'); }
+    if (P.t === 'hq') { const ok = typeof deployHQOk === 'function' ? deployHQOk(P.tx, P.ty) : true; $('qc').textContent = ok ? 'Command Post — tap to move, ✓ to build' : 'Too close to another post — move it'; $('qok').classList.toggle('no', !ok); }
     else { const d = BDEF[P.t], cost = (d.cost && (d.cost.s ? d.cost.s + ' supply' : '') + (d.cost.s && d.cost.c ? ' + ' : '') + (d.cost.c ? d.cost.c + ' scrap' : '')) || 'free'; $('qc').textContent = d.name + ' · ' + cost; $('qok').classList.toggle('no', !(canPlace(P.t, P.tx, P.ty) && affordable(d.cost))); }
     return;
   }
@@ -15242,8 +15242,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     /* ---- placement ghosts ---- */
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
     ghostBegin();
-    if (UI.pending) { const d = BDEF[UI.pending.t] || BDEF.hq; const ok = canPlace(UI.pending.t === 'hq' ? 'hq' : UI.pending.t, UI.pending.tx, UI.pending.ty) && (UI.pending.t === 'hq' || affordable(d.cost)); ghost3(UI.pending.tx, UI.pending.ty, d, ok); }   // the tapped-down blueprint sits fixed until Confirm
-    else if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = canPlace(UI.place, gx, gy2) && (UI.deploy || UI.queue.length ? true : affordable(d.cost)); ghost3(gx, gy2, d, ok); }
+    if (UI.pending) { const d = BDEF[UI.pending.t] || BDEF.hq; const ok = UI.pending.t === 'hq' ? (typeof deployHQOk === 'function' ? deployHQOk(UI.pending.tx, UI.pending.ty) : canPlace('hq', UI.pending.tx, UI.pending.ty)) : (canPlace(UI.pending.t, UI.pending.tx, UI.pending.ty) && affordable(d.cost)); ghost3(UI.pending.tx, UI.pending.ty, d, ok); }   // the tapped-down blueprint sits fixed until Confirm — RED if invalid or too close to another post
+    else if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = UI.place === 'hq' ? (typeof deployHQOk === 'function' ? deployHQOk(gx, gy2) : canPlace('hq', gx, gy2)) : (canPlace(UI.place, gx, gy2) && (UI.deploy || UI.queue.length ? true : affordable(d.cost))); ghost3(gx, gy2, d, ok); }
     if (G.deploy && G.deploy.active) {                                                        // allies' live cursors & pending / placed Command Posts during the deploy phase
       const D = G.deploy;
       for (const k in D.hqPos) { if (+k === G.me) continue; const q = D.hqPos[k]; const gx = Math.floor(q.x / TS - 2), gy2 = Math.floor(q.y / TS - 2); ghost3(gx, gy2, BDEF.hq, true, true); }
@@ -15440,13 +15440,21 @@ function spawnPlayerBaseAt(pi, gx, gy) {
   G.cur = prev; return hq;
 }
 /* the local commander clicks the map to site their post */
+const HQ_MIN_GAP = 26 * TS;   // a commander's post must sit at least this far from another's
+/* is an HQ footprint (top-left gx,gy) a legal deploy spot? — clear buildable ground AND clear of every other commander's post */
+function deployHQClear(gx, gy) {
+  const D = G.deploy; if (!D) return true;
+  const d = BDEF.hq, cx = (gx + d.w / 2) * TS, cy = (gy + d.h / 2) * TS;
+  for (const k in D.hqPos) { if (+k === G.me) continue; const q = D.hqPos[k]; if (Math.hypot(q.x - cx, q.y - cy) < HQ_MIN_GAP) return false; }
+  return true;
+}
+function deployHQOk(gx, gy) { return (typeof canPlace !== 'function' || canPlace('hq', gx, gy)) && deployHQClear(gx, gy); }
 function deployPlaceHQ(wx, wy) {
   const D = G.deploy; if (!D || !D.active) return;
   if (G.players[G.me] && G.players[G.me].hq) return;                 // already placed — wait for the others
   const d = BDEF.hq, gx = Math.floor(wx / TS - (d.w - 1) / 2), gy = Math.floor(wy / TS - (d.h - 1) / 2);
   if (!canPlace('hq', gx, gy)) { AU.ui('no'); alertMsg('Can’t build there — pick clear, dry, level ground.', ''); return; }
-  const cx = (gx + d.w / 2) * TS, cy = (gy + d.h / 2) * TS;
-  for (const k in D.hqPos) { const q = D.hqPos[k]; if (Math.hypot(q.x - cx, q.y - cy) < 26 * TS) { AU.ui('no'); alertMsg('Too close to another commander’s post — give it more room.', ''); return; } }   // blocked overlap
+  if (!deployHQClear(gx, gy)) { AU.ui('no'); alertMsg('Too close to another commander’s post — give it more room.', ''); return; }   // blocked overlap
   const hq = spawnPlayerBaseAt(G.me, gx, gy);
   D.hqPos[G.me] = { x: hq.x, y: hq.y };
   BASE_TX = (hq.x / TS) | 0; BASE_TY = (hq.y / TS) | 0; BASE_X = hq.x; BASE_Y = hq.y;
@@ -16050,7 +16058,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b113';
+const BUILD_TAG = 'b114';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
