@@ -3367,7 +3367,7 @@ const WATER = t => t === T_DEEP || t === T_SEA;
 const IMPASSABLE = t => t === T_DEEP || t === T_SEA;                 // mountains are walkable now — at half pace (see slopeMul)
 const ROUGH = t => t === T_ROCK || t === T_RUBBLE;
 
-const MAP = { t: null, h: null, roadY: null };
+const MAP = { t: null, h: null, roadY: null, f: null };   // f: open-field layer — 0 none, 1 green tuft meadow, 2 white silvergrass field (both treeless)
 const rgb = (c, k) => 'rgb(' + clamp((c[0] * k) | 0, 0, 255) + ',' + clamp((c[1] * k) | 0, 0, 255) + ',' + clamp((c[2] * k) | 0, 0, 255) + ')';
 
 /* ---------------- generation ---------------- */
@@ -3375,7 +3375,7 @@ function genWorld() {
   const N = MW * MH;
   MAP.t = new Uint8Array(N);
   MAP.h = new Uint8Array(N);
-  chunks.clear();
+  chunks.clear(); propCache.clear();                                   // a new map: drop the cached props of the old one too (they used to leak in — trees where none should be)
 
   // --- elevation: three octaves, with a coastal falloff at the map rim ---
   const S = WSEED * 137.5;                                  // per-map seed offset into the noise field
@@ -3410,6 +3410,29 @@ function genWorld() {
       else t = T_DIRT;
       if (t !== T_ROCK && t !== T_SNOW && !WATER(t) && vnoise(x / 19 + 71, y / 19 + 53) > .80) t = T_RUBBLE;
       MAP.t[i] = t;
+    }
+  }
+
+  /* --- open fields: 35% of the land is treeless tuft grassland, carved from broad noise blobs — 18% green meadow, 17% white
+     silvergrass (green for the lower 40% of the stalk, white plumes above). Field tiles become plain grass with no trees. */
+  MAP.f = new Uint8Array(N);
+  {
+    const fv = new Float32Array(N), wv = new Float32Array(N), land = [];
+    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+      const i = y * MW + x, t = MAP.t[i];
+      if (t !== T_GRASS && t !== T_FOREST && t !== T_DIRT) continue;                       // only gentle ground becomes field
+      fv[i] = vnoise((x + S) / 72 + 500, (y + S) / 72 + 700) * .75 + vnoise((x + S) / 23 + 41, (y + S) / 23 + 97) * .25;
+      wv[i] = vnoise((x + S) / 58 + 900, (y + S) / 58 + 300);
+      land.push(i);
+    }
+    const nLand = land.length;
+    if (nLand) {
+      let landAll = 0; for (let i = 0; i < N; i++) { const t = MAP.t[i]; if (t !== T_DEEP && t !== T_SEA) landAll++; }
+      const want = Math.min(nLand, Math.round(landAll * .35));                                                   // 35% of ALL the land becomes field
+      const fs = land.map(i => fv[i]).sort((a, b) => a - b), cut = fs[Math.max(0, nLand - want)];
+      const field = land.filter(i => fv[i] >= cut);
+      const ws = field.map(i => wv[i]).sort((a, b) => a - b), wcut = ws[Math.min(ws.length - 1, Math.floor(ws.length * (18 / 35)))];   // 18 : 17 split
+      for (const i of field) { MAP.f[i] = wv[i] < wcut ? 1 : 2; MAP.t[i] = T_GRASS; }
     }
   }
 
@@ -3558,6 +3581,7 @@ function chunkProps(cx, cy) {
     const tx = (x / TS) | 0, ty = (y / TS) | 0;
     if (!inMap(tx, ty)) continue;
     const t = MAP.t[tileIdx(tx, ty)];
+    if (MAP.f && MAP.f[tileIdx(tx, ty)]) continue;                       // open field: no trees, bushes or rocks
     const r = hash2(cx * 17 + i, cy * 29 + i * 5);
     let s = null;
     // slots beyond the original 16 only ever become trees (they exist to thicken the woods)
@@ -6764,6 +6788,17 @@ function updateAmbient(dt) {
     // sunlit dust drifting on the wind
     part('mote', px, py, w.x * .5 + rnd(-8, 8), w.y * .5 + rnd(-6, 6), rnd(3, 6.5), rnd(.9, 1.7), '#ffe6b4',
       { z: rnd(6, 60), vz: rnd(-5, 8), drag: 1, glow: 1, wind: 1 });
+    // seed fluff blown off the open fields: the harder the wind, the more of it, streaming downwind — green wisps
+    // off a green meadow, white down off the silvergrass
+    if (MAP.f) {
+      const ws = Math.hypot(w.x, w.y), nF = Math.min(6, 1 + (ws / 12) | 0);
+      for (let q = 0; q < nF; q++) {
+        const fx = rnd(x0, x1), fy = rnd(y0, y1), fi = tileIdx((fx / TS) | 0, (fy / TS) | 0), f = fi >= 0 && fi < MAP.f.length ? MAP.f[fi] : 0;
+        if (!f || Math.random() > .22 + ws * .012) continue;
+        part('mote', fx, fy, w.x * .85 + rnd(-6, 6), w.y * .85 + rnd(-5, 5), rnd(2.5, 5.5), f === 2 ? rnd(1.4, 2.6) : rnd(1.0, 1.8), f === 2 ? '#f4efe0' : '#8fc25a',
+          { z: rnd(8, 40), vz: rnd(-3, 9), drag: 1, glow: f === 2 ? 1 : 0, wind: 1 });
+      }
+    }
     if (Math.random() < .34)
       part('leaf', px, py, w.x + rnd(-16, 16), w.y + rnd(-10, 10), rnd(2.0, 4.0), rnd(1.4, 2.8),
         Math.random() < .5 ? '#5e7a36' : '#7a6a2c', { z: rnd(14, 60), vz: rnd(-14, 4), g: 22, vr: rnd(-11, 11), drag: .995, wind: 1 });
@@ -12798,6 +12833,30 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     return g;
   })();
   const GRASSG = GRASST;
+  // WHITE SILVERGRASS tuft: the same fan of blades, taller, with the colour baked in — green stalk for the lower 40%,
+  // then a soft cream-white plume that widens toward the tip. Drawn with a white instance tint so the baked colours show.
+  const GRASSW = (() => {
+    const BL = 5, pos = [], col = [], idx = []; let v = 0;
+    const GRN = [.36, .56, .22], WHT = [.97, .94, .84];
+    for (let bI = 0; bI < BL; bI++) {
+      const yaw = (bI / BL) * TAU + (bI * 2.399), rr = bI === 0 ? 0 : (.05 + (bI % 3) * .05), off = yaw;
+      const ox = Math.cos(off) * rr, oz = Math.sin(off) * rr;
+      const bw = .05 - bI * .002, h = 1.3 - (bI % 3) * .14, bow = (bI % 2 ? 1 : -1) * .08;
+      const c = Math.cos(yaw), s = Math.sin(yaw), shade = .84 + (bI % 3) * .06;
+      const segs = [[0, bw, GRN, .8], [.4, bw * .8, GRN, 1.0], [.58, bw * 1.05, WHT, .9], [.8, bw * 1.3, WHT, .96], [1, bw * .6, WHT, 1.02]];
+      const base = v;
+      for (let si = 0; si < segs.length; si++) {
+        const [ty, hw, cc, sh] = segs[si], yy = ty * h, bx = bow * ty * ty;
+        for (const sx of [-1, 1]) { const lx = sx * hw + bx; pos.push(ox + c * lx, yy, oz + s * lx); col.push(cc[0] * sh * shade, cc[1] * sh * shade, cc[2] * sh * shade); }
+      }
+      for (let si = 0; si < segs.length - 1; si++) { const a = base + si * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+      v += segs.length * 2;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals(); return g;
+  })();
+  const WTUFTC = new THREE.Color(1, 1, 1);
   P.grass = pool(GRASSG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .92, side: THREE.DoubleSide, vertexColors: true, envMapIntensity: .25 }), 48000, false);
   P.grass.receiveShadow = true; GRASS_POOL = P.grass; P.grass.castShadow = !!(QUAL_DEF[QUAL.level] || {}).shadow && QUAL.gs >= 5;                                     // tufts sit in tree and building shadow; on High they also throw their own
   const GRASSC = [lin('#5f8a3a'), lin('#4c7430'), lin('#6b9440')];
@@ -12875,37 +12934,35 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   }
   function buildGrassChunk(c, cx, cy) {
     const gd = QUAL.gd, cap = GCH * GCH * gd;
-    let im = c.mesh;
-    if (!im || im.instanceMatrix.count < cap) {
-      if (im) { scene3.remove(im); im.dispose(); }
-      im = new THREE.InstancedMesh(GRASSG, GMAT, cap);
-      im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
-      im.frustumCulled = false; im.castShadow = false; im.receiveShadow = false; im.matrixAutoUpdate = false;
-      scene3.add(im); c.mesh = im;
-    }
-    let n = 0; const tx0 = cx * GCH, ty0 = cy * GCH, tx1 = Math.min(MW, tx0 + GCH), ty1 = Math.min(MH, ty0 + GCH);
-    c.layerEnd.length = 0;
+    const mk = (old, geo) => { let im = old; if (!im || im.instanceMatrix.count < cap) { if (im) { scene3.remove(im); im.dispose(); } im = new THREE.InstancedMesh(geo, GMAT, cap); im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); im.frustumCulled = false; im.castShadow = false; im.receiveShadow = false; im.matrixAutoUpdate = false; scene3.add(im); } return im; };
+    const im = c.mesh = mk(c.mesh, GRASSG), iw = c.meshW = mk(c.meshW, GRASSW);   // green tufts / white silvergrass, one instanced mesh each
+    let n = 0, nw = 0; const tx0 = cx * GCH, ty0 = cy * GCH, tx1 = Math.min(MW, tx0 + GCH), ty1 = Math.min(MH, ty0 + GCH);
+    c.layerEnd.length = 0; c.layerEndW = c.layerEndW || []; c.layerEndW.length = 0;
     for (let k = 0; k < gd; k++) {                         // blade layers interleaved so lowering count thins the carpet evenly (density LOD)
       for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
         const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
         if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;
         const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
+        const white = MAP.f && MAP.f[ti] === 2 && h1 < .66;                 // a silvergrass field is ~2/3 white plumes with plain green tufts mixed through, so it isn't a solid white cap
         const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;
         const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS;
-        const bh = .34 + h1 * .22, thick = 1.1 + h2 * .7;   // same scatter, size and colour as the CPU carpet
+        const bh = (.34 + h1 * .22) * (white ? 1.25 : 1), thick = 1.1 + h2 * .7;   // silvergrass stands taller
         _p.set(wx * K, groundY(wx, wy), wy * K); _gq.setFromAxisAngle(_gUP, h2 * TAU); _s.set(thick, bh, thick);
-        _m.compose(_p, _gq, _s); im.setMatrixAt(n, _m); im.setColorAt(n, GRASSC[(tx + ty + k) % 3]); n++;
+        _m.compose(_p, _gq, _s);
+        if (white) { iw.setMatrixAt(nw, _m); iw.setColorAt(nw, WTUFTC); nw++; }
+        else { im.setMatrixAt(n, _m); im.setColorAt(n, GRASSC[(tx + ty + k) % 3]); n++; }
       }
-      c.layerEnd.push(n);
+      c.layerEnd.push(n); c.layerEndW.push(nw);
     }
     im.count = n; im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true;
+    iw.count = nw; iw.instanceMatrix.needsUpdate = true; iw.instanceColor.needsUpdate = true;
     c.gd = gd; c.sig = grassSig(cx, cy);
   }
   let grassGenSeen = -1;
   function updateGrassChunks(gtx0, gtx1, gty0, gty1, perNow) {
     gFrame++;
     if ((G.grassGen | 0) !== grassGenSeen) {               // new game / new map: terrain heights changed, drop every cached chunk
-      for (const c of grassChunks.values()) if (c.mesh) { scene3.remove(c.mesh); c.mesh.dispose(); }
+      for (const c of grassChunks.values()) { if (c.mesh) { scene3.remove(c.mesh); c.mesh.dispose(); } if (c.meshW) { scene3.remove(c.meshW); c.meshW.dispose(); } }
       grassChunks.clear(); grassGenSeen = G.grassGen | 0;
     }
     const cx0 = (gtx0 / GCH) | 0, cx1 = (gtx1 / GCH) | 0, cy0 = (gty0 / GCH) | 0, cy1 = (gty1 / GCH) | 0;
@@ -12915,10 +12972,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (c.gd !== QUAL.gd || (((gFrame + cx * 3 + cy * 7) & 7) === 0 && c.sig !== grassSig(cx, cy))) buildGrassChunk(c, cx, cy);
       c.used = gFrame; const im = c.mesh; im.visible = true;
       im.count = c.layerEnd[Math.min(perNow, c.layerEnd.length) - 1] || 0;
+      if (c.meshW) { c.meshW.visible = true; c.meshW.count = c.layerEndW[Math.min(perNow, c.layerEndW.length) - 1] || 0; }
     }
     for (const [key, c] of grassChunks) if (c.used !== gFrame) {
-      if (c.mesh) c.mesh.visible = false;
-      if (gFrame - c.used > 900 && grassChunks.size > 240) { if (c.mesh) { scene3.remove(c.mesh); c.mesh.dispose(); } grassChunks.delete(key); }
+      if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false;
+      if (gFrame - c.used > 900 && grassChunks.size > 240) { if (c.mesh) { scene3.remove(c.mesh); c.mesh.dispose(); } if (c.meshW) { scene3.remove(c.meshW); c.meshW.dispose(); } grassChunks.delete(key); }
     }
   }
   /* ground clutter: wildflower heads in the meadows, pebbles on dirt and sand, cattail reeds in the swamp and along the shore,
@@ -14480,7 +14538,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         uploadGrassTex();
         GU.uTime.value = tt; GU.uWind.value.set(wdx, wdz, wm);
         updateGrassChunks(gtx0, gtx1, gty0, gty1, per);
-      } else if (grassChunks.size) for (const c of grassChunks.values()) if (c.mesh) c.mesh.visible = false;   // CPU fallback active: park the GPU chunks
+      } else if (grassChunks.size) for (const c of grassChunks.values()) { if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false; }   // CPU fallback active: park the GPU chunks
       const swayBase = tt * 2.4, swayKx = TS * .02, swayKy = TS * .017;                        // wind sway is computed once per tile (not per blade) — one Math.sin instead of thousands, identical-looking ripple
       outer: for (let ty = gty0; ty <= gty1; ty++) for (let tx = gtx0; tx <= gtx1; tx++) {
         const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
@@ -15587,7 +15645,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b97';
+const BUILD_TAG = 'b98';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
