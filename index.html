@@ -3573,17 +3573,12 @@ function ensureSpawnSurroundings(tx, ty) {
   }
 }
 /* flatten + pave a compound so the opening minutes are never blocked */
-/* a player's Command Post keeps its grassy field — no paved bare pad. The immediate footprint is gently levelled so the
-   building sits flat, the trees & bushes in the compound are felled (the tufts stay), and water underfoot turns to dirt. */
+/* a player's Command Post is dropped straight onto the ground UNTOUCHED — no levelling, no pad, no pond, no dug ground.
+   The ONLY change is that the trees & bushes right under the building are felled so it isn't buried; the grass tufts,
+   the field and the terrain height all stay exactly as they were. */
 function settleHQ(tx, ty) {
-  const h0 = MAP.h[ty * MW + tx];
-  for (let dy = -6; dy <= 6; dy++) for (let dx = -7; dx <= 7; dx++) {
-    const x = tx + dx, y = ty + dy; if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
-    const i = y * MW + x, d = Math.max(Math.abs(dx) / 7, Math.abs(dy) / 6);
-    MAP.h[i] = clamp(lerp(h0, MAP.h[i], clamp((d - .35) / .65, 0, 1)), SHORE + 4, MOUNT - 20) | 0;   // flatten only the footprint, feathered at the edge
-    if (IMPASSABLE(MAP.t[i])) MAP.t[i] = T_DIRT;                                                      // no puddle under the HQ, but grass elsewhere is kept
-  }
-  if (typeof clearProps === 'function') clearProps(tx * TS, ty * TS, 18 * TS);                        // fell the trees & bushes around the base — the grass tufts remain
+  const d = BDEF && BDEF.hq ? BDEF.hq : { w: 5, h: 4 };
+  if (typeof clearProps === 'function') clearProps(tx * TS, ty * TS, (Math.max(d.w, d.h) * .5 + 2.5) * TS);   // clear only the building's own footprint of trees/bushes — keep the tufts
   MAP._grassDirty = true;
 }
 function levelCompound(tx, ty, h0) {
@@ -7739,27 +7734,16 @@ function updateUnits(dt) {
    helicopter downwash and tuft trails in real time. */
 function groundFx(u, dt) {
   if (!u.def) return;
+  // faint ambient rotor dust at any altitude — the same for every helicopter, local or ally ghost
+  if (u.def.fly && u.def.rotor && !u.def.orbit && Math.random() < dt * 14)
+    part('dust', u.x + rnd(-18, 18), u.y + rnd(-18, 18), rnd(-30, 30), rnd(-30, 30), .5, 7, 'rgba(150,146,134,1)', { grow: 26 });
   let wash = 0;
-  if (u.def.fly && u.def.rotor) { if (u.landed) wash = 1; else if (u.rope) wash = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; wash = t * t * (3 - 2 * t); } }
+  if (u.def.fly && u.def.rotor) { if (u.landed) wash = 1; else if (u.rope) wash = .6; else if (u.altK !== undefined && u.altK < .75) { const t = (.75 - u.altK) / .75; wash = t * t * (3 - 2 * t); } }
   if (wash > .02) {
+    rotorWash(u, wash, dt);                                                    // the violent radial downwash blast + leaves: the ONE dust source for every helicopter, so allies see exactly the effect you see
     const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
     if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
       grassStamp(u.x, u.y, u.r * (1.2 + 3.3 * wash));
-      u._wash = (u._wash || 0) - dt * (.55 + wash);
-      if (u._wash <= 0) { u._wash = .55;   // a soft expanding dust RING (a ring of drifting dust puffs, not a hard concentric circle) every ~half-second
-        const rings = 10, r0 = u.r * 1.3;
-        for (let s = 0; s < rings; s++) { const an = s / rings * TAU + rnd(-.15, .15), cx = u.x + Math.cos(an) * r0, cy = u.y + Math.sin(an) * r0, out = 30 + 60 * wash;
-          part('dust', cx, cy, Math.cos(an) * out, Math.sin(an) * out * .6, rnd(.6, .95), u.r * .8, 'rgba(212,204,152,' + (.3 * wash).toFixed(2) + ')', { grow: u.r * 2.2, z: rnd(.2, 2), vz: 6, drag: .93 }); }
-        const pang = u.ang + Math.PI / 2, ox = Math.cos(pang), oy = Math.sin(pang), off = u.r * 1.2, nP = Math.max(1, Math.round(3 * wash));
-        for (let side = -1; side <= 1; side += 2) {
-          const cvx = u.x + ox * off * side, cvy = u.y + oy * off * side, swirl = side;
-          for (let k = 0; k < nP && G.parts.length < PMAX * .85; k++) {
-            const an = rnd(TAU), rad = rnd(u.r * .3, u.r * 1.5) * (.5 + .5 * wash), rx = Math.cos(an), ry = Math.sin(an);
-            const tx = -ry * swirl, ty = rx * swirl, sp = 40 + rnd(80, 160) * wash, out = rnd(16, 44);
-            part(Math.random() < .45 ? 'leaf' : 'dust', cvx + rx * rad, cvy + ry * rad, (tx * sp + rx * out), (ty * sp + ry * out) * .6, rnd(.4, .85), rnd(1.2, 2.8), Math.random() < .45 ? '#6a8c3c' : 'rgba(206,196,150,.9)', { z: rnd(0, 6), vz: rnd(12, 40), vr: rnd(-16, 16) * swirl, grow: 7, g: 130, drag: .95, wind: 1 });
-          }
-        }
-      }
     }
     else if (WATER(gt) && !u.landed) {
       u._wash = (u._wash || 0) - dt;
@@ -7890,6 +7874,7 @@ function fixedWingTakeoff(u, dt) {
 function updateAircraft(u, dt) {
   u.hurt = Math.max(0, u.hurt - dt * 4);
   u.rot = (u.rot || 0) + dt * 26;                 // rotor / prop spin
+  groundFx(u, dt);                                // rotor downwash dust + grass trample — the SAME path ghost allies use, so the effect is identical on every device
   if (u.def.orbit) {                                                     // AC-130 and other fixed-wing aircraft: runway-style landing, never a vertical set-down
     flareTick(u, dt);
     if (u.order && u.order.type === 'land') { fixedWingLand(u, dt); return; }
@@ -7899,10 +7884,6 @@ function updateAircraft(u, dt) {
   flareTick(u, dt);                                 // every aircraft can run flares
   const o = u.order;
   const rng = u.def.wep.rng * rngMul(u);
-
-  // rotor wash kicks dust under low helicopters
-  if (!u.def.orbit && Math.random() < dt * 14)
-    part('dust', u.x + rnd(-18, 18), u.y + rnd(-18, 18), rnd(-30, 30), rnd(-30, 30), .5, 7, 'rgba(150,146,134,1)', { grow: 26 });
 
   /* ---- helicopter altitude: 1 = cruising, 0 = on the ground. Landing / take-off are animated, and the
      rotor wash gets violent close to the ground. Anything but a land/pickup/board order means "take off". ---- */
@@ -7924,7 +7905,6 @@ function updateAircraft(u, dt) {
     // a longer, eased climb / descent: gentle off the ground and gentle into the flare, quicker through the middle (~4 s end to end)
     const eased = .34 + 4.0 * u.altK * (1 - u.altK), spd = (wantAlt > u.altK ? .30 : .26) * eased;
     u.altK = clamp(u.altK + clamp(wantAlt - u.altK, -spd * dt, spd * dt), 0, 1);
-    if (u.altK < .75) rotorWash(u, 1 - u.altK, dt);
     if (u.altK <= .001 && wantAlt === 0) { if (!u.landed) { u.landed = true; addShake(u.x, u.y, 2); AU.ui('ok'); } }
     if (o && o.type === 'land') { if (u.landed) { if (carry) unloadCargo(u); u.order = null; } return; }
     /* fast-rope: hover low and send the passengers down the ropes one at a time */
@@ -15444,8 +15424,7 @@ function newGame(opts) {
 function spawnPlayerBaseAt(pi, gx, gy) {
   const prev = G.cur; G.cur = pi;
   const d = BDEF.hq, ctx = gx + (d.w >> 1), cty = gy + (d.h >> 1);
-  if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(ctx, cty);   // pond + grove nearby (resources)
-  if (typeof settleHQ === 'function') settleHQ(ctx, cty); else levelCompound(ctx, cty, MAP.h[cty * MW + ctx]);   // keep the grass, fell the trees, no paved pad
+  if (typeof settleHQ === 'function') settleHQ(ctx, cty);   // fell only the trees under the building — leave the ground, tufts and field untouched
   const hq = addBuilding('hq', gx, gy, true); G.players[pi].hq = hq;
   const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = ctx + dx + rndi(-2, 3), by = cty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
   place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
@@ -15486,9 +15465,8 @@ function deployMaybeFinish() {
   const need = G.mp ? G.players.length : 1; let n = 0; for (const k in D.hqPos) n++;
   if (n >= need) finishDeploy();
 }
-function hqTerrain(wx, wy) {   // prep the ground at a Command Post spot the SAME way on every client (deterministic): pond + grove, level the footprint, fell the trees, keep the grass
+function hqTerrain(wx, wy) {   // an ally's Command Post spot on my client: fell only the trees under it, exactly as the owner does — no ground/pond/field changes
   const ctx = (wx / TS) | 0, cty = (wy / TS) | 0;
-  if (typeof ensureSpawnSurroundings === 'function') ensureSpawnSurroundings(ctx, cty);
   if (typeof settleHQ === 'function') settleHQ(ctx, cty);
   if (typeof makeMiniBase === 'function') makeMiniBase();
 }
@@ -16075,7 +16053,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b120';
+const BUILD_TAG = 'b122';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
