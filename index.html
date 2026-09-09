@@ -4838,8 +4838,16 @@ function severZedPart(e, ang, part) {
 /* A foot soldier going down (player trooper or enemy infantry alike). Two things are randomised so no two deaths look the
    same: whether he loses a limb at all (most deaths don't — dismemberment is the exception, not the rule), and whether he
    topples slowly or just drops. When a leg IS torn off, he falls toward that side; otherwise he keels over a random way. */
+/* a body going down in the grass stains the tufts round it: about 5% of the blades within a couple of tiles turn dark red
+   (stamped into a small stain map the grass builder reads; the nearby grass chunks refresh at once) */
+function bloodGrass(x, y) {
+  if (!G.grassBlood) G.grassBlood = [];
+  G.grassBlood.push({ x, y, r: 2.2 * TS, t: G.t }); if (G.grassBlood.length > 400) G.grassBlood.shift();
+  G.grassBloodGen = (G.grassBloodGen | 0) + 1;
+}
 function bodyDeath(e, ang, life) {
   life = life || 30;
+  bloodGrass(e.x, e.y);
   if (e.limbs && Math.random() < .4) { const rip = 1 + (Math.random() < .3 ? 1 : 0); for (let i = 0; i < rip; i++) severLimb(e, ang); }   // random dismemberment
   const legGoneL = !(e.limbs & 4), legGoneR = !(e.limbs & 8);
   let side = legGoneL === legGoneR ? 0 : (legGoneL ? -1 : 1);                    // a leg blown off → he falls that way
@@ -12178,6 +12186,7 @@ function clampCam() {
   CAM.y = clamp(CAM.y, -60, WH - CAM.vh + 60);
 }
 function updateCamera(dt) {
+  easeZoom(dt);
   let sx = 0, sy = 0;
   const k = IN.keys;
   // WASD (and the arrows) always pan the camera; command cards are driven by the digit keys instead
@@ -12270,15 +12279,26 @@ window.addEventListener('mouseup', e => {
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
-  const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx);
+  // the wheel only sets a TARGET; the camera glides toward it every frame (see updateCamera), keeping the world point
+  // under the cursor pinned — so zooming is a smooth dolly, not a stair-step.
   // zoom on the on-screen scale (CAM.zoom*PIX) so the range feels the same in HD or perf mode
   const dpr = (typeof DPR !== 'undefined') ? DPR : 1;
-  const disp = clamp(CAM.zoom * PIX / dpr * (e.deltaY > 0 ? .88 : 1.14), .55, 2.6);   // clamp in CSS-pixel scale
-  CAM.zoom = disp * dpr / PIX;
-  CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
-  CAM.x = wx - IN.mx / (CAM.zoom * PIX); CAM.y = wy - IN.my / (CAM.zoom * PIX * VY);
-  clampCam();
+  const cur = CAM.zoomT !== undefined ? CAM.zoomT : CAM.zoom;
+  const disp = clamp(cur * PIX / dpr * (e.deltaY > 0 ? .86 : 1.16), .55, 2.6);   // clamp in CSS-pixel scale
+  CAM.zoomT = disp * dpr / PIX;
+  CAM.zoomAnchor = { wx: s2wx(IN.mx, IN.my), wy: s2wy(IN.my, IN.mx), mx: IN.mx, my: IN.my };
 }, { passive: false });
+/* ease the zoom toward its target each frame, keeping the anchor point under the cursor */
+function easeZoom(dt) {
+  if (CAM.zoomT === undefined) return;
+  const d = CAM.zoomT - CAM.zoom;
+  if (Math.abs(d) < CAM.zoom * .0015) { CAM.zoom = CAM.zoomT; CAM.zoomT = undefined; }
+  else CAM.zoom += d * Math.min(1, dt * 14);                                        // exponential glide, ~0.15 s to settle
+  CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
+  const a = CAM.zoomAnchor; if (a) { CAM.x = a.wx - a.mx / (CAM.zoom * PIX); CAM.y = a.wy - a.my / (CAM.zoom * PIX * VY); }
+  if (CAM.zoomT === undefined) CAM.zoomAnchor = null;
+  clampCam();
+}
 
 function miniJump(e) {
   const r = mini.getBoundingClientRect();
@@ -12996,10 +13016,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   }
   const GCH = 8, grassChunks = new Map(), _gq = new THREE.Quaternion(), _gUP = new THREE.Vector3(0, 1, 0);
   let gFrame = 0;
-  function grassSig(cx, cy) {                              // cheap fingerprint of the chunk's tiles: buildings placed / ground changed → rebuild
+  function grassSig(cx, cy) {                              // cheap fingerprint of the chunk's tiles: buildings placed / ground changed / blood spilt → rebuild
     let s = 7; const tx0 = cx * GCH, ty0 = cy * GCH, tx1 = Math.min(MW, tx0 + GCH), ty1 = Math.min(MH, ty0 + GCH);
     for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) { const ti = tileIdx(tx, ty); s = (s * 31 + (G.gridB[ti] ? 97 : MAP.t[ti] + 1)) | 0; }
+    if (G.grassBlood && G.grassBlood.length) { const x0 = tx0 * TS - 3 * TS, x1 = tx1 * TS + 3 * TS, y0 = ty0 * TS - 3 * TS, y1 = ty1 * TS + 3 * TS; let n = 0; for (const b of G.grassBlood) if (b.x > x0 && b.x < x1 && b.y > y0 && b.y < y1) n++; s = (s * 31 + n) | 0; }
     return s;
+  }
+  const BLOODGRASS = new THREE.Color(.36, .05, .04);
+  function bloodTuft(wx, wy, h) {                            // is this tuft one of the ~5% stained by a nearby death?
+    const bl = G.grassBlood; if (!bl || !bl.length || h > .05) return false;
+    for (let i = bl.length - 1; i >= 0; i--) { const b = bl[i]; const dx = wx - b.x, dy = wy - b.y; if (dx * dx + dy * dy < b.r * b.r) return true; }
+    return false;
   }
   function buildGrassChunk(c, cx, cy) {
     const gd = QUAL.gd, cap = GCH * GCH * gd;
@@ -13018,8 +13045,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         const bh = (.34 + h1 * .22) * (white ? 1.25 : 1), thick = 1.1 + h2 * .7;   // silvergrass stands taller
         _p.set(wx * K, groundY(wx, wy), wy * K); _gq.setFromAxisAngle(_gUP, h2 * TAU); _s.set(thick, bh, thick);
         _m.compose(_p, _gq, _s);
-        if (white) { iw.setMatrixAt(nw, _m); iw.setColorAt(nw, WTUFTC); nw++; }
-        else { im.setMatrixAt(n, _m); im.setColorAt(n, GRASSC[(tx + ty + k) % 3]); n++; }
+        const stained = bloodTuft(wx, wy, hash2(tx * 17 + k * 3, ty * 19 + k * 7));
+        if (white) { iw.setMatrixAt(nw, _m); iw.setColorAt(nw, stained ? BLOODGRASS : WTUFTC); nw++; }
+        else { im.setMatrixAt(n, _m); im.setColorAt(n, stained ? BLOODGRASS : GRASSC[(tx + ty + k) % 3]); n++; }
       }
       c.layerEnd.push(n); c.layerEndW.push(nw);
     }
@@ -13038,7 +13066,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const key = cx * 65536 + cy; let c = grassChunks.get(key);
       if (!c) { c = { mesh: null, layerEnd: [], sig: 0, gd: 0, used: 0 }; grassChunks.set(key, c); buildGrassChunk(c, cx, cy); }
-      else if (c.gd !== QUAL.gd || (((gFrame + cx * 3 + cy * 7) & 7) === 0 && c.sig !== grassSig(cx, cy))) buildGrassChunk(c, cx, cy);
+      else if (c.gd !== QUAL.gd || (((gFrame + cx * 3 + cy * 7) & 7) === 0 && c.sig !== grassSig(cx, cy)) || (c.bgen !== (G.grassBloodGen | 0) && c.sig !== grassSig(cx, cy))) { buildGrassChunk(c, cx, cy); c.bgen = G.grassBloodGen | 0; } else if (c.bgen !== (G.grassBloodGen | 0)) c.bgen = G.grassBloodGen | 0;
       c.used = gFrame; const im = c.mesh; im.visible = true;
       im.count = c.layerEnd[Math.min(perNow, c.layerEnd.length) - 1] || 0;
       if (c.meshW) { c.meshW.visible = true; c.meshW.count = c.layerEndW[Math.min(perNow, c.layerEndW.length) - 1] || 0; }
@@ -15103,7 +15131,7 @@ function newGame(opts) {
   if (G.gridB.length !== MW * MH) G.gridB = new Int32Array(MW * MH); else G.gridB.fill(0);
   G.units.length = 0; G.zeds.length = 0; G.builds.length = 0; G.bullets.length = 0;
   G.parts.length = 0; G.crates.length = 0; G.pickups.length = 0; G.corpses.length = 0;
-  G.texts.length = 0; G.lamps.length = 0; G.sel.length = 0; G.groups = {}; G.grass.clear(); if (G.grassTex) G.grassTex.clear(); G.grassGen = (G.grassGen | 0) + 1;
+  G.texts.length = 0; G.lamps.length = 0; G.sel.length = 0; G.groups = {}; G.grass.clear(); if (G.grassTex) G.grassTex.clear(); G.grassGen = (G.grassGen | 0) + 1; G.grassBlood = []; G.grassBloodGen = (G.grassBloodGen | 0) + 1;
   // --- players / teams (single player is one player on team A) ---
   const cfg = opts.players && opts.players.length ? opts.players : [{ name: 'You', team: 'A' }];
   const res = opts.res || {};
@@ -15715,7 +15743,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b100';
+const BUILD_TAG = 'b101';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
