@@ -6930,7 +6930,7 @@ function updateTime(dt) {
      • the speed drifts toward a new target every 25–50 s at one scale step (20) per second, so climbing from
        20 to 60 takes ~2 s and a lull never arrives as a jump;
      • on top of that only a gentle, smooth gust modulation (±12 %), so grass and smoke breathe without jitter. */
-const WIND_DIR_HOLD = 180, WIND_TURN_RATE = 9 * Math.PI / 180, WIND_STEP = 20;
+const WIND_DIR_HOLD = 180, WIND_TURN_RATE = 9 * Math.PI / 180, WIND_STEP = 28, WIND_START = 200, WIND_RESHUFFLE = 60;   // a match opens in a 200-speed gale; every minute the speed rerolls
 function updateAmbient(dt) {
   const w = G.wind;
   w.t += dt;
@@ -6939,7 +6939,8 @@ function updateAmbient(dt) {
   else {
   if (w.dir === undefined) {                                             // first tick: seed the model from the current vector
     w.dir = Math.atan2(w.y || -4, w.x || 14); w.dirTarget = w.dir; w.dirT = WIND_DIR_HOLD;
-    w.spd = Math.hypot(w.x || 14, w.y || -4); w.spdTarget = w.spd; w.spdT = rnd(25, 50);
+    w.spd = WIND_START; w.spdTarget = WIND_START; w.spdT = WIND_RESHUFFLE;   // the match opens in a full 200-speed gale — grass, dust and canopies streaming from the first second
+    w.x = Math.cos(w.dir) * w.spd; w.y = Math.sin(w.dir) * w.spd;
   }
   // heading: hold, then pick a new target and turn toward it along the short arc at a limited rate
   w.dirT -= dt;
@@ -6948,7 +6949,7 @@ function updateAmbient(dt) {
   const step = WIND_TURN_RATE * dt; w.dir += Math.abs(dd) <= step ? dd : Math.sign(dd) * step;
   // speed: new target now and then; approach it at WIND_STEP units per second
   w.spdT -= dt;
-  if (w.spdT <= 0) { w.spdT = rnd(25, 50); const r = Math.random(); w.spdTarget = r < .15 ? rnd(4, 12) : r < .85 ? rnd(14, 40) : rnd(40, 62); }
+  if (w.spdT <= 0) { w.spdT = WIND_RESHUFFLE; const r = Math.random(); w.spdTarget = r < .15 ? rnd(8, 30) : r < .5 ? rnd(30, 90) : r < .8 ? rnd(90, 160) : rnd(160, 220); }   // every minute a new random strength: a lull, a breeze, a strong wind or a full gale — then ramp there smoothly
   const ds = w.spdTarget - w.spd, sstep = WIND_STEP * dt; w.spd += Math.abs(ds) <= sstep ? ds : Math.sign(ds) * sstep;
   const gust = 1 + .09 * Math.sin(w.t * .9) + .03 * Math.sin(w.t * 2.3 + 1.7);   // smooth breathing, no jumps
   const s = w.spd * gust;
@@ -16323,7 +16324,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b126';
+const BUILD_TAG = 'b127';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
