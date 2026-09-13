@@ -7919,7 +7919,7 @@ function groundFx(u, dt) {
     // GPU/CPU grass press and an ally's ghost all read — so every screen shows the identical build-up and fade.
     let want = 0;
     if (u.landed) want = 1; else if (u.altK !== undefined && u.altK < .75) { const t = (.75 - u.altK) / .75; want = t * t * (3 - 2 * t); }
-    if (u.rope && want < .6) want = .6;
+    if (u.rope) { const k = clamp((1 - (u.altK === undefined ? 1 : u.altK)) / .5, 0, 1), rw = .6 * k * k * (3 - 2 * k); if (rw > want) want = rw; }   // fast-rope hover: the wash builds with the descent to rope height (nothing switches on when the rope is called)
     if (u._washK === undefined) u._washK = want;
     u._washK += (want - u._washK) * Math.min(1, dt * (want > u._washK ? 2.4 : 1.1));   // presses in quickly, and the tufts stand back up slowly (~3 s) rather than snapping upright
     if (Math.abs(want - u._washK) < .004) u._washK = want;
@@ -16563,7 +16563,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b135';
+const BUILD_TAG = 'b136';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
