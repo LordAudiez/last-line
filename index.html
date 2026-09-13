@@ -6418,7 +6418,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0)]); }   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0) | (u.mgOut ? 8 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0)]); }   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B, v: (typeof BUILD_TAG !== 'undefined' ? BUILD_TAG : '') };   // tag every snapshot with our build so peers can detect a version mismatch
   if (NP.host) {
@@ -6457,7 +6457,7 @@ function reconcilePeer(pid, snap) {
     const id = a[0]; seenU.add(id); let g = pg.u.get(id);
     if (!g || g.dead) { g = makeGhostUnit(a[1], a[2], a[3], pIdx); if (!g) continue; g.rid = id; pg.u.set(id, g); }
     g.tx2 = a[2]; g.ty2 = a[3]; g.tang2 = (a[4] || 0) / 100; g.hp = a[5]; if (g.hp > g.maxHp) g.maxHp = g.hp; g.inside = a[6] ? (g.inside || {}) : null; g.pose = a[7] === 2 ? 'prone' : a[7] === 1 ? 'crouch' : 'stand';   // their stance, so it shows on my screen
-    if (a[8] !== undefined) { g.altK2 = a[8] / 100; if (g.altK === undefined) g.altK = g.altK2; g.landed = !!(a[9] & 1); g.rope = (a[9] & 2) ? (g.rope || { t: 0 }) : null; }   // ally aircraft altitude / landing (eased in npLerp) so their descent + downwash show on my screen
+    if (a[8] !== undefined) { g.altK2 = a[8] / 100; if (g.altK === undefined) g.altK = g.altK2; g.landed = !!(a[9] & 1); g.rope = (a[9] & 2) ? (g.rope || { t: 0 }) : null; g.mgOut = !!(a[9] & 8); }   // ally aircraft altitude / landing (eased in npLerp) so their descent + downwash show on my screen
     if (a[10] !== undefined) {   // ally soldier fast-roping: the height left on the rope + which of this ally's helicopters they hang from, so they render sliding down on my screen
       g.roping = a[10] || 0;
       if (g.roping > 0) { const fh = a[11] ? pg.u.get(a[11]) : null; if (fh) g.ropeFrom = fh; g.ropePistol = !!(a[9] & 4); }
@@ -7662,7 +7662,15 @@ function updateUnits(dt) {
 
     /* ===== aircraft: free flight, hover-and-strafe, AC-130 orbit ===== */
     if (u.def.jet) { updateJet(u, dt); continue; }
-    if (u.def.fly) { updateAircraft(u, dt); continue; }
+    if (u.def.fly) {
+      const a0 = u.ang || 0; updateAircraft(u, dt);
+      if (u.def.rotor) {   // helicopters yaw at a real rate: 90°/s (a full turn in 4 s) — the nimble Little Bird 40% quicker
+        let dA = (u.ang || 0) - a0; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+        const mx = (Math.PI / 2) * (u.def.spr === 'littlebird' ? 1.4 : 1) * dt;
+        if (Math.abs(dA) > mx) { const na = a0 + Math.sign(dA) * mx; u.ang = Math.atan2(Math.sin(na), Math.cos(na)); }
+      }
+      continue;
+    }
 
     /* --- dodge-roll trigger: an enemy lunges within half a tile → the soldier rolls clear, away and to one side --- */
     if (!u.def.veh && !u.def.hauler && (u.rolling || 0) <= 0 && (u.rollCd || 0) <= 0 && !u.inside && !u.backOff && u.pose !== 'prone') {
@@ -8359,9 +8367,16 @@ function updateWeapons(u, dt, order) {
          fight the last metres with the pistol, instead of clicking on an empty chamber at point-blank range */
       else if (w.mag && !w.standOff && u.ammos[0] < w.mag * .4 && u.ammos[pi] > 0 && u.cds[0] <= 0) { const near = findEnemy(u.x, u.y, u.def.side.close * 1.15, 0); if (near) { u.reloads[0] = w.reload; AU.reload(u.x, u.y, w.sfx); u.tacRel = 1; continue; } }
     }
-    /* ---- long gun + close-in secondary (rocketeer): the tube only fires past its stand-off, the machine gun only inside its own reach ---- */
-    if (w.standOff) { if (findEnemy(u.x, u.y, w.standOff, 0)) continue; }
-    if (w.shortRange) { if (!findEnemy(u.x, u.y, w.rng, 0)) continue; }
+    /* ---- RPG + close-in machine gun (rocketeer): a loaded tube ALWAYS fires first, even at something close. Only once it is
+         empty and a target is inside the MG's reach does he sling the launcher and bring the machine gun up (a visible
+         0.7 s swap either way); the MG stays up while anything is within its reach, and the tube waits its turn. ---- */
+    if (u.gunSwapT > 0) { u.gunSwapT -= dt; continue; }
+    if (w.rpg && u.mgOut) continue;
+    if (w.shortRange) {
+      const near = findEnemy(u.x, u.y, w.rng, 0);
+      if (u.mgOut) { if (!near) { u.mgOut = false; continue; } }
+      else { if (near && (u.ammos[0] <= 0 || u.reloads[0] > 0)) u.mgOut = true; continue; }
+    }
     const rng = weapRange(u, w), r2 = rng * rng;
     if (w.coax) {
       /* coaxial gun: no search of its own — it is bolted beside the main gun, so it rides the main gun's aim and fires at
@@ -8401,6 +8416,8 @@ function updateWeapons(u, dt, order) {
     else u.ang = angLerp(u.ang, want, 1 - Math.pow(.0004, dt));
     if (u.cds[i] > 0) continue;
     if (w.mag && u.ammos[i] <= 0) { if (w.sidearm) continue; u.reloads[i] = w.reload; AU.reload(u.x, u.y, w.sfx); continue; }
+    /* ---- weapon draw: every foot soldier takes 0.5 s to bring a DIFFERENT weapon up (rifle ↔ pistol ↔ machine gun ↔ tube) before it can fire — the draw is animated on the rig ---- */
+    if (!u.def.veh && !u.def.fly && u.gunIdx !== i) { u.gunIdx = i; u.gunSwapT = .5; continue; }
     fire(u, t, w, muzzleFor(u, i, w));
     if (w.mag) u.ammos[i]--;
     u.cds[i] = w.cd;
@@ -13548,7 +13565,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const WHITE = new THREE.Color(1, 1, 1), GREENBLOOD = new THREE.Color(.35, 1.4, .3);
   // cheap local smoke density (0..1) at a world point — used so a flashlight beam lights up when it hits actual smoke/dust
   function smokeDensity(wx, wy) { let s2 = 0; const P2 = G.parts; for (let i = 0; i < P2.length; i++) { const q = P2[i]; const k = q.kind; if (k !== 'smoke' && k !== 'dust' && k !== 'fog') continue; const dx = q.x - wx, dy = q.y - wy; if (dx > -34 && dx < 34 && dy > -34 && dy < 34) { const d2 = dx * dx + dy * dy; if (d2 < 1156) s2 += (1 - d2 / 1156) * (q.a || .5); if (s2 > 1.2) break; } } return s2 > 1 ? 1 : s2; }
-  const RPG_BODY = col3('#5c6b3a');
+  const RPG_BODY = col3('#5c6b3a'), MG_WEP = { len: 23, wid: 4.4, col: '#2b2e32', mag: 4, drum: 1, stock: '#33373b', stockLen: 5, muzzle: 1 };   // the rocketeer's belt-fed M249 when it is in his hands
   const SKIN = col3('#c9a684'), STEEL = col3('#7c838e'), DKSTEEL = col3('#7a8088'), WOOD = col3('#6a4a2a'), BOOT = col3('#2a2622'), BLOOD = col3('#7a0f0f'), GBLOOD = col3('#6db52a'), HAIRS = ['#2a1e14', '#4a3520', '#1a1614', '#6a5030', '#8a8070'].map(col3);
   const REDCROSS = col3('#d92b2b'), GHILLIE = ['#4a5a2e', '#5c6a34', '#6a5a3a', '#3e4a28'].map(col3);
   const FS = .6;                                                     // figures are 60% of the first draft's size
@@ -13567,7 +13584,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const FIG = new Map(), SIGK = new Map(); let figDrawn = 0, figStagger = 1, figReplayed = 0;
   const sigId = v => { if (v == null) return 0; let k = SIGK.get(v); if (k === undefined) { k = SIGK.size + 1; SIGK.set(v, k); } return k; };
   function figSig(S, o) {                                            // discrete state that changes the assembled parts
-    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0) | (o.ride ? 4096 : 0) | (o.prone ? 8192 : 0) | (o.pistol ? 16384 : 0) | (o.crawl ? 32768 : 0) | (o.turn ? 65536 : 0);
+    let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.mg ? 131072 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0) | (o.ride ? 4096 : 0) | (o.prone ? 8192 : 0) | (o.pistol ? 16384 : 0) | (o.crawl ? 32768 : 0) | (o.turn ? 65536 : 0);
     h = h * 131 + sigId(o.gun); h = h * 131 + sigId(o.ut); h = h * 131 + sigId(o.mk); h = h * 131 + sigId(o.zt); h = h * 131 + sigId(o.kind);
     h = h * 131 + ((S.tier || 0) | 0); h = h * 131 + sigId(o.idle && o.idle.act);
     h = h * 131 + (Math.round((o.aimD || 0) * 9) + 20); h = h * 131 + Math.round((o.mv === undefined ? 1 : o.mv) * 4);   // aim twist / stride blend: rebuild when they change noticeably
@@ -13616,7 +13633,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     let c = FIG.get(ck); const sig = figSig(S, o), dead = !!o.dead;
     let fresh = !c || c.sig !== sig || c.S !== S || c.walk === undefined;
     if (!fresh && !dead) {
-      if ((o.rc || 0) > 0 || (o.reload || 0) > 0 || o.work) fresh = true;                       // firing / reloading / hammering: exact every frame
+      if ((o.rc || 0) > 0 || (o.reload || 0) > 0 || o.work || (o.draw !== undefined && o.draw < 1)) fresh = true;                       // firing / reloading / hammering: exact every frame
       else { const st = G.figStaggerForce || figStagger; if (st <= 1 || ((G.frame + (c.k | 0)) % st) === 0) fresh = true; }   // this figure's turn on the stagger
     }
     if (fresh) {
@@ -13828,8 +13845,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       put(P.box, X(hf2, rH), hy2, Z(hf2, rH), 0, ry, rz2, armW * .9, armW * .9, armW * .9, handCol);
       return { f: hf2, r: rH, y: hy2, rz: rz2 };
     };
-    const W = S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }, wl = W.len * sc, ww = Math.max(1.4 * sc, W.wid * sc * .6);
-    const launcher = !med && W.wid >= 6 && !W.muzzle, shoY2 = shoY - 1.5 * sc;
+    const W = o.mg ? MG_WEP : (S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }), wl = W.len * sc, ww = Math.max(1.4 * sc, W.wid * sc * .6);
+    const drawK = o.draw === undefined ? 1 : Math.max(0, Math.min(1, o.draw)), drawE = 1 - drawK * drawK * (3 - 2 * drawK);   // weapon draw: 1 = up and ready, 0 = just reaching for it
+    const launcher = !med && !o.mg && W.wid >= 6 && !W.muzzle, shoY2 = shoY - 1.5 * sc - drawE * 5 * sc;
+    if (o.mg) put(P.cyl, X(tl - torsoD * .5 - 1.6 * sc, -torsoW * .1), tcY + torsoH * .05, Z(tl - torsoD * .5 - 1.6 * sc, -torsoW * .1), .8, ry, .1, 1.5 * sc, 22 * sc, 1.5 * sc, col3('#2f3328'));   // the RPG-7 slung across the back while the machine gun is up
     let la, ra, lrt = -aR, rrt = aR, rifle = false;                             // swing (rz) + right-offset of each arm's pivot
     if (zed) { const reach = o.zt === 'runner' ? 0 : 1.35 + Math.sin(walk * .7) * .12; la = o.zt === 'runner' ? sw * .9 : reach; ra = o.zt === 'runner' ? -sw * .9 : reach - .3; }
     else if (armed && med) {
@@ -13846,7 +13865,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     else if (o.rope) { la = 2.9; ra = 2.9; }
     else { la = -sw * .4; ra = sw * .4; }
     const hand = { };                                                           // hand positions (f = forward, r = right, y = height)
-    const dip = -.07 + relK * .24 + rc * .06 + idDip, cd0 = Math.cos(dip), sd0 = Math.sin(dip);   // muzzle lifts while the magazine goes in, and flips up a touch on recoil; idle 'check' raises it
+    const dip = -.07 + relK * .24 + rc * .06 + idDip + drawE * 1.05, cd0 = Math.cos(dip), sd0 = Math.sin(dip);   // a weapon being drawn comes up muzzle-down from the hip   // muzzle lifts while the magazine goes in, and flips up a touch on recoil; idle 'check' raises it
     if (rifle) {
       // the stock sits against the right shoulder; the bore runs forward from there with a slight droop.
       // Right hand on the grip, left hand out on the fore-end — the arms are drawn to reach those points.
@@ -13859,7 +13878,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         limb(bodyPool, sxp, shoY2, szp, ddx / hl, ddz / hl, L, armW, -Math.atan2(ddz, ddx), Math.atan2(hl, -ddy), sleeve);
         put(P.box, sxp + ddx / dl * L, shoY2 + ddy / dl * L, szp + ddz / dl * L, 0, ry, 0, armW * .9, armW * .9, armW * .9, skin);
       }
-      for (const [s2, t, rt] of pts) { const bit = s2 < 0 ? L_LA : L_RA; const hf = bf + cd0 * t, hy = by + sd0 * t - ww * .45 - (s2 < 0 ? relK * 4.5 * sc : 0); if (s2 < 0 && relK > .35 && (lm & bit)) put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); if (lm & bit) { hand[s2] = arm2(rt, rt * .6 + gr * .4, hf, hy, zed || med ? skin : GLOVE); } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
+      for (const [s2, t, rt] of pts) { const bit = s2 < 0 ? L_LA : L_RA; const hf = bf + cd0 * t, hy = by + sd0 * t - ww * .45 - (s2 < 0 ? relK * 4.5 * sc : 0); if (s2 < 0 && relK > .35 && (lm & bit)) { if (o.mg) {   // machine gun: the ammo can comes up from the hip in the left hand, its belt of brass rounds feeding up into the receiver
+            put(P.box, X(hf, rt * .6), hy - 2.2 * sc, Z(hf, rt * .6), 0, ry, dip - .4, 5 * sc, 4 * sc, 3.2 * sc, col3('#3e4a30'));
+            const fk = Math.max(0, Math.min(1, (relP - .5) / .4)); for (let r = 0; r < 6; r++) { const tt = r / 5; if (tt > fk + .15) break; const q = [hf + (bf + cd0 * wl * .42 - hf) * tt, hy - 2.2 * sc + (by + sd0 * wl * .42 - ww * .1 - (hy - 2.2 * sc)) * tt]; put(P.box, X(q[0], rt * .6 + (gr - rt * .6) * tt), q[1], Z(q[0], rt * .6 + (gr - rt * .6) * tt), 0, ry, dip + .5, .7 * sc, 1.6 * sc, .5 * sc, col3('#c9a33d')); } }
+          else put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); } if (lm & bit) { hand[s2] = arm2(rt, rt * .6 + gr * .4, hf, hy, zed || med ? skin : GLOVE); } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
       hand.base = { f: bf, r: gr, y: by };
     } else for (let s2 = -1; s2 <= 1; s2 += 2) {
       const bit = s2 < 0 ? L_LA : L_RA, sw2 = s2 < 0 ? la : ra, rt = s2 < 0 ? lrt : rrt;
@@ -13902,11 +13924,17 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         cy(6 * sc, 6.5 * sc, 1.9 * sc, WOOD);                                     // wooden heat guard
         bx(4 * sc, -3.2 * sc, 2.2 * sc, 4.6 * sc, 1.6 * sc, DK); bx(-.5 * sc, -3.6 * sc, 2.0 * sc, 4.2 * sc, 1.5 * sc, WOOD);   // trigger grip + rear grip
         bx(15 * sc, 2.2 * sc, .8 * sc, 2.6 * sc, .6 * sc, DK); bx(1 * sc, 2.4 * sc, .8 * sc, 2.0 * sc, .6 * sc, DK);            // front + rear sights
-        if (!(relP > 0)) {                                                         // loaded: the PG-7 grenade — booster stem, bulbous shaped-charge head, pointed nose
-          cy(25 * sc, 5 * sc, 1.0 * sc, OLV);
-          const q = at(30 * sc); put(P.head, X(q[0], gr), q[1], Z(q[0], gr), 0, ry, HPI + dip, 2.7 * sc, 4.6 * sc, 2.7 * sc, OLV);
-          const q2 = at(34.5 * sc); put(P.head, X(q2[0], gr), q2[1], Z(q2[0], gr), 0, ry, HPI + dip, 1.4 * sc, 2.4 * sc, 1.4 * sc, DK);
-          for (let k = 0; k < 4; k++) { const an = k * HPI + .4, q3 = at(23.5 * sc); put(P.box, X(q3[0], gr + Math.cos(an) * 1.5 * sc), q3[1] + Math.sin(an) * 1.5 * sc, Z(q3[0], gr + Math.cos(an) * 1.5 * sc), 0, ry, dip + an, 2.2 * sc, .4 * sc, 1.6 * sc, DK); }   // folded stabiliser fins
+        // the PG-7 grenade: gone the moment it is fired; during the reload the next one is brought up from the hip and its
+        // booster stem pushed down the muzzle (it slides in along the bore, held out by the left hand), then sits ready
+        const ins = relP > 0 ? Math.max(0, Math.min(1, (relP - .22) / .7)) : 1, insK = ins * ins * (3 - 2 * ins);
+        if (relP <= 0 || relP > .22) {
+          const sh = (1 - insK) * 17 * sc, down = (1 - insK) * 4.5 * sc, side = (1 - insK) * -3 * sc;   // starts ahead/below/left of the muzzle, slides home
+          const g2 = gr + side, cyG = (t, L, r, col) => { const q = at(t + sh); put(P.cyl, X(q[0], g2), q[1] - down, Z(q[0], g2), 0, ry, HPI + dip, r, L, r, col); };
+          cyG(25 * sc, 5 * sc, 1.0 * sc, OLV);
+          const q = at(30 * sc + sh); put(P.head, X(q[0], g2), q[1] - down, Z(q[0], g2), 0, ry, HPI + dip, 2.7 * sc, 4.6 * sc, 2.7 * sc, OLV);
+          const q2 = at(34.5 * sc + sh); put(P.head, X(q2[0], g2), q2[1] - down, Z(q2[0], g2), 0, ry, HPI + dip, 1.4 * sc, 2.4 * sc, 1.4 * sc, DK);
+          for (let k = 0; k < 4; k++) { const an = k * HPI + .4, q3 = at(23.5 * sc + sh); put(P.box, X(q3[0], g2 + Math.cos(an) * 1.5 * sc), q3[1] - down + Math.sin(an) * 1.5 * sc, Z(q3[0], g2 + Math.cos(an) * 1.5 * sc), 0, ry, dip + an, 2.2 * sc, .4 * sc, 1.6 * sc, DK); }   // folded stabiliser fins
+          if (relP > .22 && ins < 1 && (lm & L_LA)) { const q4 = at(27 * sc + sh); put(P.box, X(q4[0], g2 - 1.2 * sc), q4[1] - down - .6 * sc, Z(q4[0], g2 - 1.2 * sc), 0, ry, dip, 2.4 * sc, 2.4 * sc, 2.4 * sc, GLOVE); }   // the left hand gripping the round as it goes in
         }
       } else if (hand.base && !med && o.ut && GUNKIT[o.ut]) {
         // role-specific weapon kits, laid along the bore from the stock at the shoulder (hands already sit at .28 / .6 of the bore)
@@ -15345,7 +15373,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           drawFigure(x, ry, z, u.ang, 0, S, { kind: 'mil', gun: u.ropePistol ? gunOf(u.t) : 'none', pistol: !!u.ropePistol, rc: u.rc || 0, scale: .92, limbs: u.limbs, id: u.id, rope: 1, ut: u.t });   // sidearm out in the free hand when there is something to shoot
         } else
         {
-          const w0 = u.def.allWeps && u.def.allWeps[0], relT = u.reloads && u.reloads[0] > 0 && w0 && w0.reload ? 1 - u.reloads[0] / w0.reload : 0;
+          const wi = u.mgOut ? 1 : 0, w0 = u.def.allWeps && u.def.allWeps[wi], relT = u.reloads && u.reloads[wi] > 0 && w0 && w0.reload ? 1 - u.reloads[wi] / w0.reload : 0;
           let bud = null;
           if (u.buddy && !u.buddy.dead) {   // reach a hand to the team-mate; height depends on what's being gripped (shoulder / arm / body)
             const b = u.buddy, sc2 = .92 * .034 * FS, rt = -((S.wid || 15) * sc2 * .95) * .5;
@@ -15366,7 +15394,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const hasTgt = !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh);
           let aimD = 0; if (hasTgt && u.aims && u.aims[0] !== undefined) { aimD = u.aims[0] - u.ang; while (aimD > Math.PI) aimD -= TAU; while (aimD < -Math.PI) aimD += TAU; }   // torso / head / arms turn toward the target, ahead of the feet
           const spd = Math.hypot(u.vx || 0, u.vy || 0); u._mv = (u._mv === undefined ? 1 : u._mv) + (Math.min(1, spd / 28) - (u._mv === undefined ? 1 : u._mv)) * .22;   // eased stride blend: the walk cycle fades to a neutral stance when he stops
-          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: dodgeCrouch || !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: dodgeProne || (u.pose === 'prone' && !u.def.veh && !u.sitting), crawl: u.pose === 'prone' && spd > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, tac: hasTgt, aimD, mv: u._mv, fx: rollFx });
+          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.mgOut ? 'support' : u.t, mg: !!u.mgOut, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, draw: u.gunSwapT > 0 ? 1 - u.gunSwapT / .5 : 1, pistol: !!u.pistolOut, buddy: bud, crouch: dodgeCrouch || !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: dodgeProne || (u.pose === 'prone' && !u.def.veh && !u.sitting), crawl: u.pose === 'prone' && spd > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, tac: hasTgt, aimD, mv: u._mv, fx: rollFx });
           u._pang = u.ang;   // last facing, for the prone pivot animation
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
@@ -16403,7 +16431,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b129';
+const BUILD_TAG = 'b130';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
