@@ -6427,7 +6427,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0) | (u.mgOut ? 8 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0) | (((u.gunIdx || 0) & 3) << 4)]); }   // + which weapon is in his hands (0 primary / 1 secondary / last = pistol) so allies see the same gun and the draw animation   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0) | (u.mgOut ? 8 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0) | (((u.gunIdx || 0) & 3) << 4), u.pitch !== undefined ? Math.round(u.pitch * 100) : 0, u.roll !== undefined ? Math.round(u.roll * 100) : 0]); }   // [14,15] Little Bird nose pitch / bank so allies see the same dive + circling attitude   // + which weapon is in his hands (0 primary / 1 secondary / last = pistol) so allies see the same gun and the draw animation   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B, v: (typeof BUILD_TAG !== 'undefined' ? BUILD_TAG : '') };   // tag every snapshot with our build so peers can detect a version mismatch
   if (NP.host) {
@@ -6479,6 +6479,7 @@ function reconcilePeer(pid, snap) {
       if (g._gi !== undefined && gi !== g._gi) g.gunSwapT = .5;
       g._gi = gi; g.gunIdx = gi; g.pistolOut = ws.length > 1 && gi === ws.length - 1; g.mgOut = gi === 1 && !!(ws[1] && ws[1].shortRange);
     }
+    if (a[14] !== undefined && g.def && g.def.fixedGuns) { g.pitch2 = a[14] / 100; g.roll2 = a[15] / 100; if (g.pitch === undefined) { g.pitch = g.pitch2; g.roll = g.roll2; } }   // ally Little Bird attitude (eased in npLerp)
   }
   for (const [id, g] of pg.u) { if (!seenU.has(id)) { g.dead = true; pg.u.delete(id); } }
 
@@ -6590,6 +6591,7 @@ function npLerp(u, dt) {
   if (u.rolling > 0) u.rolling = Math.max(0, u.rolling - dt);       // ally dodge: run the move down continuously between snapshots so it plays smoothly
   if (u.dodgeProneT > 0) u.dodgeProneT = Math.max(0, u.dodgeProneT - dt);
   if (u.gunSwapT > 0) u.gunSwapT = Math.max(0, u.gunSwapT - dt);       // ally weapon draw animation runs down locally
+  if (u.pitch2 !== undefined) { const k = Math.min(1, dt * 6); u.pitch += (u.pitch2 - u.pitch) * k; u.roll += (u.roll2 - u.roll) * k; }   // ally Little Bird: ease the nose/bank toward the streamed attitude
   if (typeof groundFx === 'function') groundFx(u, dt);   // ally ghosts leave the same tuft trails & rotor downwash on my screen, in real time
 }
 function npGhostZed(z, dt) {
@@ -7681,6 +7683,7 @@ function updateUnits(dt) {
         let dA = (u.ang || 0) - a0; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
         const mx = (Math.PI / 2) * (u.def.spr === 'littlebird' ? 1.4 : 1) * dt;
         if (Math.abs(dA) > mx) { const na = a0 + Math.sign(dA) * mx; u.ang = Math.atan2(Math.sin(na), Math.cos(na)); }
+        if (u.def.fixedGuns && u.pitch !== undefined && !u._lbLive) { const k = Math.pow(.08, dt); u.pitch *= k; u.roll *= k; }   // hovering / landed / roping: the Little Bird levels off
       }
       continue;
     }
@@ -7930,7 +7933,9 @@ function groundFx(u, dt) {
     }
     const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)];
     if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) {
-      grassStamp(u.x, u.y, u.r * (1.2 + 3.3 * wash));
+      // the tufts under the rotor are pressed FLAT by the live downwash (the grass shader's uDown sources / the CPU carpet's
+      // wash term) and stand straight back up as the helicopter climbs away — no 30-second trample stamp, the grass is
+      // never cut or scoured.
     }
     else if (WATER(gt) && !u.landed) {
       u._wwash = (u._wwash || 0) - dt;
@@ -7966,6 +7971,7 @@ function groundFx(u, dt) {
 function flyTo(u, tx, ty, dt, arrive, boost) {
   const dx = tx - u.x, dy = ty - u.y, d = Math.hypot(dx, dy) || 1;
   if (u.def && u.def.orbit) { flyHeading(u, Math.atan2(dy, dx), dt, boost); return d < Math.max(arrive || 6, 60); }
+  if (u.def && u.def.fixedGuns && u.altK !== undefined && u.altK > .3) return lbFlyTo(u, tx, ty, dt, arrive, boost);   // the Little Bird is flown on attitude physics
   if (d < (arrive || 6)) { u.vx *= .86; u.vy *= .86; u.x += u.vx * dt; u.y += u.vy * dt; return true; }
   const spd = u.spd * (boost || 1);
   const ax = dx / d, ay = dy / d;
@@ -8105,6 +8111,7 @@ function updateAircraft(u, dt) {
   flareTick(u, dt);                                 // every aircraft can run flares
   const o = u.order;
   const rng = u.def.wep.rng * rngMul(u);
+  if (u.def.fixedGuns) { u._lbAtkF = false; u._lbLive = false; if (u.pitch === undefined) { u.pitch = 0; u.roll = 0; } }
 
   /* ---- helicopter altitude: 1 = cruising, 0 = on the ground. Landing / take-off are animated, and the
      rotor wash gets violent close to the ground. Anything but a land/pickup/board order means "take off". ---- */
@@ -8113,7 +8120,7 @@ function updateAircraft(u, dt) {
     if (u.altK === undefined) u.altK = 1;
     if (carry) u.cargo = u.cargo || [];
     const boardReq = carry && (G.frame - (u.boardReq || -99)) < 3;              // infantry are walking over to board
-    const stationary = !o || o.type === 'land';
+    const stationary = (!o || o.type === 'land') && !(u.def.fixedGuns && u.atk);   // a Little Bird on a gun run is never "parked" even at attack height
     let wantAlt = 1;
     if (carry && !(o && o.type === 'pickup')) u.landReqT = 0;
     if (carry && u.rope && !u.cargo.length) { u.rope = null; u._ropeCX = undefined; }
@@ -8121,6 +8128,7 @@ function updateAircraft(u, dt) {
     else if (carry && o && o.type === 'pickup' && u.landReqT) wantAlt = 0;
     else if (carry && !o && u.rope) { wantAlt = .5; u.landed = false; }
     else if (!o && (u.landed || boardReq)) wantAlt = 0;
+    else if (u.def.fixedGuns && u.atk && u._atkAlt) wantAlt = u._atkAlt;          // Little Bird: down to attack height for the gun run, back up for the break
     if (o && o.type !== 'land' && !(carry && o.type === 'pickup' && u.landReqT)) { u.landed = false; if (u.rope) { u.rope = null; u._ropeCX = undefined; } }
     const prev = u.altK;
     // a longer, eased climb / descent: gentle off the ground and gentle into the flare, quicker through the middle (~4 s end to end)
@@ -8181,14 +8189,11 @@ function updateAircraft(u, dt) {
     u.home = { x: o.x, y: o.y };
     if (flyTo(u, o.x, o.y, dt, 24) && o.type === 'move') u.order = null;
   } else if (focus && u.def.fixedGuns) {
-    // Little Bird: its guns are fixed down the nose, so it does NOT circle — it closes to a firing stand-off, brakes to a
-    // hover and holds there pointing at the target (crabbing to keep the distance), guns bearing straight ahead
+    // Little Bird gun run — flown on real helicopter physics (see lbAttack): the guns are bolted to the nose, so the
+    // pilot has to DIVE the nose onto the target to shoot; nose-down also drives the airframe forward, so it banks
+    // sideways and circles the target while it shoots, and pulls up (guns off the target) when it gets too close
     u.home = { x: focus.x, y: focus.y };
-    const dd = Math.hypot(focus.x - u.x, focus.y - u.y), stand = rng * .7;
-    if (dd > stand * 1.15) flyTo(u, focus.x, focus.y, dt, stand);
-    else if (dd < stand * .6) { const a = angTo(focus.x, focus.y, u.x, u.y); flyTo(u, focus.x + Math.cos(a) * stand, focus.y + Math.sin(a) * stand, dt, 10, .6); }
-    else { u.vx *= Math.pow(.05, dt); u.vy *= Math.pow(.05, dt); u.x = clamp(u.x + u.vx * dt, 8, WW - 8); u.y = clamp(u.y + u.vy * dt, 8, WH - 8); }
-    u.ang = angLerp(u.ang, angTo(u.x, u.y, focus.x, focus.y), 1 - Math.pow(.003, dt));   // nose onto the target (yaw-rate limited outside)
+    lbAttack(u, focus, dt, rng);
   } else if (focus) {
     // remember where the fighting is, then work the target
     u.home = { x: focus.x, y: focus.y };
@@ -8201,7 +8206,66 @@ function updateAircraft(u, dt) {
     circleAround(u, u.home.x, u.home.y, u.def.orbit ? 260 : 190, dt, .82);
   }
 
+  if (u.def.fixedGuns && !u._lbAtkF) { u.atk = null; u._atkAlt = 1; }   // not on a gun run: back to cruise height, next contact starts a fresh run
   updateWeapons(u, dt, o);          // the guns aim & fire independently of the airframe
+}
+
+/* ------------------------------------------------------------------
+   Little Bird flight physics. The airframe is flown by ATTITUDE, like a real
+   helicopter: the rotor thrust tilts with the body, so nose-down (pitch > 0)
+   accelerates it forward, nose-up brakes it, and banking (roll, + = right)
+   slides it sideways. Velocity is world-frame momentum — yawing the nose does
+   not turn the flight path — and air drag caps the speed. Pitch/roll are
+   rate-limited so every manoeuvre reads as a smooth control input.
+   ------------------------------------------------------------------ */
+const LB_ACC = 430, LB_DRAG = 1.25, LB_ALTVIS = .42, LB_PMAX = .62, LB_RMAX = .6;
+function lbBody(u) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang); return { ca, sa, vf: u.vx * ca + u.vy * sa, vl: -u.vx * sa + u.vy * ca }; }
+/* the attitude that holds body-axis speed vD (steady state) plus a correction toward it from the current speed v */
+function lbCmd(vD, v, lim) { return Math.asin(clamp((LB_DRAG * vD + (vD - v) * 2.2) / LB_ACC, -(lim || LB_PMAX), lim || LB_PMAX)); }
+function lbStep(u, dt, pitchCmd, rollCmd, yawWant) {
+  if (u.pitch === undefined) { u.pitch = 0; u.roll = 0; }
+  const pr = 1.25 * dt, rr = 1.7 * dt;
+  u.pitch += clamp(pitchCmd - u.pitch, -pr, pr);
+  u.roll += clamp(rollCmd - u.roll, -rr, rr);
+  if (yawWant !== undefined) u.ang = angLerp(u.ang, yawWant, 1 - Math.pow(.003, dt));   // the yaw RATE is capped in updateUnits (90°/s, +40% for the Little Bird)
+  const b = lbBody(u);
+  const vf = b.vf + (LB_ACC * Math.sin(u.pitch) - LB_DRAG * b.vf) * dt, vl = b.vl + (LB_ACC * Math.sin(u.roll) - LB_DRAG * b.vl) * dt;
+  u.vx = vf * b.ca - vl * b.sa; u.vy = vf * b.sa + vl * b.ca;
+  u.x = clamp(u.x + u.vx * dt, 8, WW - 8); u.y = clamp(u.y + u.vy * dt, 8, WH - 8);
+  u._lbLive = true;
+}
+/* transit: fly to a point nose-first — pitch down to accelerate, bank/crab through the turns, nose up to arrive */
+function lbFlyTo(u, tx, ty, dt, arrive, boost) {
+  const dx = tx - u.x, dy = ty - u.y, d = Math.hypot(dx, dy) || 1, spd = u.spd * (boost || 1);
+  const b = lbBody(u), near = d < (arrive || 6);
+  const want = Math.min(spd, near ? 0 : Math.max(20, d * 1.6));                       // slow into the point
+  const ax = dx / d, ay = dy / d, vfD = want * (ax * b.ca + ay * b.sa), vlD = want * (-ax * b.sa + ay * b.ca) * .55;   // most of the closing speed goes down the nose, some crabs
+  const yawWant = near ? undefined : Math.atan2(dy, dx);
+  lbStep(u, dt, lbCmd(vfD, b.vf), lbCmd(vlD, b.vl, LB_RMAX), yawWant);
+  return near;
+}
+/* the gun run: run in → nose-down on the target and orbit it sideways while the guns fire → pull up and back off → run in again */
+function lbAttack(u, focus, dt, rng) {
+  u._lbAtkF = true;
+  const dx = focus.x - u.x, dy = focus.y - u.y, dd = Math.hypot(dx, dy) || 1, stand = rng * .8;
+  const h = u.def.alt * LB_ALTVIS * (u.altK === undefined ? 1 : u.altK);           // height above the ground, in the same px the guns are aimed in
+  const need = Math.atan2(h, dd);                                                  // dive angle that puts the gun-line on the target
+  const want = Math.atan2(dy, dx), b = lbBody(u);
+  if (!u.orbitDir) u.orbitDir = Math.random() < .5 ? 1 : -1;
+  if (!u.atk) { u.atk = 'run'; u._runT = 0; }
+  if (u.atk === 'run') {
+    u._atkAlt = .6;                                                                // come down to attack height so the dive stays shallow
+    u._runT += dt;
+    let pitchCmd, vlD;
+    if (dd > stand * 1.35) { pitchCmd = Math.max(need, lbCmd(u.spd, b.vf)); vlD = 0; }   // run-in: nose down hard, straight at it
+    else { pitchCmd = clamp(need, -.15, LB_PMAX); vlD = u.orbitDir * u.spd * .5; }     // on the ring: nose held on the target, sliding sideways around it
+    lbStep(u, dt, pitchCmd, lbCmd(vlD, b.vl, LB_RMAX), want);
+    if (dd < stand * .5 || need > .72 || u._runT > 10) { u.atk = 'break'; u._brkT = 0; u.orbitDir = Math.random() < .35 ? -u.orbitDir : u.orbitDir; }
+  } else {
+    u._atkAlt = 1; u._brkT += dt;                                                  // break: nose up, kill the run, climb, keep circling — then re-attack
+    lbStep(u, dt, lbCmd(-u.spd * .45, b.vf), lbCmd(u.orbitDir * u.spd * .45, b.vl, LB_RMAX), want);
+    if ((u._brkT > 1.4 && dd > stand * 1.05 && b.vf < 15) || u._brkT > 5) { u.atk = 'run'; u._runT = 0; }
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -8434,7 +8498,13 @@ function updateWeapons(u, dt, order) {
     engaged = true;
     const want = angTo(u.x, u.y, t.x, t.y);
     u.aims[i] = angLerp(u.aims[i], want, 1 - Math.pow(w.slew || .0015, dt));
-    if (w.fixed) { u.aims[i] = u.ang; const off = Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang)); if (Math.abs(off) > .2) continue; }   // forward-fixed gun: it fires only down the airframe's nose; the helicopter itself must turn onto the target
+    if (w.fixed) {   // forward-fixed gun: it fires only down the airframe's nose; the helicopter itself must turn onto the target
+      u.aims[i] = u.ang; const off = Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang)); if (Math.abs(off) > .2) continue;
+      if (u.def.fixedGuns && u.pitch !== undefined && !u.landed) {   // …and DIVE onto it: the gun-line follows the nose pitch, so it only hits when the dive angle matches the target's depression angle
+        const h = u.def.alt * LB_ALTVIS * (u.altK === undefined ? 1 : u.altK), need = Math.atan2(h, Math.sqrt(d2) || 1);
+        if (Math.abs(need - u.pitch) > .14) continue;
+      }
+    }
     if (u.def.veh) { if (i === 0) u.aimT = u.aims[0]; }
     else u.ang = angLerp(u.ang, want, 1 - Math.pow(.0004, dt));
     if (u.cds[i] > 0) continue;
@@ -13409,6 +13479,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   /* section profiler: G.prof = true fills G.renderProf with ms per render section */
   let pfT = 0; const PF = name => { if (!G.prof) return; const t = performance.now(); if (name !== 'props_begin') (G.renderProf || (G.renderProf = {}))[name] = +(t - pfT).toFixed(2); pfT = t; };
   const GPU_GRASS_OK = !!(renderer.capabilities && renderer.capabilities.isWebGL2);
+  const DOWN_SRC = [{ x: 0, y: 0, r: 0, s: 0 }, { x: 0, y: 0, r: 0, s: 0 }, { x: 0, y: 0, r: 0, s: 0 }, { x: 0, y: 0, r: 0, s: 0 }]; let DOWN_N = 0;   // live rotor-downwash sources (game px), shared by the GPU and CPU carpets
   const GU = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3(1, 0, 0) }, uTr: { value: null }, uTrInv: { value: new THREE.Vector2(1, 1) }, uTS: { value: TS }, uCell: { value: GRASS_CELL },
     uDown: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uDownN: { value: 0 } };   // up to 4 rotor-downwash sources: xz centre (mesh units), radius, strength
   const GRASS_PROJECT = [
@@ -13435,7 +13506,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     '  float wave = sin(ddBest * 1.5 - uTime * 6.0) * 0.6 + sin(ddBest * 0.7 - uTime * 3.2) * 0.4;',   // two broad, low-frequency ripples travelling smoothly outward through the ring (a fast, gusting flow)
     '  float ff = max(f, df * 0.92);',                                                        // downwash presses the tufts flat like a trample
     '  vec2 tilt = uWind.xy * sway * (1.0 - ff) + vec2(cos(td), sin(td)) * (1.5 * f) + dvec * (df * (1.45 + wave * 0.55));',   // and lays them flowing radially OUTWARD in a smoothly rippling ring
-    '  float ang = length(tilt);',
+    '  float ang = min(length(tilt), 1.35);',                                                   // pressed tufts lie over at most ~77° — flat on the ground, never folded under it
     '  float hgt = (mvPosition.y - gRoot.y) * (1.0 - ff * 0.5);',                             // pressed grass keeps ~half its height — laid over and green, never scoured to bare ground
     '  if (ang > 1e-4) { vec2 dir = tilt / ang; float sa = sin(ang), ca = cos(ang); mvPosition.xz += dir * sa * hgt; mvPosition.y = gRoot.y + ca * hgt; }',
     '  else mvPosition.y = gRoot.y + hgt;',
@@ -14013,7 +14084,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     marksman: { furn: col3('#8a7a56'), stock: 'cheek', mag: 5, optic: 'scope', bipod: 1, brake: 1, barrel: .5 },              // DMR, tan furniture, scope
     sniper:   { furn: col3('#4a5a3a'), stock: 'cheek', mag: 3, optic: 'bigscope', bipod: 1, brake: 1, barrel: .6 }            // bolt-action, big scope
   };
-  const LEDC = new THREE.Color(.82, .9, 1), TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35), INC_TAIL = new THREE.Color(.95, .22, .05), INC_CORE = new THREE.Color(1, .55, .15), LIGHTC = new THREE.Color(1, .96, .82), FLOODC = new THREE.Color(1, .91, .69), FLOODD = new THREE.Color(.52, .47, .36), FLOODF = new THREE.Color(.062, .068, .078);   // FLOODF: a cool flashlight-LED tint at ~5% — just a hint of a beam
+  const LEDC = new THREE.Color(.82, .9, 1), FLAREC = new THREE.Color(1, .6, .25), TRACE_TAIL = new THREE.Color(.75, .3, .08), TRACE_CORE = new THREE.Color(1, .78, .35), INC_TAIL = new THREE.Color(.95, .22, .05), INC_CORE = new THREE.Color(1, .55, .15), LIGHTC = new THREE.Color(1, .96, .82), FLOODC = new THREE.Color(1, .91, .69), FLOODD = new THREE.Color(.52, .47, .36), FLOODF = new THREE.Color(.062, .068, .078);   // FLOODF: a cool flashlight-LED tint at ~5% — just a hint of a beam
   const LASER = col3('#30ff50'), KNEE = col3('#2a2c28'), GLOVE = col3('#2c2a26'), GUNMETAL = col3('#24272b'), GUNDK = col3('#15171a'), TANF = col3('#8a7a56'), SCOPE = col3('#1a1c1e'), LENS = col3('#7fc8ff'), RAIL = col3('#3a3d42');
   const GOLD = col3('#d9b24a'), HIDE = col3('#2e1f14'), ELE = col3('#77717c'), ELED = col3('#5a555f'), TUSK = col3('#efe7d2');
   const HORSE = col3('#4a3a2a'), HDARK = col3('#2c2118'), HORSE_SEAT = .72 * FS;
@@ -15181,13 +15252,16 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       const per = dense ? QUAL.gd : QUAL.gs;
       const clutter = dense && QUAL.gd >= 5;                                                   // clutter only up close and above 'mobile'
       const useGpuGrass = GPU_GRASS_OK && G.gpuGrass !== false;
+      // the live rotor downwash sources (low / landing / landed helicopters, mine and allies' alike): the tufts under the rotor are
+      // pressed flat while the helicopter is down there and stand straight back up as it climbs away — a live press, never a cut
+      DOWN_N = 0;
+      for (let ui = 0; ui < G.units.length && DOWN_N < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; let fade = 0; if (u.landed) fade = 1; else if (u.rope) fade = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; fade = t * t * (3 - 2 * t); } if (fade <= .01) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; const D = DOWN_SRC[DOWN_N++]; D.x = u.x; D.y = u.y; D.r = u.r * 10.2 * (.45 + .55 * fade); D.s = 1.3 * fade; }   // ring 300% wider than the rotor; strength and radius grow in smoothly with descent (no pop)
       if (useGpuGrass) {                                                                       // static chunks + shader wind/trample (see GPU GRASS above)
         if (!G.grassTex || G.grassTex.ww !== WW || G.grassTex.wh !== WH) allocGrassTex();
         uploadGrassTex();
         GU.uTime.value = tt; GU.uWind.value.set(wdx, wdz, wm);
-        let dn = 0;                                                                            // feed the shader the low/landing helicopters so the tufts flow outward from under the rotor
-        for (let ui = 0; ui < G.units.length && dn < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; let fade = 0; if (u.landed) fade = 1; else if (u.rope) fade = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; fade = t * t * (3 - 2 * t); } if (fade <= .01) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; GU.uDown.value[dn].set(u.x * K, u.y * K, u.r * 10.2 * K * (.45 + .55 * fade), 1.3 * fade); dn++; }   // ring 300% wider than the rotor; strength and radius grow in smoothly with descent (no pop)
-        GU.uDownN.value = dn;
+        for (let i = 0; i < DOWN_N; i++) { const D = DOWN_SRC[i]; GU.uDown.value[i].set(D.x * K, D.y * K, D.r * K, D.s); }   // feed the shader the downwash sources so the tufts flow outward from under the rotor
+        GU.uDownN.value = DOWN_N;
         updateGrassChunks(gtx0, gtx1, gty0, gty1, per);
       } else if (grassChunks.size) for (const c of grassChunks.values()) { if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false; }   // CPU fallback active: park the GPU chunks
       const swayBase = tt * 2.4, swayKx = TS * .02, swayKy = TS * .017;                        // wind sway is computed once per tile (not per blade) — one Math.sin instead of thousands, identical-looking ripple
@@ -15214,11 +15288,15 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           if (P.grass.count >= 46000) break outer;
           const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
           const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;   // spread the tufts across the tile
-          const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS, flat = grassFlat(wx, wy);
-          const bh = (.34 + h1 * .22) * (1 - flat * .5);                                        // ~half-body tall, near-flat once trampled
+          const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS; let flat = grassFlat(wx, wy);
+          let ddx = 0, ddz = 0, df = 0;                                                            // live rotor downwash (CPU carpet): pressed outward from under the rotor, released the moment it lifts away
+          for (let i = 0; i < DOWN_N; i++) { const D = DOWN_SRC[i]; const rx0 = wx - D.x, rz0 = wy - D.y, dd = Math.hypot(rx0, rz0); if (dd < D.r) { const sv = D.s * (1 - dd / D.r); if (sv > df) { df = sv; ddx = dd > 1e-3 ? rx0 / dd : 1; ddz = dd > 1e-3 ? rz0 / dd : 0; } } }
+          const ff = Math.max(flat, df * .92);
+          const bh = (.34 + h1 * .22) * (1 - ff * .5);                                          // ~half-body tall, near-flat once pressed
           const thick = 1.1 + h2 * .7;                                                            // clumps of varying girth
           let rx, rz;
-          if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran/landed through
+          if (df > .04) { const a = Math.min(1.35, df * 1.45); rx = ddx * a; rz = ddz * a; }       // laid over radially outward under the rotor
+          else if (flat > .04) { const dir = hash2(tx * 17 + k, ty * 19) * TAU; rx = Math.cos(dir) * 1.5 * flat; rz = Math.sin(dir) * 1.5 * flat; }   // pressed flat to the ground by whoever ran through
           else { rx = trx; rz = trz; }   // lean into the wind, harder as it gusts
           put(P.grass, wx * K, groundY(wx, wy), wy * K, rx, h2 * TAU, rz, thick, bh, thick, GRASSC[(tx + ty + k) % 3]);
         }
@@ -15362,9 +15440,14 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             const af = u._pvf === undefined ? 0 : (vf - u._pvf) / rdt; u._pvf = vf;
             let dA = u._pAng === undefined ? 0 : u.ang - u._pAng; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); const yawRate = dA / rdt; u._pAng = u.ang;
             const hov = (u.altK === undefined ? 1 : u.altK) * (u.landed ? 0 : 1);
-            const pitT = Math.max(-.55, Math.min(.55, (vf / spd0) * .3 + af * .0022)) * hov + Math.sin(G.t * 1.3 + u.id) * .02 * hov;
-            const rolT = Math.max(-.7, Math.min(.7, yawRate * .42 + (vf / spd0) * yawRate * .25)) * hov + Math.sin(G.t * 1.1 + u.id * 2) * .025 * hov;
-            const yawT = Math.max(-.25, Math.min(.25, -yawRate * .07)) * hov;
+            let pitT, rolT, yawT;
+            if (u.pitch !== undefined) {   // Little Bird: the attitude IS the flight control (sim physics) — nose-down dives onto the target, bank slides it round the ring
+              pitT = u.pitch * hov + Math.sin(G.t * 1.3 + u.id) * .015 * hov; rolT = (u.roll || 0) * hov + Math.sin(G.t * 1.1 + u.id * 2) * .02 * hov; yawT = 0;
+            } else {
+              pitT = Math.max(-.55, Math.min(.55, (vf / spd0) * .3 + af * .0022)) * hov + Math.sin(G.t * 1.3 + u.id) * .02 * hov;
+              rolT = Math.max(-.7, Math.min(.7, yawRate * .42 + (vf / spd0) * yawRate * .25)) * hov + Math.sin(G.t * 1.1 + u.id * 2) * .025 * hov;
+              yawT = Math.max(-.25, Math.min(.25, -yawRate * .07)) * hov;
+            }
             u._pit = (u._pit || 0) + (pitT - (u._pit || 0)) * Math.min(1, rdt * 4); u._rol = (u._rol || 0) + (rolT - (u._rol || 0)) * Math.min(1, rdt * 3.2); u._yw = (u._yw || 0) + (yawT - (u._yw || 0)) * Math.min(1, rdt * 3);
             um.g.rotateY(-u._yw); um.g.rotateX(u._rol); um.g.rotateZ(-u._pit);
           } else { um.g.rotateZ(Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); } /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
@@ -15598,7 +15681,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (k === 'fire') bb(partsAdd, x, y + .1, z, r * 2.2, c[0], c[1], c[2], a * .9);
       else if (k === 'flash') bb(partsAdd, x, y + .1, z, r * 4, 1, .92, .7, a);
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
-      else if (k === 'flare') { const fl = .75 + .25 * Math.sin(G.t * 40 + p.x); bb(partsAdd, x, y, z, r * 7 * fl, 1, .55, .22, a * .55); bb(partsAdd, x, y, z, r * 3 * fl, 1, .85, .5, a * .9); bb(partsAdd, x, y, z, r * 1.3, 1, 1, .95, a); }   // orange halo, hot amber body, white core
+      else if (k === 'flare') {   // a magnesium flare: a big flickering orange halo, hot amber body, white-hot core — and it LIGHTS the ground beneath it
+        const fl = .78 + .22 * Math.sin(G.t * 40 + p.x), br = 1.9;
+        bb(partsAdd, x, y, z, r * 13 * fl, 1, .5, .18, Math.min(1, a * .7 * br)); bb(partsAdd, x, y, z, r * 6 * fl, 1, .72, .32, Math.min(1, a * .95 * br)); bb(partsAdd, x, y, z, r * 3 * fl, 1, .9, .6, Math.min(1, a * br)); bb(partsAdd, x, y, z, r * 1.6, 1, 1, 1, 1);
+        const hz = (p.z || 0) * K, R = r * 9 + hz * .9, dk = .45 + (1 - dayNow) * .55;   // the pool spreads with height and reads strongest at night
+        FLAREC.setRGB(1 * a * dk, .58 * a * dk, .22 * a * dk); put(P.pool, x, gy + .07, z, -HPI, 0, 0, R * 2.2, R * 2.2, 1, FLAREC);
+        FLAREC.setRGB(1 * a * dk, .78 * a * dk, .42 * a * dk); put(P.pool, x, gy + .08, z, -HPI, 0, 0, R * 1.1, R * 1.1, 1, FLAREC);
+      }
       else if (k === 'ring') put(P.ring, x, gy + .06, z, -HPI, 0, 0, r, r, 1);
       else if (k === 'smoke') { let sa = a * .15 * (p.am || 1); if (p.fx === 1) { if (G.fxFire === false) continue; sa *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; sa *= smK; } bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], sa, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
       else if (k === 'dust' || k === 'fog') { let da = a * .22 * (p.am || 1); if (p.fx === 1) { if (G.fxFire === false) continue; da *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; da *= smK; } bb(partsNoise, x, y + .02, z, r * 2.1, c[0], c[1], c[2], da, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
@@ -16454,7 +16543,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b133';
+const BUILD_TAG = 'b134';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
