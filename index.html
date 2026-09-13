@@ -6417,7 +6417,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0)]); }   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0)]); }   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B, v: (typeof BUILD_TAG !== 'undefined' ? BUILD_TAG : '') };   // tag every snapshot with our build so peers can detect a version mismatch
   if (NP.host) {
@@ -6462,7 +6462,10 @@ function reconcilePeer(pid, snap) {
       if (g.roping > 0) { const fh = a[11] ? pg.u.get(a[11]) : null; if (fh) g.ropeFrom = fh; g.ropePistol = !!(a[9] & 4); }
       else { g.ropeFrom = null; g.ropePistol = false; }
     }
-    if (a[12] !== undefined) { g.rolling = a[12] / 100; g.coverCrouch = !!(a[13] & 1); }   // ally dodge-roll (tumble anim) and hunkering-in-cover crouch show on my screen
+    if (a[12] !== undefined) {   // ally dodge (roll / slide / dive, with its prone recovery) and hunkering-in-cover crouch show on my screen
+      const fl = a[13] || 0; g.rolling = a[12] / 100; g.coverCrouch = !!(fl & 1); g.dodgeKind = (fl >> 1) & 3; g.dodgeDur = g.dodgeKind === 0 ? .42 : g.dodgeKind === 1 ? .52 : .46;
+      if (fl & 8) { if (!(g.dodgeProneT > 0)) g.dodgeProneT = .8; } else g.dodgeProneT = 0;
+    }
   }
   for (const [id, g] of pg.u) { if (!seenU.has(id)) { g.dead = true; pg.u.delete(id); } }
 
@@ -6562,21 +6565,24 @@ function makeGhostBuild(t, tx, ty, pIdx) {
 /* ---- per-frame smoothing of the ghosts (called from the sim loops) ---- */
 function npLerp(u, dt) {
   if (u.tx2 == null) return;
-  const dx = u.tx2 - u.x, dy = u.ty2 - u.y, d = Math.hypot(dx, dy);
+  const dx = u.tx2 - u.x, dy = u.ty2 - u.y, d = Math.hypot(dx, dy), ox = u.x, oy = u.y;
   if (d > 320) { u.x = u.tx2; u.y = u.ty2; }
   else { const k = Math.min(1, dt * 12); u.x += dx * k; u.y += dy * k; }
+  if (dt > 0) { u.vx = (u.x - ox) / dt; u.vy = (u.y - oy) / dt; }   // a velocity for the stride blend / crawl, as the sim would give a local unit
   let da = (u.tang2 || 0) - (u.ang || 0); while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
   u.ang = (u.ang || 0) + da * Math.min(1, dt * 10); u.tang = u.ang;
   if (d > 1.5) { u.tread = (u.tread || 0) + dt * 6; u.step = (u.step || 0) + dt * 9; u.bob = (u.bob || 0) + dt * 6; }
   if (u.altK2 !== undefined) { if (u.altK === undefined) u.altK = u.altK2; u.altK += (u.altK2 - u.altK) * Math.min(1, dt * 2.2); if (Math.abs(u.altK2 - u.altK) < .003) u.altK = u.altK2; }   // ease the ghost aircraft's altitude toward the streamed target so its descent/landing (and downwash) show smoothly
   if (u.roping > 0) u.roping = Math.max(0, u.roping - dt * 150);   // ally trooper fast-roping: slide the figure down the line continuously between snapshots (the owner streams the height ~every .18s; easing it here shows a smooth rappel, not a stepped one). Each snapshot re-syncs the authoritative height.
-  if (u.rolling > 0) u.rolling = Math.max(0, u.rolling - dt);       // ally dodge-roll: run the tumble down continuously between snapshots so the somersault plays smoothly
+  if (u.rolling > 0) u.rolling = Math.max(0, u.rolling - dt);       // ally dodge: run the move down continuously between snapshots so it plays smoothly
+  if (u.dodgeProneT > 0) u.dodgeProneT = Math.max(0, u.dodgeProneT - dt);
   if (typeof groundFx === 'function') groundFx(u, dt);   // ally ghosts leave the same tuft trails & rotor downwash on my screen, in real time
 }
 function npGhostZed(z, dt) {
   if (z.tx2 != null) {
-    const dx = z.tx2 - z.x, dy = z.ty2 - z.y, d = Math.hypot(dx, dy);
+    const dx = z.tx2 - z.x, dy = z.ty2 - z.y, d = Math.hypot(dx, dy), ox = z.x, oy = z.y;
     if (d > 420) { z.x = z.tx2; z.y = z.ty2; } else { const k = Math.min(1, dt * 12); z.x += dx * k; z.y += dy * k; }
+    if (dt > 0) { z.vx = (z.x - ox) / dt; z.vy = (z.y - oy) / dt; }
     if (d > 1.5) { z.step = (z.step || 0) + dt * 9; z.bob = (z.bob || 0) + dt * 6; }
     let da = (z.tang2 || z.ang || 0) - (z.ang || 0); while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
     z.ang = (z.ang || 0) + da * Math.min(1, dt * 8);
@@ -7549,15 +7555,21 @@ function updateUnits(dt) {
       if (u.reloadT <= 0) { u.ammo = wep.mag || 0; }
     }
 
-    /* --- combat dodge-roll: the soldier throws himself clear along u.rollDir, fast and uninterruptible, then a short cooldown --- */
+    /* --- combat dodge: the soldier throws himself clear along u.rollDir with one of four moves (u.dodgeKind):
+         0 shoulder-roll · 1 CoD-style slide (a sprint that drops into a low feet-first slide) · 2 forward dive onto his
+         belly · 3 backward dive, flung away while still facing the threat. The dives end prone (u.dodgeProneT) for a
+         beat before he gets up. Uninterruptible, then a short cooldown. --- */
     if (u.rolling > 0) {
+      const k = u.dodgeKind || 0, dur = u.dodgeDur || .42, ph = 1 - u.rolling / dur;
       u.rolling -= dt;
-      const sp = u.def.spd * 2.6, mx = Math.cos(u.rollDir), my = Math.sin(u.rollDir);
+      const spMul = k === 0 ? 2.6 : k === 1 ? (3.1 - 2.3 * ph) : (2.5 - .6 * ph);
+      const sp = u.def.spd * spMul, mx = Math.cos(u.rollDir), my = Math.sin(u.rollDir);
       tryMove(u, u.x + mx * sp * dt, u.y + my * sp * dt, true, mx, my, sp, dt);
-      u.ang = u.rollDir; u.step = (u.step || 0) + sp * dt * .2;
-      if (u.rolling <= 0) { u.rolling = 0; u.rollCd = 1.4; }
+      u.ang = k === 3 ? u.rollDir + Math.PI : u.rollDir; u.step = (u.step || 0) + sp * dt * .2;
+      if (u.rolling <= 0) { u.rolling = 0; u.rollCd = 1.4; if (k >= 2) u.dodgeProneT = .8; }
       continue;
     }
+    if (u.dodgeProneT > 0) { u.dodgeProneT -= dt; u.vx = u.vy = 0; updateWeapons(u, dt, null); continue; }   // flat on the deck after a dive: still shoots, then gets up
     if (u.rollCd > 0) u.rollCd -= dt;
 
     /* --- fast-roping: sliding down from the helicopter, hands full of rope --- */
@@ -7654,9 +7666,12 @@ function updateUnits(dt) {
     if (!u.def.veh && !u.def.hauler && (u.rolling || 0) <= 0 && (u.rollCd || 0) <= 0 && !u.inside && !u.backOff && u.pose !== 'prone') {
       const threat = findEnemy(u.x, u.y, TS * .55, 0);
       if (threat && !threat.dead) {
-        const a = angTo(u.x, u.y, threat.x, threat.y), side = Math.random() < .5 ? 1 : -1;
-        u.rollDir = a + Math.PI + side * (Math.PI / 2) * rnd(.2, .7);       // break away from the threat with a sideways component
-        u.rolling = .42;
+        const a = angTo(u.x, u.y, threat.x, threat.y), side = Math.random() < .5 ? 1 : -1, away = a + Math.PI, r = Math.random();
+        const k = r < .38 ? 0 : r < .62 ? 1 : r < .82 ? 2 : 3;                    // roll / slide / forward dive / backward dive
+        if (k === 0) u.rollDir = Math.random() < .2 ? rnd(TAU) : away + side * rnd(0, 1.2);   // a roll can go ANY direction, mostly away
+        else if (k === 1) u.rollDir = away + side * rnd(.35, .95);              // slide off at an angle
+        else u.rollDir = away + side * rnd(0, .45);                             // dives go mostly straight away
+        u.dodgeKind = k; u.dodgeDur = k === 0 ? .42 : k === 1 ? .52 : .46; u.rolling = u.dodgeDur;
         if (typeof AU !== 'undefined' && AU.roll) AU.roll(u.x, u.y);
       }
     }
@@ -13446,8 +13461,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   P.branch = pool(new THREE.CylinderGeometry(.012, .03, 1, 5), new THREE.MeshStandardMaterial({ color: lin('#4a3826'), map: TEX.wood, roughness: 1 }), 2500, true);
   const FLOWERC = [lin('#ffd84a'), lin('#ff7a7a'), lin('#e8e6ff'), lin('#ff9fd0'), lin('#7ab8ff')], REEDC = [lin('#6a7a3a'), lin('#4f5f2c'), lin('#8a8a4a')], LITC = [lin('#b8862e'), lin('#8a5a24'), lin('#c9a04a'), lin('#6a4a24')];
   const CATTAIL = lin('#4a2e1a');
-  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond].concat(P.splat);
-  const PROPS = [P.trunk, P.birch, P.rock, P.barrel, P.wreck], foliage = [];
+  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond, P.trunk].concat(P.splat);   // trunks are per-frame now: they BEND with the wind so the crowns stay on them
+  const PROPS = [P.birch, P.rock, P.barrel, P.wreck], foliage = [];
   /* pools grow on demand: when a frame asks for more instances than a pool holds (900-zombie hordes, forests of casings),
      the pool is rebuilt 60% larger after the frame — otherwise the overflow simply vanishes, which reads as figures
      with missing limbs / see-through props once the field gets crowded */
@@ -13506,6 +13521,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     let h = (o.dead ? 1 : 0) | ((o.limbs === undefined ? 15 : o.limbs) << 1) | (o.tac ? 64 : 0) | (o.crouch ? 128 : 0) | (o.sit ? 256 : 0) | (o.rope ? 512 : 0) | (o.getup ? 1024 : 0) | ((o.hop || 0) > 0 ? 2048 : 0) | (o.ride ? 4096 : 0) | (o.prone ? 8192 : 0) | (o.pistol ? 16384 : 0) | (o.crawl ? 32768 : 0) | (o.turn ? 65536 : 0);
     h = h * 131 + sigId(o.gun); h = h * 131 + sigId(o.ut); h = h * 131 + sigId(o.mk); h = h * 131 + sigId(o.zt); h = h * 131 + sigId(o.kind);
     h = h * 131 + ((S.tier || 0) | 0); h = h * 131 + sigId(o.idle && o.idle.act);
+    h = h * 131 + (Math.round((o.aimD || 0) * 9) + 20); h = h * 131 + Math.round((o.mv === undefined ? 1 : o.mv) * 4);   // aim twist / stride blend: rebuild when they change noticeably
     if (o.dead) h = h * 131 + Math.round((o.tilt || 0) * 200);       // air-tumbling corpses change their tilt → rebuild
     return h;
   }
@@ -13601,7 +13617,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       else if (act === 'fist') { idLean = .3 + Math.max(0, Math.sin(T * 4)) * .18; idYaw = Math.sin(T * 4) * .12; }
     }
     ang += idYaw;
-    const cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, ry = -ang;
+    let cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, ry = -ang;
+    const setFrame = a => { cx = Math.cos(a); cz = Math.sin(a); px = -cz; pz = cx; ry = -a; };   // legs keep the body heading; torso / head / arms turn toward the aim
     const legL = (S.legLen || 10) * sc, legW = (S.legW || 4.5) * sc, armL = (S.armLen || 11) * sc, armW = (S.armW || 4) * sc, torsoW = (S.wid || 15) * sc * .95, torsoD = (S.len || 18) * sc * .42, torsoH = 13 * sc * Math.sqrt((S.len || 18) / 18), headR = (S.head || 3.8) * sc * 1.05;
     const uni = col3(S.uni || '#4a6344'), sleeve = col3(S.sleeve || S.uni || '#4a6344'), trou = col3(S.trouser || S.uni || '#3a3a3a'), gear = col3(S.gear || '#33482f'), skin = zed ? col3(S.helm || '#9a9184') : SKIN, blood = col3(S.blood || '#6f1414');
     const STUMP = zed ? (() => 0) : put;                                    // zombies show a bare missing limb — no blob at the joint (was the 'green ball')
@@ -13643,31 +13660,44 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       if (lm & L_RA) put(bodyPool, X(torsoH * .6, torsoW * .5 + armL * .3), base + armW * .5, Z(torsoH * .6, torsoW * .5 + armL * .3), 0, ya - 1.3, 0, armL, armW, armW, sleeve); else STUMP(P.gore, X(torsoH * .8, torsoW * .55), base + armW * .5, Z(torsoH * .8, torsoW * .55), 0, 0, 0, armW * .7, armW * .5, armW * .7, blood);
       return;
     }
-    const sw = Math.sin(walk), bob = Math.abs(Math.cos(walk)) * .55 * sc;
+    const mv = o.mv === undefined ? 1 : o.mv;                                   // 0 = standing still (stride relaxes to neutral) … 1 = full stride
+    const sw = Math.sin(walk) * mv, bob = Math.abs(Math.cos(walk)) * .55 * sc * mv;
     const legsGone = !(lm & L_LL) && !(lm & L_RL), oneLeg = !(lm & L_LL) || !(lm & L_RL);
     const rc = o.rc || 0, relP = o.reload || 0, relK = relP > 0 ? Math.sin(Math.min(1, relP) * Math.PI) : 0;   // recoil kick 0..1 and reload progress 0..1 (bell-shaped hand travel)
     const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + idLean;   // tactical stance while engaged: leaning into the gun, knees bent; crouch/idle add more
     const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.sit ? legL * .82 : 0) - (o.ride ? legL * .3 : 0) + idHip;
     const spread = torsoW * (o.ride ? .56 : .24);                                   // a rider straddles the saddle
-    // legs: thigh + shin with a knee that folds on the trailing leg, a knee pad at the joint and a chunky boot — reads as a real leg in motion
+    const hipSway = sw * legW * .11, hipRoll = -sw * .05;                          // the pelvis rocks a little from side to side with the stride
+    // legs (body heading): thigh + shin. The swinging leg lifts its knee through the middle of the stride, the trailing leg
+    // folds as it pushes off, a knee pad sits on the joint and a chunky boot lands flat — a real leg in motion, not a pendulum
     for (let s = -1; s <= 1; s += 2) {
-      const bit = s < 0 ? L_LL : L_RL, swing = o.sit ? 1.15 : o.ride ? .62 : (zed ? .45 : .5) * sw * s;
+      const bit = s < 0 ? L_LL : L_RL, ph = walk * s, swing = o.sit ? 1.15 : o.ride ? .62 : (zed ? .45 : .5) * Math.sin(ph) * mv;
       if (lm & bit) {
-        const tL = legL * .52, sL = legL * .5, bend = swing < 0 ? -swing * (zed ? .5 : .95) : 0, sw2 = o.sit ? -.05 : o.ride ? -.38 : (swing < 0 ? swing - bend : swing * .72);   // riding: thighs forward round the barrel, shins hanging back to the stirrup
-        limb(bodyPool, X(0, s * spread), hipY, Z(0, s * spread), cx, cz, tL, legW * (med ? 1.22 : 1), ry, swing, trou, legW * (med ? 1.3 : 1.08));   // ancient host: baggy patterned chong kraben to the knee
+        const tL = legL * .52, sL = legL * .5;
+        const trail = swing < 0 ? -swing * (zed ? .5 : .95) : 0;
+        const lift = (swing > 0 && !o.sit && !o.ride) ? Math.max(0, Math.sin(ph)) * Math.max(0, Math.cos(ph - .55)) * (zed ? .55 : 1.0) * mv : 0;
+        const sw2 = o.sit ? -.05 : o.ride ? -.38 : swing - trail - lift;   // riding: thighs forward round the barrel, shins hanging back to the stirrup
+        const sr = s * spread + hipSway * .5;
+        limb(bodyPool, X(0, sr), hipY, Z(0, sr), cx, cz, tL, legW * (med ? 1.22 : 1), ry, swing, trou, legW * (med ? 1.3 : 1.08));   // ancient host: baggy patterned chong kraben to the knee
         const kf = Math.sin(swing) * tL, ky = hipY - Math.cos(swing) * tL;
-        if (!zed && !med) put(P.head, X(kf + legW * .18, s * spread), ky, Z(kf + legW * .18, s * spread), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
-        limb(bodyPool, X(kf, s * spread), ky, Z(kf, s * spread), cx, cz, sL, legW * (med ? .72 : .9), ry, sw2, med ? skin : trou);                    // bare shins below the wrap
+        if (!zed && !med) put(P.head, X(kf + legW * .18, sr), ky, Z(kf + legW * .18, sr), 0, ry, 0, legW * .66, legW * .6, legW * .7, KNEE);
+        else put(P.head, X(kf + legW * .1, sr), ky, Z(kf + legW * .1, sr), 0, ry, 0, legW * .58, legW * .5, legW * .6, med ? skin : trou);   // a knee joint on the ancient host / the dead too
+        limb(bodyPool, X(kf, sr), ky, Z(kf, sr), cx, cz, sL, legW * (med ? .72 : .9), ry, sw2, med ? skin : trou);                    // bare shins below the wrap
         const bs = Math.sin(sw2), bc = Math.cos(sw2), ff = kf + bs * sL, fy = ky - bc * sL;
-        if (med) { put(P.box, X(ff + legW * .3, s * spread), fy + legW * .22, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.5, legW * .42, legW * .95, skin); put(P.box, X(ff + legW * .3, s * spread), fy + legW * .04, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.55, legW * .12, legW * 1.0, col3('#3a2618')); }   // bare foot on a leather sandal
-        else { put(P.box, X(ff + legW * .3, s * spread), fy + legW * .38, Z(ff + legW * .3, s * spread), 0, ry, sw2 * .3, legW * 1.65, legW * .8, legW * 1.05, zed ? col3k(S.trouser || '#3a3a3a', .7) : BOOT);   // boot
-        if (!zed) put(P.box, X(ff, s * spread), fy + legW * .85, Z(ff, s * spread), 0, ry, sw2 * .3, legW * 1.0, legW * .6, legW * 1.02, BOOT); }                                                        // boot shaft
+        if (med) { put(P.box, X(ff + legW * .3, sr), fy + legW * .22, Z(ff + legW * .3, sr), 0, ry, sw2 * .3, legW * 1.5, legW * .42, legW * .95, skin); put(P.box, X(ff + legW * .3, sr), fy + legW * .04, Z(ff + legW * .3, sr), 0, ry, sw2 * .3, legW * 1.55, legW * .12, legW * 1.0, col3('#3a2618')); }   // bare foot on a leather sandal
+        else { put(P.box, X(ff + legW * .3, sr), fy + legW * .38, Z(ff + legW * .3, sr), 0, ry, sw2 * .3, legW * 1.65, legW * .8, legW * 1.05, zed ? col3k(S.trouser || '#3a3a3a', .7) : BOOT);   // boot
+        if (!zed) put(P.box, X(ff, sr), fy + legW * .85, Z(ff, sr), 0, ry, sw2 * .3, legW * 1.0, legW * .6, legW * 1.02, BOOT); }                                                        // boot shaft
       }
       else STUMP(P.gore, X(0, s * spread), hipY - legW * .3, Z(0, s * spread), 0, ry, 0, legW * .75, legW * .6, legW * .75, blood);
     }
-    // torso (leaning), belt, plate carrier / surcoat, shoulder pads, pack
+    // pelvis (body heading), then the upper body turns toward the AIM: the torso partway, the head a little further, the arms + weapon fully
+    put(bodyPool, X(0, hipSway * .5), hipY + legW * .12, Z(0, hipSway * .5), hipRoll, ry, 0, torsoD * .96, legW * 1.05, torsoW * .9, trou);
+    const aimD = o.aimD === undefined ? 0 : Math.max(-1.35, Math.min(1.35, o.aimD));
+    const aTor = ang + aimD * .55, aHead = ang + Math.max(-1.1, Math.min(1.1, aimD * .85)), aArm = ang + aimD;
+    setFrame(aTor);
+    // torso (leaning, twisted toward the aim), belt, plate carrier / surcoat, shoulder pads, pack
     const tl = Math.sin(lean) * torsoH * .5, tcY = hipY + Math.cos(lean) * torsoH * .5;
-    put(bodyPool, X(tl, 0), tcY, Z(tl, 0), 0, ry, -lean, torsoD, torsoH, torsoW, uni);
+    put(bodyPool, X(tl, 0), tcY, Z(tl, 0), hipRoll * .6, ry, -lean, torsoD, torsoH, torsoW, uni);
     if (med) put(P.cloth, X(tl * .15, 0), hipY + torsoH * .1, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.1, 3.4 * sc, torsoW * 1.08, col3(S.sash || '#b8642a'));   // wide waist sash
     else put(P.box, X(tl * .15, 0), hipY + torsoH * .08, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.06, 1.6 * sc, torsoW * 1.04, gear);
     if (med) { if (!S.bare && o.mk !== 'archer') { put(P.box, X(tl * 1.1 + torsoD * .12, 0), tcY + torsoH * .14, Z(tl * 1.1 + torsoD * .12, 0), 0, ry, -lean, torsoD * 1.1, torsoH * .58, torsoW * .84, gear);   // leather breastplate
@@ -13679,7 +13709,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     if (S.shoulder && !med) for (let s = -1; s <= 1; s += 2) put(P.box, X(shoF, s * torsoW * .5), shoY - 1.2 * sc, Z(shoF, s * torsoW * .5), 0, ry, -lean, torsoD * .8, 2.6 * sc, armW * 1.3, col3(S.shoulder));
     if (S.pack && !med) put(P.box, X(tl - torsoD * .5 - 2.2 * sc, 0), tcY + torsoH * .05, Z(tl - torsoD * .5 - 2.2 * sc, 0), 0, ry, -lean, 4.4 * sc, torsoH * .7, torsoW * .72, col3(S.pack));
     if (med && o.mk === 'archer') put(P.cyl, X(tl - torsoD * .5 - 1.5 * sc, torsoW * .2), tcY + torsoH * .1, Z(tl - torsoD * .5 - 1.5 * sc, torsoW * .2), .35, ry, .3, 2 * sc, torsoH * .8, 2 * sc, WOOD);
-    // head, helmet / hair, visor
+    // head, helmet / hair, visor — the head turns a touch further than the torso, eyes on the target
+    setFrame(aHead);
     const hF = shoF + (zed || o.zt === 'brute' ? headR * .6 : 0), hY = shoY + headR * (zed ? .8 : 1.0);
     put(P.head, X(hF, 0), hY, Z(hF, 0), 0, ry, 0, headR, headR * 1.05, headR * .95, skin);
     if (zed) { if (h1 < .8) put(P.helm, X(hF - headR * .15, 0), hY + headR * .15, Z(hF - headR * .15, 0), 0, ry, .15, headR * 1.03, headR * .95, headR * 1.03, HAIRS[(h2 * 5) | 0]); }
@@ -13693,6 +13724,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         put(P.cyl, X(hF, 0), hb + headR * 1.5, Z(hF, 0), 0, ry, 0, headR * .16, headR * .4, headR * .16, GOLD); }                        // gold finial
     }
     else { put(P.helm, X(hF, 0), hY + headR * .16, Z(hF, 0), 0, ry, -.1, headR * 1.2, headR * 1.02, headR * 1.2, col3(S.helm || '#6f8757')); put(P.box, X(hF, 0), hY + headR * .08, Z(hF, 0), 0, ry, 0, headR * 2.0, headR * .4, headR * 2.3, col3k(S.helm || '#6f8757', .85)); if (S.visor) put(P.box, X(hF + headR * 1.0, 0), hY + headR * .2, Z(hF + headR * 1.0, 0), 0, ry, 0, headR * .3, headR * .5, headR * 1.6, col3(S.visor)); }
+    setFrame(aTor);
     // upgrade tiers: every role gets its own kit at Mk2 and Mk3 (all of it hugs the body, so the figure never grows past its real size)
     if (S.tier >= 2 && !zed && !med) {
       const ut = o.ut || '', t3 = S.tier >= 3, PL = col3k(S.gear || '#33482f', .55), DK = col3('#1a1c1e'), STL = col3('#8a9298'), ACC = col3(t3 ? '#e8c85a' : '#c9cf8a');
@@ -13729,8 +13761,24 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         put(P.bush, X(fw, rt), yy, Z(fw, rt), a1 * 2, ry + a2 * 3, a3 * 2, r, r * .75, r, GHILLIE[k % 4]);
       }
     }
-    // arms: the pose depends on what the hands hold; the weapon is then anchored to the hand positions
+    // arms (full aim heading): the pose depends on what the hands hold; the weapon is then anchored to the hand positions.
+    // Every arm is TWO bones — upper arm, an elbow joint, forearm — solved so the hand lands exactly on its target with the
+    // elbow dropping naturally below the reach line (bent when the hand is close, straighter as it reaches).
+    setFrame(aArm);
     const aR = torsoW * .5 + armW * .5, gun = o.gun, armed = !zed && gun && gun !== 'none';
+    const jointC = zed || med ? skin : sleeve;
+    const arm2 = (rt, rH, hf, hy, handCol, sh) => {
+      const sY = sh === undefined ? shoY2 : sh, ua = armL * .53, fa = armL * .5, df = hf - shoF, dy = sY - hy;
+      let d = Math.hypot(df, dy), hf2 = hf, hy2 = hy; const dMax = (ua + fa) * .995;
+      if (d > dMax) { hf2 = shoF + df * dMax / d; hy2 = sY - dy * dMax / d; d = dMax; } if (d < 1e-4) d = 1e-4;
+      const base = Math.atan2(df, dy), a1 = Math.acos(Math.max(-1, Math.min(1, (ua * ua + d * d - fa * fa) / (2 * ua * d))));
+      const rz1 = base - a1, eF = shoF + Math.sin(rz1) * ua, eY = sY - Math.cos(rz1) * ua, rz2 = Math.atan2(hf2 - eF, eY - hy2), eR = (rt + rH) * .5;
+      limb(bodyPool, X(shoF, rt), sY, Z(shoF, rt), cx, cz, ua, armW, ry, rz1, sleeve);
+      put(P.head, X(eF, eR), eY, Z(eF, eR), 0, ry, 0, armW * .56, armW * .5, armW * .56, jointC);
+      limb(bodyPool, X(eF, rH), eY, Z(eF, rH), cx, cz, fa, armW * .9, ry, rz2, sleeve);
+      put(P.box, X(hf2, rH), hy2, Z(hf2, rH), 0, ry, rz2, armW * .9, armW * .9, armW * .9, handCol);
+      return { f: hf2, r: rH, y: hy2, rz: rz2 };
+    };
     const W = S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }, wl = W.len * sc, ww = Math.max(1.4 * sc, W.wid * sc * .6);
     const launcher = !med && W.wid >= 6 && !W.muzzle, shoY2 = shoY - 1.5 * sc;
     let la, ra, lrt = -aR, rrt = aR, rifle = false;                             // swing (rz) + right-offset of each arm's pivot
@@ -13762,11 +13810,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         limb(bodyPool, sxp, shoY2, szp, ddx / hl, ddz / hl, L, armW, -Math.atan2(ddz, ddx), Math.atan2(hl, -ddy), sleeve);
         put(P.box, sxp + ddx / dl * L, shoY2 + ddy / dl * L, szp + ddz / dl * L, 0, ry, 0, armW * .9, armW * .9, armW * .9, skin);
       }
-      for (const [s2, t, rt] of pts) { const bit = s2 < 0 ? L_LA : L_RA; const hf = bf + cd0 * t, hy = by + sd0 * t - ww * .45 - (s2 < 0 ? relK * 4.5 * sc : 0); if (s2 < 0 && relK > .35 && (lm & bit)) put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); if (lm & bit) { const df = hf - shoF, dy = shoY2 - hy, L = Math.hypot(df, dy), rz = Math.atan2(df, dy); limb(bodyPool, X(shoF, rt), shoY2, Z(shoF, rt), cx, cz, L, armW, ry, rz, sleeve); put(P.box, X(hf, rt * .6 + gr * .4), hy, Z(hf, rt * .6 + gr * .4), 0, ry, rz, armW * .95, armW * .95, armW * .95, zed || med ? skin : GLOVE); hand[s2] = { f: hf, r: rt * .6 + gr * .4, y: hy }; } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
+      for (const [s2, t, rt] of pts) { const bit = s2 < 0 ? L_LA : L_RA; const hf = bf + cd0 * t, hy = by + sd0 * t - ww * .45 - (s2 < 0 ? relK * 4.5 * sc : 0); if (s2 < 0 && relK > .35 && (lm & bit)) put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); if (lm & bit) { hand[s2] = arm2(rt, rt * .6 + gr * .4, hf, hy, zed || med ? skin : GLOVE); } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
       hand.base = { f: bf, r: gr, y: by };
     } else for (let s2 = -1; s2 <= 1; s2 += 2) {
       const bit = s2 < 0 ? L_LA : L_RA, sw2 = s2 < 0 ? la : ra, rt = s2 < 0 ? lrt : rrt;
-      if (lm & bit) { limb(bodyPool, X(shoF, rt), shoY2, Z(shoF, rt), cx, cz, armL, armW, ry, sw2, sleeve); const ss = Math.sin(sw2), cc = Math.cos(sw2); const hf = shoF + ss * armL, hy = shoY2 - cc * armL; put(P.box, X(hf, rt), hy, Z(hf, rt), 0, ry, sw2, armW * .9, armW * .9, armW * .9, skin); hand[s2] = { f: hf, r: rt, y: hy }; }
+      if (lm & bit) { const ss = Math.sin(sw2), cc = Math.cos(sw2), reach = armL * (zed ? .9 : .93), hf = shoF + ss * reach, hy = shoY2 - cc * reach; hand[s2] = arm2(rt, rt, hf, hy, skin); }
       else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood);
     }
     // weapon: built from the kit's wep spec (len / wid / colours / mag / drum / stock / muzzle), held in the hands
@@ -14885,6 +14933,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const ALTK = .42;                                                   // flight altitude in the 3D scene (fraction of the sim's px altitude) — keeps aircraft clear of the camera when zoomed in
   const AIRSC = { littlebird: 1.53, blackhawk: 1.45, apache: 1.45, ac130: 3.1, f16: 1.45 };   // absolute model scales per airframe
   const gunOf = t => t === 'sniper' || t === 'marksman' ? 'long' : 'rifle';
+  const zedMv = zz => { const sp = Math.hypot(zz.vx || 0, zz.vy || 0); const t = Math.min(1, sp / 22); zz._mv = (zz._mv === undefined ? 1 : zz._mv) + (t - (zz._mv === undefined ? 1 : zz._mv)) * .2; return zz._mv; };   // eased stride blend for the horde
   /* a structure under construction: a warm layer-line that climbs the model as it rises, plus a crew of workers circling
      the site swinging mallets, with sparks where they strike — so a building is visibly assembled, not just faded in. */
   function buildScene(b, g, bs, buildK, pAdd) {
@@ -14937,10 +14986,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           if (q.s === 'tree') {
             // Thai forest species (by the prop's hash): coconut palm / tall yang / spreading rain tree / rounded broadleaf
             const sp = hash2(q.id, 13), palm = sp < .36, yang = sp >= .36 && sp < .5, con = false, birch = false, dead = false;
-            if (palm) { const lean = .1 + hash2(q.id, 21) * .14, la = q.a * 1.7, H = 2.6 * sc;   // a slender ringed trunk with a lean
-              put(P.trunk, x + Math.cos(la) * Math.sin(lean) * H * .5, y + Math.cos(lean) * H * .5, z + Math.sin(la) * Math.sin(lean) * H * .5, 0, -la, -lean, sc * .6, H / .6, sc * .6, PALMTR); }
-            else if (yang) put(P.trunk, x, y + 1.05 * sc, z, 0, q.a, 0, sc * .85, sc * 3.5, sc * .85);   // the bole runs all the way up into the crown
-            else put(P.trunk, x, y + .45 * sc, z, 0, q.a, 0, sc * 1.15, sc * 1.5, sc * 1.15);
+            // (trunks are drawn every frame with the crowns now — bent by the same wind — so the canopy never floats off its bole)
             // (root flares are drawn every frame with the crowns — P.branch is a per-frame pool, so drawing them here made them flicker)
             foliage.push(q); }
           else if (q.s === 'bush') foliage.push(q);
@@ -14953,6 +14999,14 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     {
       // wind: every crown leans downwind and rocks on two overlapping gusts, bushes shiver at the base
       const wspd = Math.hypot(G.wind.x, G.wind.y), wm = clamp(wspd / 38, 0, 3.4), wl = wspd + 1e-3, wdx = G.wind.x / wl, wdz = G.wind.y / wl, tt = G.t;   // grass bends harder the faster the wind blows
+      /* a trunk that BENDS in the wind: two cylinder segments from the foot to the tip, the curve stiff at the base and
+         flexing toward the top (displacement ~ height²), so the bole visibly sways and the crown sits exactly on its tip */
+      const bentTrunk = (bx, by, bz, tipDx, tipDz, H, rad, col, baseDx, baseDz) => {
+        const seg = (x0, y0, z0, x1, y1, z1, r0) => { const vx = x1 - x0, vy = y1 - y0, vz = z1 - z0, hl = Math.hypot(vx, vz), L = Math.hypot(hl, vy) || 1e-4;
+          put(P.trunk, (x0 + x1) * .5, (y0 + y1) * .5, (z0 + z1) * .5, 0, -Math.atan2(vz, vx), -Math.atan2(hl, vy), r0, L / .6, r0, col); };
+        const mx = bx + (baseDx || 0) * .5 + tipDx * .27, my = by + H * .5, mz = bz + (baseDz || 0) * .5 + tipDz * .27;
+        seg(bx, by, bz, mx, my, mz, rad); seg(mx, my - .01, mz, bx + (baseDx || 0) + tipDx, by + H, bz + (baseDz || 0) + tipDz, rad * .84);
+      };
       for (let i = 0; i < foliage.length; i++) {
         const q = foliage[i]; if (G.deadProps.has(q.id)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
         const ph = tt * 1.7 + q.x * .013 + q.y * .011, gust = (Math.sin(ph) * .55 + Math.sin(ph * 2.7 + 1.3) * .25 + Math.sin(ph * .37) * .2);
@@ -14963,7 +15017,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             for (let k = 0; k < nR; k++) { const an = q.a + k * (TAU / nR); put(P.branch, x + Math.cos(an) * rr * sc, y + .02, z + Math.sin(an) * rr * sc, 0, -an, -1.3, rl * sc, rh * sc, rl * sc, ROOTC); } }
           if (spv < .36) {
             // coconut palm: a crown of long drooping fronds radiating from the top of the leaning trunk, streaming and flexing in the wind
-            const lean = .1 + hash2(q.id, 21) * .14, la = q.a * 1.7, H = 2.6 * sc, tx = x + Math.cos(la) * Math.sin(lean) * H + lx * .6, ty = y + Math.cos(lean) * H, tz = z + Math.sin(la) * Math.sin(lean) * H + lz * .6;
+            const lean = .1 + hash2(q.id, 21) * .14, la = q.a * 1.7, H = 2.6 * sc, bDx = Math.cos(la) * Math.sin(lean) * H, bDz = Math.sin(la) * Math.sin(lean) * H, tx = x + bDx + lx * H * .5, ty = y + Math.cos(lean) * H, tz = z + bDz + lz * H * .5;
+            bentTrunk(x, y, z, lx * H * .5, lz * H * .5, Math.cos(lean) * H, sc * .6, PALMTR, bDx, bDz);
             const nF = 11; for (let k = 0; k < nF; k++) { const an = q.a + k * (TAU / nF) + hash2(q.id, 30 + k) * .25, dw = Math.cos(an) * wdx + Math.sin(an) * wdz;   // dw: +1 downwind
               const up = .3 + hash2(q.id, 40 + k) * .3 - dw * wm * .16 + gust * .07, L = (.85 + hash2(q.id, 50 + k) * .25) * sc, az = an + dw * wm * .1 * (k % 2 ? 1 : -1);
               put(P.frond, tx, ty, tz, 0, -az, up, L, L * .85, L * .8, PALMC[(v + k) % 4]); }
@@ -14972,13 +15027,16 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             for (let k = 0; k < 4; k++) { const an = q.a + k * 1.6; put(P.head, tx + Math.cos(an) * .1 * sc, ty - .08 * sc, tz + Math.sin(an) * .1 * sc, 0, 0, 0, .06 * sc, .07 * sc, .06 * sc, COCO); }   // coconuts under the crown
           } else if (spv < .5) {
             // yang / dipterocarp: a tall bole with a compact high crown of small clustered rounds
+            bentTrunk(x, y, z, lx * 2.1 * sc * 1.15, lz * 2.1 * sc * 1.15, 2.1 * sc, sc * .85, WHITE);
             for (let k = 0; k < 7; k++) { const f = k / 6, r = (.8 - f * .18) * sc, an = k * 1.5 + q.a, hgt = (1.9 + f * .7) * sc, kk = 1.2 + f * .8, off = (k ? .5 - f * .1 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk, an * .5, rz * kk, r, r * .8, r, YANGC[(v + k) % 3]); }
           } else if (spv < .62) {
             // rain tree: a wide flat umbrella of spreading crowns on a short trunk, the classic tropical shade tree
+            bentTrunk(x, y, z, lx * .9 * sc, lz * .9 * sc, .9 * sc, sc * 1.15, WHITE);
             put(P.crown, x + lx * .8, y + .72 * sc, z + lz * .8, rx, q.a, rz, 1.1 * sc, .35 * sc, 1.1 * sc, UNDERC);
             for (let k = 0; k < 6; k++) { const f = k / 5, r = (.7 - f * .1) * sc, an = k * 1.05 + q.a, hgt = (.95 + f * .22) * sc, kk = 1 + f * .5, off = (k ? .55 + f * .25 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .1, an * .7, rz * kk, r * 1.25, r * .5, r * 1.25, RAINC[(v + k) % 4]); }
           } else {
             // broadleaf: a rounded, layered crown built from overlapping smooth spheres (darker inside, lighter sunward top) over a shaded under-canopy
+            bentTrunk(x, y, z, lx * .9 * sc, lz * .9 * sc, .9 * sc, sc * 1.15, WHITE);
             put(P.crown, x + lx * .9, y + .78 * sc, z + lz * .9, rx, q.a, rz, .85 * sc, .5 * sc, .85 * sc, UNDERC);
             for (let k = 0; k < 6; k++) { const f = k / 5, r = (.78 - f * .2) * sc, an = k * 1.25 + q.a, hgt = (.95 + f * .62) * sc, kk = 1 + f * .7, off = (k ? .36 + (k % 2) * .1 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .2, an * .7, rz * kk, r, r * .85, r, LEAF[(v + k) % 5]); }
           }
@@ -15223,8 +15281,19 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bud = { x: b.x * K - Math.sin(b.ang) * rt, y: groundY(b.x, b.y) + bodyH * hMul, z: b.y * K + Math.cos(b.ang) * rt };
           }
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
-          const rollFx = u.rolling > 0 ? { pitch: (1 - u.rolling / .42) * TAU, lift: Math.sin((1 - u.rolling / .42) * Math.PI) * .3 } : (u.ck_fx || undefined);   // a diving shoulder-roll: one forward somersault with a hop off the ground
-          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: u.pose === 'prone' && !u.def.veh && !u.sitting, crawl: u.pose === 'prone' && Math.hypot(u.vx || 0, u.vy || 0) > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, peek: u.coverPeek || 0, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh), fx: rollFx });
+          // dodge moves: 0 shoulder-roll (one forward somersault with a hop) · 1 slide (drops low, leaning right back, feet first)
+          // · 2 forward dive (leaps and pitches flat onto his belly) · 3 backward dive (flung back, still facing the threat) — dives end prone for a beat
+          let rollFx, dodgeCrouch = false, dodgeProne = false;
+          if (u.rolling > 0) { const dk = u.dodgeKind || 0, ph = 1 - u.rolling / (u.dodgeDur || .42), e = ph * ph * (3 - 2 * ph);
+            if (dk === 0) rollFx = { pitch: ph * TAU, lift: Math.sin(ph * Math.PI) * .3 };
+            else if (dk === 1) { rollFx = { pitch: -.8 * Math.sin(Math.min(1, ph * 1.5) * Math.PI * .5), lift: -.06, pv: .12 }; dodgeCrouch = true; }
+            else if (dk === 2) rollFx = { pitch: e * 1.5, lift: Math.sin(ph * Math.PI) * .42, pv: .25 };
+            else rollFx = { pitch: -e * 1.35, lift: Math.sin(ph * Math.PI) * .36, pv: .25 }; }
+          else if (u.dodgeProneT > 0) dodgeProne = true;
+          const hasTgt = !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh);
+          let aimD = 0; if (hasTgt && u.aims && u.aims[0] !== undefined) { aimD = u.aims[0] - u.ang; while (aimD > Math.PI) aimD -= TAU; while (aimD < -Math.PI) aimD += TAU; }   // torso / head / arms turn toward the target, ahead of the feet
+          const spd = Math.hypot(u.vx || 0, u.vy || 0); u._mv = (u._mv === undefined ? 1 : u._mv) + (Math.min(1, spd / 28) - (u._mv === undefined ? 1 : u._mv)) * .22;   // eased stride blend: the walk cycle fades to a neutral stance when he stops
+          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: dodgeCrouch || !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: dodgeProne || (u.pose === 'prone' && !u.def.veh && !u.sitting), crawl: u.pose === 'prone' && spd > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, tac: hasTgt, aimD, mv: u._mv, fx: rollFx });
           u._pang = u.ang;   // last facing, for the prone pivot animation
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
@@ -15273,9 +15342,9 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           drawFigureC(x - ecx * .12, gy + ELE_HOWDAH, z - ecz * .12, zz.ang, 0, S, { ck: zz._rider || (zz._rider = { id: zz.id + 7 }), kind: 'med', mk: 'cavalry', gun: 'spear', scale: .82, limbs: zz.limbs, id: zz.id + 7 });   // spearman in the howdah
         }
         else if (zz.fin) { const q = finKiller(zz.fin); drawFigureC(x, gy, z, zz.ang, q.o.walk || 0, S, { ck: zz, kind: 'med', mk: zz.def.militia ? 'villager' : 'infantry', gun: zz.def.dual ? 'dual' : (zz.id & 1) ? 'spear' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id, crouch: !!q.o.crouch, fx: q.fx }); }   // finishing a man
-        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : zz.def.militia ? 'villager' : 'infantry', gun: zz.def.arrow ? 'bow' : zz.def.dual ? 'dual' : ((zz.id & 1) ? 'spear' : 'sword'), scale: zz.def.militia ? .9 : .92, limbs: zz.limbs, id: zz.id });   // spearmen and dha-and-shield men mixed; militia with no hat or shield; raiders with twin blades
+        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : zz.def.militia ? 'villager' : 'infantry', gun: zz.def.arrow ? 'bow' : zz.def.dual ? 'dual' : ((zz.id & 1) ? 'spear' : 'sword'), scale: zz.def.militia ? .9 : .92, limbs: zz.limbs, id: zz.id, mv: zedMv(zz) });   // spearmen and dha-and-shield men mixed; militia with no hat or shield; raiders with twin blades
       } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
-      else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0 }); }
+      else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0, mv: zedMv(zz) }); }
     }
     PF('zeds');
     /* ---- corpses + wrecks ---- */
@@ -16254,7 +16323,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b125';
+const BUILD_TAG = 'b126';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
