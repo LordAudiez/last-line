@@ -3592,6 +3592,29 @@ function levelCompound(tx, ty, h0) {
     else if (d < 1 && IMPASSABLE(MAP.t[i])) MAP.t[i] = T_DIRT;
   }
 }
+/* Level the ground UNDER a building's footprint to the AVERAGE height of that footprint: low ground is raised up to the
+   average, high ground is cut down to it, so every structure sits on a flat platform. A short ramp (MARGIN tiles) blends
+   the platform back into the natural terrain so there is no cliff at the edge. HEIGHT ONLY — tile types (and their grass
+   tufts) are left untouched, so a building on a meadow keeps its grass. Returns the average height it settled on.
+   `regradeChunks` is a render hook (overridden in 08b_render3d.js) that rebuilds the affected 3D terrain chunks. */
+function levelToAverage(tx, ty, w, h, margin) {
+  const M = margin === undefined ? 2 : margin;
+  let sum = 0, n = 0;
+  for (let y = ty; y < ty + h; y++) for (let x = tx; x < tx + w; x++) { if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue; const hh = MAP.h[y * MW + x]; if (hh < SHORE) continue; sum += hh; n++; }
+  const avg = n ? clamp(Math.round(sum / n), SHORE + 2, MOUNT - 16) : (MAP.h[ty * MW + tx] | 0);
+  for (let y = ty - M; y < ty + h + M; y++) for (let x = tx - M; x < tx + w + M; x++) {
+    if (x < 1 || y < 1 || x >= MW - 1 || y >= MH - 1) continue;
+    const i = y * MW + x;
+    if (WATER(MAP.t[i])) continue;                                  // never lift water tiles into land
+    const dx = Math.max(tx - x, x - (tx + w - 1), 0), dy = Math.max(ty - y, y - (ty + h - 1), 0), dd = Math.max(dx, dy);   // Chebyshev distance past the footprint rectangle (0 inside)
+    const k = clamp(dd / M, 0, 1);                                  // 0 on the footprint → 1 at the ramp's outer edge
+    MAP.h[i] = Math.round(lerp(avg, MAP.h[i], k * k * (3 - 2 * k)));   // smoothstep the ramp so the platform eases into the land
+  }
+  MAP._grassDirty = true;
+  if (typeof regradeChunks === 'function') regradeChunks(tx - M - 1, ty - M - 1, w + 2 * M + 2, h + 2 * M + 2);
+  return avg;
+}
+function regradeChunks() {}   // base no-op; the 3D renderer overrides this to rebuild the terrain chunks whose heights just changed
 /* find a buildable spot near a target fraction of the map for a player's spawn */
 function findSpawn(fx, fy) {
   const cx = (fx * MW) | 0, cy = (fy * MH) | 0;
@@ -5291,6 +5314,19 @@ function clearTerrainAt(wx, wy, rTiles) {
     }
   return n;
 }
+/* the dust a structure kicks up as it drops onto its freshly-graded platform: a ring of dust puffs bumping OUTWARD around
+   the footprint edge (not a hard circle), plus a soft shockwave ring. Shared by real and ally-ghost buildings. */
+function buildingDropFx(b) {
+  const d = b.def, rad = (Math.max(d.w, d.h) * .5 + .4) * TS;
+  part('ring', b.x, b.y, 0, 0, .7, rad * .7, 'rgba(206,196,156,.5)', { grow: rad * 2.4, z: .3 });   // the outward shockwave
+  const n = 16 + Math.round(Math.max(d.w, d.h) * 1.5);
+  for (let i = 0; i < n; i++) {
+    const an = i / n * TAU + rnd(-.14, .14), ca = Math.cos(an), sa = Math.sin(an), out = 40 + rnd(30, 80);
+    part('dust', b.x + ca * rad, b.y + sa * rad, ca * out, sa * out * .6, rnd(.7, 1.15), rnd(6, 11),
+      'rgba(200,190,152,.9)', { grow: 22, z: rnd(.2, 3), vz: rnd(6, 22), g: 40, drag: .92, wind: 1 });
+  }
+  if (typeof addShake === 'function') addShake(b.x, b.y, 3);
+}
 function addBuilding(t, tx, ty, done) {
   const d = BDEF[t];
   const b = {
@@ -5306,6 +5342,9 @@ function addBuilding(t, tx, ty, done) {
   G.builds.push(b);
   const idx = G.builds.length;
   for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) G.gridB[tileIdx(x, y)] = idx;
+  if (!d.flat && typeof levelToAverage === 'function') b.plat = levelToAverage(tx, ty, d.w, d.h);   // grade the site flat to the footprint's average height (traps stay on natural ground)
+  b._dropT0 = G.t;                          // the structure drops onto its platform: the renderer eases it down from above over ~0.5s
+  buildingDropFx(b);                        // dust kicked up in a ring, bumping outward around the footprint as it lands
   clearTreesAround(b, 1.5);   // the site is cleared: every tree on the footprint and a strip around it comes down for good
   if (d.light) G.lamps.push(b);
   if (d.vision) G.towers.push(b);
@@ -6378,7 +6417,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0)]); }   // [.. , stance, altK, air-flags, roping-height, rope-heli-id] so ally helicopters show the same landing/downwash AND their troops rappelling down the rope
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0)]); }   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B, v: (typeof BUILD_TAG !== 'undefined' ? BUILD_TAG : '') };   // tag every snapshot with our build so peers can detect a version mismatch
   if (NP.host) {
@@ -6423,6 +6462,7 @@ function reconcilePeer(pid, snap) {
       if (g.roping > 0) { const fh = a[11] ? pg.u.get(a[11]) : null; if (fh) g.ropeFrom = fh; g.ropePistol = !!(a[9] & 4); }
       else { g.ropeFrom = null; g.ropePistol = false; }
     }
+    if (a[12] !== undefined) { g.rolling = a[12] / 100; g.coverCrouch = !!(a[13] & 1); }   // ally dodge-roll (tumble anim) and hunkering-in-cover crouch show on my screen
   }
   for (const [id, g] of pg.u) { if (!seenU.has(id)) { g.dead = true; pg.u.delete(id); } }
 
@@ -6513,6 +6553,9 @@ function makeGhostBuild(t, tx, ty, pIdx) {
     tier: 1, upgT: 0, owner: pIdx, remote: true
   };
   G.builds.push(b);
+  if (!d.flat && typeof levelToAverage === 'function') b.plat = levelToAverage(tx, ty, d.w, d.h);   // grade the ally's site to the same flat platform on my map (deterministic — same seed, same result)
+  b._dropT0 = G.t;                          // ally structure drops in and kicks up the same dust ring on my screen
+  if (typeof buildingDropFx === 'function') buildingDropFx(b);
   return b;
 }
 
@@ -6527,6 +6570,7 @@ function npLerp(u, dt) {
   if (d > 1.5) { u.tread = (u.tread || 0) + dt * 6; u.step = (u.step || 0) + dt * 9; u.bob = (u.bob || 0) + dt * 6; }
   if (u.altK2 !== undefined) { if (u.altK === undefined) u.altK = u.altK2; u.altK += (u.altK2 - u.altK) * Math.min(1, dt * 2.2); if (Math.abs(u.altK2 - u.altK) < .003) u.altK = u.altK2; }   // ease the ghost aircraft's altitude toward the streamed target so its descent/landing (and downwash) show smoothly
   if (u.roping > 0) u.roping = Math.max(0, u.roping - dt * 150);   // ally trooper fast-roping: slide the figure down the line continuously between snapshots (the owner streams the height ~every .18s; easing it here shows a smooth rappel, not a stepped one). Each snapshot re-syncs the authoritative height.
+  if (u.rolling > 0) u.rolling = Math.max(0, u.rolling - dt);       // ally dodge-roll: run the tumble down continuously between snapshots so the somersault plays smoothly
   if (typeof groundFx === 'function') groundFx(u, dt);   // ally ghosts leave the same tuft trails & rotor downwash on my screen, in real time
 }
 function npGhostZed(z, dt) {
@@ -7430,6 +7474,65 @@ function ropePistol(u, dt) {
 }
 
 /* ==================== UNITS ==================== */
+/* Find the best nearby COVER for a soldier hiding from a threat at (tx,ty): a vehicle, wall, building, tent, tree, rock,
+   barrel or wreck. The firing/hiding spot is on the FAR side of the object from the threat, so the object shields the man.
+   Returns { x, y, ox, oy } (the stand point and the object centre) or null. Scored: solid cover beats a bush, near beats far. */
+function findCover(u, tx, ty) {
+  const maxR = TS * 6, maxR2 = maxR * maxR;
+  let best = null, bestScore = -1e9;
+  const consider = (cx, cy, cr, quality) => {
+    const dtx = cx - tx, dty = cy - ty, dl = Math.hypot(dtx, dty) || 1;             // threat → cover direction
+    const px = cx + dtx / dl * (cr + 7), py = cy + dty / dl * (cr + 7);             // stand just behind the object, away from the threat
+    const du = Math.hypot(px - u.x, py - u.y);
+    if (du > maxR || solidAt(px, py, true)) return;
+    const score = quality * 44 - du * .5;
+    if (score > bestScore) { bestScore = score; best = { x: px, y: py, ox: cx, oy: cy }; }
+  };
+  const vl = G.hUnits.near(u.x, u.y, maxR, _q4);
+  for (let i = 0; i < vl.length; i++) { const v = vl[i]; if (v === u || v.dead || v.inside || !v.def || !v.def.veh) continue; consider(v.x, v.y, v.r + 8, 1.3); }
+  for (let i = 0; i < G.builds.length; i++) { const b = G.builds[i]; if (b.dead || b.def.flat || b.def.lamp) continue; if (dist2(b.x, b.y, u.x, u.y) > maxR2) continue; consider(b.x, b.y, Math.max(b.w, b.h) * TS * .5 + 7, b.def.wall ? 1.15 : 1.45); }
+  const r = maxR;
+  for (let a = ((u.x - r) / CH | 0); a <= ((u.x + r) / CH | 0); a++) for (let bch = ((u.y - r) / CH | 0); bch <= ((u.y + r) / CH | 0); bch++) {
+    const ps = (typeof chunkProps === 'function') ? chunkProps(a, bch) : null; if (!ps) continue;
+    for (let k = 0; k < ps.length; k++) { const q = ps[k]; if (G.deadProps.has(q.id)) continue; if (q.s !== 'tree' && q.s !== 'rock' && q.s !== 'wreck' && q.s !== 'barrel') continue; if (dist2(q.x, q.y, u.x, u.y) > maxR2) continue; consider(q.x, q.y, (q.s === 'rock' ? 9 : q.s === 'tree' ? 6 : 11) * (q.sc || 1), q.s === 'rock' || q.s === 'wreck' ? 1.05 : .75); }
+  }
+  return best;
+}
+/* Move to the chosen cover and fight from it: hug it while reloading (ducked, out of sight), then lean out past the edge
+   to shoot. The lean is a real position step, so allies over the network see the same peeking. Returns true if it took over
+   the unit's movement this frame. */
+function coverBehave(u, dt, threat) {
+  u._coverScanT = (u._coverScanT || 0) - dt;
+  if (!u.coverPt || u._coverScanT <= 0) { u._coverScanT = rnd(.55, .85); const c = findCover(u, threat.x, threat.y); if (c) u.coverPt = c; else if (!u.coverPt) { u.inCover = false; u.coverPeek = 0; return false; } }
+  const cp = u.coverPt, a = angTo(u.x, u.y, threat.x, threat.y);
+  const dd = Math.hypot(cp.x - u.x, cp.y - u.y);
+  if (dd > 12) {                                                                     // still running to cover
+    const sp = Math.min(dd / dt, u.def.spd * paceMul(u)), mx = (cp.x - u.x) / dd, my = (cp.y - u.y) / dd;
+    tryMove(u, u.x + mx * sp * dt, u.y + my * sp * dt, true, mx, my, sp, dt); u.step = (u.step || 0) + sp * dt * .17;
+    u.ang = angLerp(u.ang, angTo(u.x, u.y, cp.x, cp.y), 1 - Math.pow(.03, dt)); u.inCover = false; u.coverCrouch = false; u.coverPeek = 0;
+    return true;
+  }
+  u.inCover = true;
+  const reloading = (u.reloads && u.reloads[0] > 0) || u.reloadT > 0 || u.backOff;
+  const rng = unitRange(u), threatNear = !threat.dead && dist2(u.x, u.y, threat.x, threat.y) < rng * rng * 1.3;
+  u.coverPeekT = (u.coverPeekT || 0) - dt;
+  if (u.coverPeekT <= 0) { u.coverPeekT = rnd(.5, 1.4); u._peekWant = Math.random() < .72; }   // random peek/hide rhythm
+  const peek = !reloading && threatNear && u._peekWant;                            // duck to reload; lean out to shoot when the enemy is in reach
+  const perpA = a + (Math.PI / 2) * ((u.id & 1) ? 1 : -1);
+  const wantX = peek ? cp.x + Math.cos(a) * 11 + Math.cos(perpA) * 7 : cp.x;
+  const wantY = peek ? cp.y + Math.sin(a) * 11 + Math.sin(perpA) * 7 : cp.y;
+  const mdx = wantX - u.x, mdy = wantY - u.y, ml = Math.hypot(mdx, mdy);
+  if (ml > 1.5) { const sp = Math.min(ml / dt, u.def.spd * 1.25); tryMove(u, u.x + mdx / ml * sp * dt, u.y + mdy / ml * sp * dt, true, mdx / ml, mdy / ml, sp, dt); }
+  u.ang = angLerp(u.ang, a, 1 - Math.pow(.008, dt));
+  u.coverCrouch = !peek; u.coverPeek = peek ? 1 : 0;
+  return true;
+}
+/* pick the current threat and, if there is one, fight from cover; clears cover state when the coast is clear */
+function coverSeek(u, dt) {
+  const threat = (u.tgts && u.tgts[0] && !u.tgts[0].dead) ? u.tgts[0] : findEnemy(u.x, u.y, TS * 7, 0);
+  if (!threat || threat.dead) { if (u.inCover || u.coverPt) { u.inCover = false; u.coverPeek = 0; u.coverPt = null; } return false; }
+  return coverBehave(u, dt, threat);
+}
 function updateUnits(dt) {
   for (let i = G.units.length - 1; i >= 0; i--) {
     const u = G.units[i];
@@ -7445,6 +7548,17 @@ function updateUnits(dt) {
       u.reloadT -= dt;
       if (u.reloadT <= 0) { u.ammo = wep.mag || 0; }
     }
+
+    /* --- combat dodge-roll: the soldier throws himself clear along u.rollDir, fast and uninterruptible, then a short cooldown --- */
+    if (u.rolling > 0) {
+      u.rolling -= dt;
+      const sp = u.def.spd * 2.6, mx = Math.cos(u.rollDir), my = Math.sin(u.rollDir);
+      tryMove(u, u.x + mx * sp * dt, u.y + my * sp * dt, true, mx, my, sp, dt);
+      u.ang = u.rollDir; u.step = (u.step || 0) + sp * dt * .2;
+      if (u.rolling <= 0) { u.rolling = 0; u.rollCd = 1.4; }
+      continue;
+    }
+    if (u.rollCd > 0) u.rollCd -= dt;
 
     /* --- fast-roping: sliding down from the helicopter, hands full of rope --- */
     if (u.roping > 0) { u.roping = Math.max(0, u.roping - dt * 150); ropePistol(u, dt); if (u.roping <= 0) { u.ropeFrom = null; u.ropePistol = false; unstick(u, true); } continue; }
@@ -7536,6 +7650,17 @@ function updateUnits(dt) {
     if (u.def.jet) { updateJet(u, dt); continue; }
     if (u.def.fly) { updateAircraft(u, dt); continue; }
 
+    /* --- dodge-roll trigger: an enemy lunges within half a tile → the soldier rolls clear, away and to one side --- */
+    if (!u.def.veh && !u.def.hauler && (u.rolling || 0) <= 0 && (u.rollCd || 0) <= 0 && !u.inside && !u.backOff && u.pose !== 'prone') {
+      const threat = findEnemy(u.x, u.y, TS * .55, 0);
+      if (threat && !threat.dead) {
+        const a = angTo(u.x, u.y, threat.x, threat.y), side = Math.random() < .5 ? 1 : -1;
+        u.rollDir = a + Math.PI + side * (Math.PI / 2) * rnd(.2, .7);       // break away from the threat with a sideways component
+        u.rolling = .42;
+        if (typeof AU !== 'undefined' && AU.roll) AU.roll(u.x, u.y);
+      }
+    }
+
     /* --- auto scrap vacuum --- */
     for (let k = G.pickups.length - 1; k >= 0; k--) {
       const p = G.pickups[k];
@@ -7588,6 +7713,7 @@ function updateUnits(dt) {
       if (u.backOff && !u.inside) { const e = u.backOff, a = angTo(u.x, u.y, e.x, e.y); u.ang = angLerp(u.ang, a, 1 - Math.pow(.0004, dt)); const sp = u.def.spd * .5; tryMove(u, u.x - Math.cos(a) * sp * dt, u.y - Math.sin(a) * sp * dt, true, -Math.cos(a), -Math.sin(a), sp, dt); u.step = (u.step || 0) - dt * 7; }
     }
 
+    if (o || u.stance === 'hold') { u.coverPeek = 0; u.inCover = false; }              // orders / guard override cover posture
     if (o) {
       if (o.type === 'move' || o.type === 'amove') {
         if (o.type === 'amove' && engaged) { /* hold and shoot */ }
@@ -7638,6 +7764,8 @@ function updateUnits(dt) {
       if (u.guardX === undefined) { u.guardX = u.x; u.guardY = u.y; }
       if (dist2(u.x, u.y, u.guardX, u.guardY) > (u.r + 8) * (u.r + 8)) steer(u, dt, u.guardX, u.guardY, true, u.r);
       else { u.vx *= Math.pow(.0008, dt); u.vy *= Math.pow(.0008, dt); }
+    } else if (!u.def.veh && !u.def.hauler && !u.def.builder && !u.grpLeader && !u.coverSlot && !u.backOff && (u.rolling || 0) <= 0 && coverSeek(u, dt)) {
+      /* fighting from the nearest cover: ran to it, now peeking out to shoot and ducking behind it to reload */
     } else if (!engaged) {
       /* Only Support teams go hunting for supply on their own — everyone else
          has to be told. They range a long way to do it. */
@@ -13346,6 +13474,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const col3k = (hex, k) => { const key = hex + k; let c = shadeCache.get(key); if (!c) { c = shade(hex, k); shadeCache.set(key, c); } return c; };
   // ground decals: the 2D game paints these into its chunk canvases; here they are textured planes, and explosions also dig craters
   scorchDecal = function (x, y, r) { decalList.push({ k: -1, x: x * K, y: y * K, r: r * K * 1.15, rot: rnd(TAU), c: null }); if (decalList.length > 900) decalList.splice(0, decalList.length - 900); digCrater(x, y, r); };
+  regradeChunks = function (tx0, ty0, tw, th) {   // the ground under a building was levelled to a flat platform (MAP.h changed): rebuild the terrain chunks it spans so the new heights show at once
+    const SEG = CT3;   // one chunk spans CT3 tiles
+    const cx0 = Math.floor(tx0 / SEG) - 1, cy0 = Math.floor(ty0 / SEG) - 1, cx1 = Math.floor((tx0 + tw) / SEG) + 1, cy1 = Math.floor((ty0 + th) / SEG) + 1;
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) dropChunk(cx, cy);
+  };
   bloodDecal = function (x, y, n, col) { const v = rgbOf(col || '#5a0e0e'), c = v[1] > v[0] ? GREENBLOOD : WHITE, k = (n || 1) >= 4 ? 2 : 1; for (let i = 0; i < k; i++) decalList.push({ k: (Math.random() * 4) | 0, x: (x + rnd(-8, 8) * i) * K, y: (y + rnd(-8, 8) * i) * K, r: rnd(.13, .24) + Math.min(6, n || 1) * .025, rot: rnd(TAU), c }); if (decalList.length > 900) decalList.splice(0, decalList.length - 900); };
 
   /* ======================= figures ======================= */
@@ -14752,6 +14885,26 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const ALTK = .42;                                                   // flight altitude in the 3D scene (fraction of the sim's px altitude) — keeps aircraft clear of the camera when zoomed in
   const AIRSC = { littlebird: 1.53, blackhawk: 1.45, apache: 1.45, ac130: 3.1, f16: 1.45 };   // absolute model scales per airframe
   const gunOf = t => t === 'sniper' || t === 'marksman' ? 'long' : 'rifle';
+  /* a structure under construction: a warm layer-line that climbs the model as it rises, plus a crew of workers circling
+     the site swinging mallets, with sparks where they strike — so a building is visibly assembled, not just faded in. */
+  function buildScene(b, g, bs, buildK, pAdd) {
+    const cx = g.position.x, cz = g.position.z, gy0 = groundY(b.x, b.y);
+    const fullH = (b.def.hgt || 30) * K * bs;
+    const rw = b.w * TS * K * .5, rh = b.h * TS * K * .5, span = Math.max(rw, rh);
+    // the rising build-line: a warm glowing band sitting at the current top of the growing structure
+    const ly = gy0 + fullH * buildK;
+    bb(pAdd, cx, ly + .04, cz, span * 1.5, 1, .78, .38, .28 + .18 * Math.sin(G.t * 7 + b.id));
+    // a scaffold ring: four thin posts at the corners rising with the build
+    const M = MODEL.engineer || MODEL.rifleman, S = M ? M.S : {};
+    const wn = 2 + (b.w * b.h > 15 ? 1 : 0);                          // bigger footprints get a third hand
+    for (let i = 0; i < wn; i++) {
+      const an = (i / wn) * TAU + b.id * .7 + G.t * .1;              // the crew slowly works its way around the site
+      const wr = span + .55, wxW = b.x + Math.cos(an) * wr / K, wyW = b.y + Math.sin(an) * wr / K;
+      const wy = groundY(wxW, wyW), swing = Math.sin(G.t * 7 + i * 2.1);
+      drawFigure(wxW * K, wy, wyW * K, an + Math.PI, 0, S, { kind: 'mil', gun: 'mallet', work: G.t * 7 + i * 2.1, scale: .9, limbs: 15, id: b.id * 8 + 41 + i, ut: 'engineer', crouch: (i % 2) === 1 });
+      if (swing > .86) { const hx = b.x + Math.cos(an) * (wr - 10) / K, hy = b.y + Math.sin(an) * (wr - 10) / K; bb(pAdd, hx * K, gy0 + .55 * buildK * fullH + .2, hy * K, .13, 1, .86, .5, .9); }   // spark at the strike
+    }
+  }
   render = function () {
     if (mapStamp !== MAP.t || structStamp !== MAP.structs) { resetWorld(); mapStamp = MAP.t; structStamp = MAP.structs; lastPX = 1e9; }
     { const _n = performance.now() / 1000; const _d = render._t ? Math.min(.1, _n - render._t) : 0; render._t = _n; if (G.started && !G.paused && G.speed > 0) healCraters(_d); }
@@ -14908,7 +15061,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     for (const b of G.builds) { let bm = buildMeshes.get(b.id); if (b.dead) { if (bm) { scene3.remove(bm.g); buildMeshes.delete(b.id); } continue; }
       // a wall whose neighbours changed, or a building that reached a new tier, is rebuilt so its shape reflects the new state
       if (bm && ((b.def.wall && b.t !== 'gate' && bm.g.userData.mask !== wallMask(b)) || (bm.g.userData.tier || 1) !== (b.tier || 1))) { scene3.remove(bm.g); buildMeshes.delete(b.id); bm = null; }
-      if (!bm) { bm = mkBuilding(b); buildMeshes.set(b.id, bm); } const g = bm.g; g.visible = b.x > vx0 - 200 && b.x < vx1 + 200 && b.y > vy0 - 300 && b.y < vy1 + 200; if (!g.visible) continue; g.position.set(b.x * K, groundY(b.x, b.y), b.y * K); { const bs = g.userData.bs || 1; g.scale.set(bs, bs * (b.done ? 1 : Math.max(.08, b.prog || 0)), bs); } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6;
+      if (!bm) { bm = mkBuilding(b); buildMeshes.set(b.id, bm); } const g = bm.g; g.visible = b.x > vx0 - 200 && b.x < vx1 + 200 && b.y > vy0 - 300 && b.y < vy1 + 200; if (!g.visible) continue; g.position.set(b.x * K, groundY(b.x, b.y), b.y * K); { const bs = g.userData.bs || 1; const buildK = b.done ? 1 : Math.max(.06, b.prog || 0); g.scale.set(bs, bs * buildK, bs);
+        const drop = b._dropT0 !== undefined ? Math.max(0, 1 - (G.t - b._dropT0) / .5) : 0;   // a fresh structure drops onto its platform: it starts lifted and slams down (drop² = fast slam, gentle settle)
+        if (drop > 0) g.position.y += ((b.def.hgt || 30) * K * bs * .5 + 1.4) * drop * drop;
+        if (!b.done && !b.def.flat) buildScene(b, g, bs, buildK, partsAdd);   // rising layer-line + workers hammering the structure together
+      } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6;
       if (b.done && g.userData.conveyor) { const cs = g.userData.conveyor.crates; for (let i = 0; i < cs.length; i++) cs[i].position.x = ((G.t * .35 + i / cs.length) % 1) * 1.0; }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
       if (g.userData.flag) g.userData.flag.rotation.y = Math.sin(G.t * 2.2 + b.id) * .25;
@@ -15066,7 +15223,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             bud = { x: b.x * K - Math.sin(b.ang) * rt, y: groundY(b.x, b.y) + bodyH * hMul, z: b.y * K + Math.cos(b.ang) * rt };
           }
           const idleO = (u.idleAct && u.idleAct !== 'stand') ? { act: u.idleAct, ph: u.idlePh || 0 } : null;
-          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: u.pose === 'prone' && !u.def.veh && !u.sitting, crawl: u.pose === 'prone' && Math.hypot(u.vx || 0, u.vy || 0) > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh) });
+          const rollFx = u.rolling > 0 ? { pitch: (1 - u.rolling / .42) * TAU, lift: Math.sin((1 - u.rolling / .42) * Math.PI) * .3 } : (u.ck_fx || undefined);   // a diving shoulder-roll: one forward somersault with a hop off the ground
+          drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.t, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, pistol: !!u.pistolOut, buddy: bud, crouch: !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh), prone: u.pose === 'prone' && !u.def.veh && !u.sitting, crawl: u.pose === 'prone' && Math.hypot(u.vx || 0, u.vy || 0) > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, peek: u.coverPeek || 0, tac: !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh), fx: rollFx });
           u._pang = u.ang;   // last facing, for the prone pivot animation
         }
         if (u.flash && u.t === 'gunner' && G.flashOn !== false) {                                    // Special Ops: a green aiming laser instead of a lamp — a hair-thin beam to the ground ahead with a bright dot
@@ -15333,15 +15491,37 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const GHOST_PLATE = { ok: new THREE.MeshBasicMaterial({ color: lin(0x8dffbe), transparent: true, opacity: .26, depthWrite: false, side: THREE.DoubleSide }), bad: new THREE.MeshBasicMaterial({ color: lin(0xff6a5a), transparent: true, opacity: .26, depthWrite: false, side: THREE.DoubleSide }), q: new THREE.MeshBasicMaterial({ color: lin(0x7fc8ff), transparent: true, opacity: .26, depthWrite: false, side: THREE.DoubleSide }) };
   const ghostPool = [], ghostBox = new THREE.BoxGeometry(1, 1, 1), ghostEdge = new THREE.EdgesGeometry(ghostBox), ghostPlane = new THREE.PlaneGeometry(1, 1);
   let ghostUsed = 0;
-  const ghostBegin = () => { ghostUsed = 0; };
-  const ghostEnd = () => { for (let i = ghostUsed; i < ghostPool.length; i++) ghostPool[i].g.visible = false; };
+  const ghostBegin = () => { ghostUsed = 0; for (const k in previewCache) previewCache[k].live = false; };
+  const ghostEnd = () => { for (let i = ghostUsed; i < ghostPool.length; i++) ghostPool[i].g.visible = false; for (const k in previewCache) if (!previewCache[k].live && previewCache[k].g) previewCache[k].g.visible = false; };
+  // a translucent preview of the ACTUAL building model, so placement shows exactly what will be built (the HQ looks like the HQ, a turret like a turret). Built once per type from mkBuilding, its materials cloned to translucent.
+  const previewCache = {};
+  function defKey(d) { if (d._k) return d._k; for (const k in BDEF) if (BDEF[k] === d) { d._k = k; return k; } return null; }
+  function previewModel(d) {
+    const key = defKey(d); if (!key || d.wall || d.flat) return null;               // walls/traps keep the simple footprint box
+    let pc = previewCache[key];
+    if (!pc) {
+      const fake = { id: -9, kind: 'build', t: key, def: d, tx: 0, ty: 0, w: d.w, h: d.h, x: (d.w / 2) * TS, y: (d.h / 2) * TS, done: true, prog: 1, dead: false, tier: 1, gar: [], q: [], owner: G.me || 0, ang: 0, born: 0 };
+      let bm; try { bm = mkBuilding(fake); } catch (e) { previewCache[key] = { g: null }; return null; }
+      bm.g.traverse(o => { if (o.isMesh && o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = .5; o.material.depthWrite = false; } });
+      scene3.add(bm.g); pc = { g: bm.g, bs: bm.g.userData.bs || 1 }; previewCache[key] = pc;
+    }
+    return pc.g ? pc : null;
+  }
   function ghost3(tx, ty, d, ok, queued) {
     let gh = ghostPool[ghostUsed++];
     if (!gh) { const g = new THREE.Group(), m = new THREE.Mesh(ghostBox, GHOST_MAT.ok), e = new THREE.LineSegments(ghostEdge, GHOST_LINE.ok), f = new THREE.Mesh(ghostPlane, GHOST_PLATE.ok); f.rotation.x = -HPI; g.add(m); g.add(e); g.add(f); scene3.add(g); gh = { g, m, e, f }; ghostPool.push(gh); }
-    const k = ok ? (queued ? 'q' : 'ok') : 'bad'; gh.g.visible = true; gh.m.material = GHOST_MAT[k]; gh.e.material = GHOST_LINE[k]; gh.f.material = GHOST_PLATE[k];
+    const k = ok ? (queued ? 'q' : 'ok') : 'bad'; gh.g.visible = true; gh.e.material = GHOST_LINE[k]; gh.f.material = GHOST_PLATE[k];
     const ht = d.flat ? .06 : (d.hgt || 30) * K * (d.mw ? d.w / d.mw : 1) * (queued ? .55 : 1);
     const wx = (tx + d.w / 2) * TS, wy = (ty + d.h / 2) * TS, gy = groundY(wx, wy);
-    gh.m.scale.set(d.w * .94, ht, d.h * .94); gh.e.scale.set(d.w * .94, ht, d.h * .94); gh.m.position.set(0, ht / 2, 0); gh.e.position.set(0, ht / 2, 0);
+    const pc = previewModel(d);
+    if (pc) {                                                                       // show the real model silhouette; the footprint plate under it carries the green/red validity
+      gh.m.visible = false;
+      pc.live = true; pc.g.visible = true; pc.g.position.set(wx * K, gy, wy * K); pc.g.scale.setScalar(pc.bs);
+    } else {
+      gh.m.visible = true; gh.m.material = GHOST_MAT[k];
+      gh.m.scale.set(d.w * .94, ht, d.h * .94); gh.m.position.set(0, ht / 2, 0);
+    }
+    gh.e.scale.set(d.w * .94, ht, d.h * .94); gh.e.position.set(0, ht / 2, 0);
     gh.f.scale.set(d.w, d.h, 1); gh.f.position.set(0, .045, 0);
     gh.g.position.set(wx * K, gy, wy * K);
   }
@@ -16074,7 +16254,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b124';
+const BUILD_TAG = 'b125';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
