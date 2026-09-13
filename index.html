@@ -7913,7 +7913,18 @@ function groundFx(u, dt) {
   if (u.def.fly && u.def.rotor && !u.def.orbit && Math.random() < dt * 14)
     part('dust', u.x + rnd(-18, 18), u.y + rnd(-18, 18), rnd(-30, 30), rnd(-30, 30), .5, 7, 'rgba(150,146,134,1)', { grow: 26 });
   let wash = 0;
-  if (u.def.fly && u.def.rotor) { if (u.landed) wash = 1; else if (u.rope) wash = .6; else if (u.altK !== undefined && u.altK < .75) { const t = (.75 - u.altK) / .75; wash = t * t * (3 - 2 * t); } }
+  if (u.def.fly && u.def.rotor) {
+    // downwash strength: a single smooth curve of height (no jump when the skids touch, the rope drops or the tile changes), then
+    // EASED over time so the ring and the pressed tufts swell in and release gently. u._washK is the one value the dust ring, the
+    // GPU/CPU grass press and an ally's ghost all read — so every screen shows the identical build-up and fade.
+    let want = 0;
+    if (u.landed) want = 1; else if (u.altK !== undefined && u.altK < .75) { const t = (.75 - u.altK) / .75; want = t * t * (3 - 2 * t); }
+    if (u.rope && want < .6) want = .6;
+    if (u._washK === undefined) u._washK = want;
+    u._washK += (want - u._washK) * Math.min(1, dt * (want > u._washK ? 2.4 : 1.1));   // presses in quickly, and the tufts stand back up slowly (~3 s) rather than snapping upright
+    if (Math.abs(want - u._washK) < .004) u._washK = want;
+    wash = u._washK;
+  }
   if (wash > .02) {
     // THE AIR RING — a soft ring of dust that flows OUTWARD from under the rotor (a genuine ring, not a filled blast and
     // not a hard concentric line). Emitted on ANY ground, not just grass, so an ally's ghost helicopter shows the exact
@@ -8219,6 +8230,8 @@ function updateAircraft(u, dt) {
    rate-limited so every manoeuvre reads as a smooth control input.
    ------------------------------------------------------------------ */
 const LB_ACC = 430, LB_DRAG = 1.25, LB_ALTVIS = .42, LB_PMAX = .62, LB_RMAX = .6;
+/* where the nose gun-line meets the ground: horizontal px ahead of the airframe (-1 when the nose is level or up) */
+function lbImpact(u) { const t = Math.tan(u.pitch || 0); return t > .04 ? (airZ(u) + 9) / t : -1; }
 function lbBody(u) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang); return { ca, sa, vf: u.vx * ca + u.vy * sa, vl: -u.vx * sa + u.vy * ca }; }
 /* the attitude that holds body-axis speed vD (steady state) plus a correction toward it from the current speed v */
 function lbCmd(vD, v, lim) { return Math.asin(clamp((LB_DRAG * vD + (vD - v) * 2.2) / LB_ACC, -(lim || LB_PMAX), lim || LB_PMAX)); }
@@ -8257,10 +8270,11 @@ function lbAttack(u, focus, dt, rng) {
     u._atkAlt = .6;                                                                // come down to attack height so the dive stays shallow
     u._runT += dt;
     let pitchCmd, vlD;
-    if (dd > stand * 1.35) { pitchCmd = Math.max(need, lbCmd(u.spd, b.vf)); vlD = 0; }   // run-in: nose down hard, straight at it
-    else { pitchCmd = clamp(need, -.15, LB_PMAX); vlD = u.orbitDir * u.spd * .5; }     // on the ring: nose held on the target, sliding sideways around it
+    const closing = -((focus.vx || 0) * dx + (focus.vy || 0) * dy) / dd + b.vf;       // how fast the gap is actually shrinking (a fleeing target pulls it open)
+    if (dd > stand * 1.35 || (dd > rng * .95 && closing < u.spd * .25)) { pitchCmd = Math.max(need, lbCmd(u.spd, b.vf)); vlD = 0; }   // run-in / chase: nose down hard, straight at it (the guns walk on as the gun-line reaches the target)
+    else { pitchCmd = clamp(need, -.15, LB_PMAX); vlD = u.orbitDir * u.spd * (closing > u.spd * .3 ? .5 : .32); }   // on the ring: nose held on the target, sliding sideways around it — a running target gets less crab so the nose stays on it
     lbStep(u, dt, pitchCmd, lbCmd(vlD, b.vl, LB_RMAX), want);
-    if (dd < stand * .5 || need > .72 || u._runT > 10) { u.atk = 'break'; u._brkT = 0; u.orbitDir = Math.random() < .35 ? -u.orbitDir : u.orbitDir; }
+    if (dd < stand * .5 || need > .72 || (u._runT > 12 && dd < stand * 1.1)) { u.atk = 'break'; u._brkT = 0; u.orbitDir = Math.random() < .35 ? -u.orbitDir : u.orbitDir; }
   } else {
     u._atkAlt = 1; u._brkT += dt;                                                  // break: nose up, kill the run, climb, keep circling — then re-attack
     lbStep(u, dt, lbCmd(-u.spd * .45, b.vf), lbCmd(u.orbitDir * u.spd * .45, b.vl, LB_RMAX), want);
@@ -8500,9 +8514,9 @@ function updateWeapons(u, dt, order) {
     u.aims[i] = angLerp(u.aims[i], want, 1 - Math.pow(w.slew || .0015, dt));
     if (w.fixed) {   // forward-fixed gun: it fires only down the airframe's nose; the helicopter itself must turn onto the target
       u.aims[i] = u.ang; const off = Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang)); if (Math.abs(off) > .2) continue;
-      if (u.def.fixedGuns && u.pitch !== undefined && !u.landed) {   // …and DIVE onto it: the gun-line follows the nose pitch, so it only hits when the dive angle matches the target's depression angle
-        const h = u.def.alt * LB_ALTVIS * (u.altK === undefined ? 1 : u.altK), need = Math.atan2(h, Math.sqrt(d2) || 1);
-        if (Math.abs(need - u.pitch) > .14) continue;
+      if (u.def.fixedGuns && u.pitch !== undefined && !u.landed) {   // …and DIVE onto it: the gun-line follows the nose pitch. It fires whenever the point where that line meets the ground is
+        const dd = Math.sqrt(d2) || 1, imp = lbImpact(u);            // near the target — SUPPRESSIVE fire that walks onto the target through the run, not a sniper's single line
+        if (imp < 0 || Math.abs(imp - dd) > Math.max(40, dd * .32)) continue;
       }
     }
     if (u.def.veh) { if (i === 0) u.aimT = u.aims[0]; }
@@ -8583,7 +8597,7 @@ function fire(src, tgt, wep, muz) {
   const shots = wep.pellets || 1;
   const lead = wep.spd < 900 ? Math.hypot(tgt.x - src.x, tgt.y - src.y) / wep.spd : 0;
   const px = tgt.x + (tgt.vx || 0) * lead * .6, py = tgt.y + (tgt.vy || 0) * lead * .6;
-  const base = angTo(m.x, m.y, px, py);
+  const base = (wep.fixed && src.pitch !== undefined && src.def && src.def.fixedGuns && !src.landed) ? src.ang : angTo(m.x, m.y, px, py);
   const spread = wep.spread * (G.night && !G.up.nvg && !(src.def && src.def.nightSight) && litAt(src.x, src.y) < .4 && !towerAt(src.x, src.y) ? 1.6 : 1) * paceSpread(src);
   const dmg = wep.dmg * dmgMul(src) * bd;
   const wc = weaponClass(src, wep);
@@ -8591,19 +8605,21 @@ function fire(src, tgt, wep, muz) {
   // where the round is aimed vertically: a ground target sits near the deck, an airborne one at its own altitude.
   // the bullet then descends along the true line from the muzzle's height to the target's height as it flies.
   const tz = (tgt && tgt.def && tgt.def.fly) ? (9 + airZ(tgt)) : 9;
-  const hdist = tgt ? Math.max(24, Math.hypot(tgt.x - m.x, tgt.y - m.y)) : 1e9;
-  const zSlope = (tz - z0) / hdist;                                    // z (px) change per px travelled toward the target
+  let hdist = tgt ? Math.max(24, Math.hypot(tgt.x - m.x, tgt.y - m.y)) : 1e9;
+  let zSlope = (tz - z0) / hdist;                                    // z (px) change per px travelled toward the target
+  const f3 = !!(wep.fixed && src.pitch !== undefined && src.def && src.def.fixedGuns && !src.landed);   // Little Bird: the round leaves along the NOSE — its azimuth and its dive angle — and strikes wherever that line meets the ground
+  if (f3) { const t = Math.tan(src.pitch); hdist = t > .04 ? (z0 - tz) / t : 1e9; zSlope = -Math.max(.001, t); }
   const acc = stanceAcc(src), inc = incendOn(src) && wep.kind === 'bullet' && !wep.sidearm;
   for (let i = 0; i < shots; i++) {
     // stance accuracy: an aimed round holds close to the line of aim; a thrown one is pushed off it by at least a body's width at range
     const a = base + (acc == null ? rnd(-spread, spread) : (Math.random() < acc ? rnd(-spread, spread) * .25 : (Math.random() < .5 ? -1 : 1) * (.06 + rnd(0, spread * 1.6 + .05))));
     const spd = wep.spd * (shots > 1 ? rnd(.85, 1.1) : 1);
-    const life = (wep.rng * rngMul(src) * (shots > 1 ? 1.05 : 1.35)) / spd;
+    const life = f3 ? Math.min(wep.rng * rngMul(src) * 1.35, hdist + 70) / spd : (wep.rng * rngMul(src) * (shots > 1 ? 1.05 : 1.35)) / spd;   // a nose-gun round dies just past its ground impact
     G.bullets.push({
       x: m.x, y: m.y, px: m.x, py: m.y, ox: m.x, oy: m.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       dmg: inc ? dmg * .85 : dmg, inc: inc ? 1 : 0, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx, small: wep.kind === 'bullet' && !wep.pierce && (wep.dmg || 0) <= 16, pistol: !!wep.sidearm,
       ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0, pn: wep.pierceN || 0,
-      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0
+      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0
     });
   }
   fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), srcZ, tier);
@@ -9324,7 +9340,7 @@ function updateBullets(dt) {
     if (b.kind === 'rocket') G.lights.push({ x: b.x, y: b.y, r: 90, c: [255, 170, 90], i: .7 });
 
     let hit = null;
-    if (b.team === 1) {
+    if (b.team === 1 && !(b.f3 && b.z > 26)) {                          // a nose-gun round still high in its dive passes over the ground targets
       G.cur = (b.src && b.src.owner) || 0;                              // kills and scrap credit the shooter's owner
       const list = G.hZeds.near(b.x, b.y, 30, _q2);
       if (b.pierce) {
@@ -9558,6 +9574,10 @@ function updateParticles(dt) {
     }
     p.rot += p.vr * dt;
     // a falling flare trails its own thread of smoke
+    if (p.kind === 'flare' && p.a > .08) {   // every burning flare carries its own light: it follows the flare down the arc and fades with it (the nearest 12 lights are rendered; the rest keep their ground glow)
+      const fl = .8 + .2 * Math.sin(G.t * 40 + p.x);
+      G.lights.push({ x: p.x, y: p.y, z: (p.z || 0) + 2, r: 120 * fl, c: [255, 172, 96], i: Math.min(1, p.a * 1.2) * fl });
+    }
     if (p.kind === 'flare' && p.z > 3 && G.parts.length < PMAX * .92 && Math.random() < dt * 30) {
       // a bright white magnesium trail that hangs in the air and slowly spreads, so each flare leaves a long arcing streak
       part('smoke', p.x, p.y, p.vx * .12 + rnd(-4, 4), p.vy * .12 + rnd(-4, 4), rnd(2.2, 3.4), rnd(1.4, 2.0), 'rgba(238,236,230,1)',
@@ -15255,7 +15275,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       // the live rotor downwash sources (low / landing / landed helicopters, mine and allies' alike): the tufts under the rotor are
       // pressed flat while the helicopter is down there and stand straight back up as it climbs away — a live press, never a cut
       DOWN_N = 0;
-      for (let ui = 0; ui < G.units.length && DOWN_N < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; let fade = 0; if (u.landed) fade = 1; else if (u.rope) fade = .6; else if (u.altK !== undefined && u.altK < .5) { const t = (.5 - u.altK) / .5; fade = t * t * (3 - 2 * t); } if (fade <= .01) continue; const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt !== T_GRASS && gt !== T_FOREST && gt !== T_SWAMP) continue; const D = DOWN_SRC[DOWN_N++]; D.x = u.x; D.y = u.y; D.r = u.r * 10.2 * (.45 + .55 * fade); D.s = 1.3 * fade; }   // ring 300% wider than the rotor; strength and radius grow in smoothly with descent (no pop)
+      for (let ui = 0; ui < G.units.length && DOWN_N < 4; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; const fade = u._washK || 0; if (fade <= .01) continue; const D = DOWN_SRC[DOWN_N++]; D.x = u.x; D.y = u.y; D.r = u.r * 10.2 * (.45 + .55 * fade); D.s = 1.3 * fade; }   // ring 300% wider than the rotor; strength and radius follow the sim's time-eased downwash value (the same one the dust ring and ally ghosts use) so the press swells in and releases smoothly — on any ground, so a helicopter over a grass/dirt edge never pops
       if (useGpuGrass) {                                                                       // static chunks + shader wind/trample (see GPU GRASS above)
         if (!G.grassTex || G.grassTex.ww !== WW || G.grassTex.wh !== WH) allocGrassTex();
         uploadGrassTex();
@@ -16543,7 +16563,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b134';
+const BUILD_TAG = 'b135';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
