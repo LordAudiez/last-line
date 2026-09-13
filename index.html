@@ -2897,10 +2897,11 @@ const UDEF = {
     desc: 'Tier-one operator: a fast, tack-driving auto carbine with the best accuracy of any auto gun, night optics, and quick mag changes. A sharpshooter on full-auto.'
   },
   rocketeer: {
-    name: 'Rocketeer', key: 'T', g: '🚀', hp: 100, spd: 52, r: 10, sight: 290, armor: 0, pop: 2,
+    name: 'Rocketeer', key: 'T', g: '🚀', hp: 100, spd: 52, r: 10, sight: 32 * 32, armor: 0, pop: 2, nightSight: true,
     cost: { s: 120, c: 70 }, time: 21, spr: 'rocketeer',
-    wep: { dmg: 68, rng: 275, cd: 2.4, spread: .02, spd: 430, kind: 'rocket', splash: 64, sfx: 'auto', smokeTrail: true, mag: 1, reload: 2.2 },
-    desc: 'High-explosive tube. Deletes clusters and Brutes.'
+    wep: { dmg: 68, rng: 32 * 32, cd: 2.4, spread: .02, spd: 560, kind: 'rocket', splash: 64, sfx: 'auto', smokeTrail: true, mag: 1, reload: 2.2, standOff: 16 * 32, rpg: true },   // sniper-range RPG-7; holds fire on anything inside 16 tiles (half its reach) and lets the MG take it
+    weps: [{ dmg: 8, rng: 16 * 32, cd: .085, spread: .085, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, sustain: true, mag: 100, reload: 3.6, shortRange: true }],   // close-in secondary: the same machine gun as the Humvee, 100 rounds a belt
+    desc: 'High-explosive tube with the reach of a sniper rifle — deletes clusters and Brutes at range. Anything inside half that reach (16 tiles) meets his belt-fed machine gun instead (100-round belts).'
   },
   mortar: {
     name: 'Mortar Team', key: 'O', g: '💣', hp: 95, spd: 40, r: 11, sight: 200, armor: 0, pop: 2,
@@ -8318,11 +8319,15 @@ function updateWeapons(u, dt, order) {
       u.pistolOut = true;
     }
     else if (i === 0 && u.def.side) {
-      if (u.reloads[1] > 0) { const near = findEnemy(u.x, u.y, weapRange(u, w), 0); if (near) u.reloads[1] = 0; }   // threat during the pistol top-up: drop it and go back to the rifle
+      const pi = ws.length - 1;                                                 // the pistol is always the last slot (a secondary gun may sit between)
+      if (u.reloads[pi] > 0) { const near = findEnemy(u.x, u.y, weapRange(u, w), 0); if (near) u.reloads[pi] = 0; }   // threat during the pistol top-up: drop it and go back to the rifle
       /* tactical reload: something is closing to arm's reach and the rifle is running low — feed the rifle NOW and
          fight the last metres with the pistol, instead of clicking on an empty chamber at point-blank range */
-      else if (w.mag && u.ammos[0] < w.mag * .4 && u.ammos[1] > 0 && u.cds[0] <= 0) { const near = findEnemy(u.x, u.y, u.def.side.close * 1.15, 0); if (near) { u.reloads[0] = w.reload; AU.reload(u.x, u.y, w.sfx); u.tacRel = 1; continue; } }
+      else if (w.mag && !w.standOff && u.ammos[0] < w.mag * .4 && u.ammos[pi] > 0 && u.cds[0] <= 0) { const near = findEnemy(u.x, u.y, u.def.side.close * 1.15, 0); if (near) { u.reloads[0] = w.reload; AU.reload(u.x, u.y, w.sfx); u.tacRel = 1; continue; } }
     }
+    /* ---- long gun + close-in secondary (rocketeer): the tube only fires past its stand-off, the machine gun only inside its own reach ---- */
+    if (w.standOff) { if (findEnemy(u.x, u.y, w.standOff, 0)) continue; }
+    if (w.shortRange) { if (!findEnemy(u.x, u.y, w.rng, 0)) continue; }
     const rng = weapRange(u, w), r2 = rng * rng;
     if (w.coax) {
       /* coaxial gun: no search of its own — it is bolted beside the main gun, so it rides the main gun's aim and fires at
@@ -8457,7 +8462,15 @@ function fire(src, tgt, wep, muz) {
       z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0
     });
   }
-  fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)), srcZ, tier);
+  fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), srcZ, tier);
+  if (wep.rpg) {   // RPG-7 launch: a big fireball off the muzzle, and the BACKBLAST — a cone of flame, smoke and dust blasted out the rear of the tube behind the shooter
+    const bz = (srcZ || 0) + 10, bk = base + Math.PI;
+    for (let k = 0; k < 6; k++) part('fire', m.x + Math.cos(base) * rnd(0, 14), m.y + Math.sin(base) * rnd(0, 14), Math.cos(base) * rnd(60, 160) + rnd(-30, 30), Math.sin(base) * rnd(60, 160) * .7 + rnd(-20, 20), rnd(.08, .2), rnd(5, 10), k & 1 ? '#ffb45a' : '#fff0c0', { glow: 1, z: bz, drag: .8, grow: 20 });
+    for (let k = 0; k < 8; k++) { const a = bk + rnd(-.45, .45), sp = rnd(120, 300); part('fire', src.x + Math.cos(bk) * 10, src.y + Math.sin(bk) * 8, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.1, .22), rnd(4, 9), k & 1 ? '#ff9a3a' : '#ffd890', { glow: 1, z: bz, drag: .82, grow: 16 }); }
+    for (let k = 0; k < 14; k++) { const a = bk + rnd(-.55, .55), sp = rnd(70, 220); part(k < 8 ? 'smoke' : 'dust', src.x + Math.cos(bk) * 8, src.y + Math.sin(bk) * 6, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.7, 1.6), rnd(5, 10), k < 8 ? 'rgba(120,112,100,1)' : 'rgba(190,178,150,1)', { a: .6, z: rnd(2, 12), vz: rnd(4, 24), drag: .9, grow: 26, wind: 1 }); }
+    for (let k = 0; k < 5; k++) part('smoke', m.x, m.y, Math.cos(base) * rnd(30, 90) + rnd(-20, 20), Math.sin(base) * rnd(30, 90) * .7, rnd(.9, 1.6), rnd(6, 11), 'rgba(150,140,128,1)', { a: .55, z: bz, vz: rnd(6, 18), drag: .9, grow: 24, wind: 1 });
+    addShake(src.x, src.y, 3); G.lights.push({ x: src.x, y: src.y, r: 160, c: [255, 190, 110], i: 1.6 });
+  }
   // every gun ejects a spent shell — default one for bullet/shell weapons that don't specify
   const nCas = wep.casings != null ? wep.casings : ((wep.kind === 'bullet' || wep.kind === 'shell') ? 1 : 0);
   if (nCas) for (let i = 0; i < nCas; i++) fxCasing(src.x, src.y, m.a, srcZ);
@@ -13501,6 +13514,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const WHITE = new THREE.Color(1, 1, 1), GREENBLOOD = new THREE.Color(.35, 1.4, .3);
   // cheap local smoke density (0..1) at a world point — used so a flashlight beam lights up when it hits actual smoke/dust
   function smokeDensity(wx, wy) { let s2 = 0; const P2 = G.parts; for (let i = 0; i < P2.length; i++) { const q = P2[i]; const k = q.kind; if (k !== 'smoke' && k !== 'dust' && k !== 'fog') continue; const dx = q.x - wx, dy = q.y - wy; if (dx > -34 && dx < 34 && dy > -34 && dy < 34) { const d2 = dx * dx + dy * dy; if (d2 < 1156) s2 += (1 - d2 / 1156) * (q.a || .5); if (s2 > 1.2) break; } } return s2 > 1 ? 1 : s2; }
+  const RPG_BODY = col3('#5c6b3a');
   const SKIN = col3('#c9a684'), STEEL = col3('#7c838e'), DKSTEEL = col3('#7a8088'), WOOD = col3('#6a4a2a'), BOOT = col3('#2a2622'), BLOOD = col3('#7a0f0f'), GBLOOD = col3('#6db52a'), HAIRS = ['#2a1e14', '#4a3520', '#1a1614', '#6a5030', '#8a8070'].map(col3);
   const REDCROSS = col3('#d92b2b'), GHILLIE = ['#4a5a2e', '#5c6a34', '#6a5a3a', '#3e4a28'].map(col3);
   const FS = .6;                                                     // figures are 60% of the first draft's size
@@ -13844,9 +13858,22 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         put(P.box, X(pf + 2.2 * sc, pr), py + .9 * sc, Z(pf + 2.2 * sc, pr), 0, ry, rc * .25, 5.2 * sc, 1.6 * sc, 1.4 * sc, col3('#26292d'));
         put(P.box, X(pf, pr), py - 1.0 * sc, Z(pf, pr), 0, ry, -.25, 1.4 * sc, 3.4 * sc, 1.3 * sc, col3('#1a1c1e'));
         put(P.box, X(tl - torsoD * .5 - 1.4 * sc, 0), tcY + torsoH * .1, Z(tl - torsoD * .5 - 1.4 * sc, 0), .75, ry, 0, ww * .8, wl * .85, ww, wc);   // slung primary
-      } else if (launcher) {                                                    // rocket launcher tube resting on the right shoulder
-        put(P.cyl, X(shoF + 1 * sc, aR * .9), shoY + 2.5 * sc, Z(shoF + 1 * sc, aR * .9), 0, ry, HPI - .3, W.wid * sc * .45, wl, W.wid * sc * .45, wc);
-        put(P.box, X(shoF - 2 * sc, aR * .9), shoY + 5.5 * sc, Z(shoF - 2 * sc, aR * .9), 0, ry, -.3, 5 * sc, 3 * sc, 2.5 * sc, col3('#2a2a2a'));
+      } else if (launcher) {                                                    // RPG-7 on the right shoulder: long tube, flared rear venturi, wooden heat-guard, two grips, front sight — and the fat PG-7 warhead riding on the muzzle
+        const gr = aR * .9, bf = shoF - 4 * sc, by = shoY + 2.4 * sc, cd = Math.cos(dip), sd = Math.sin(dip), TUBE = col3('#2f3328'), DK = col3('#1c1e1a'), OLV = col3('#5c6b3a');
+        const at = t => [bf + cd * t, by + sd * t];
+        const cy = (t, L, r, col, dy) => { const q = at(t); put(P.cyl, X(q[0], gr), q[1] + (dy || 0), Z(q[0], gr), 0, ry, HPI + dip, r, L, r, col); };
+        const bx = (t, dy, L, h, w, col) => { const q = at(t); put(P.box, X(q[0], gr), q[1] + dy, Z(q[0], gr), 0, ry, dip, L, h, w, col); };
+        cy(11 * sc, 24 * sc, 1.35 * sc, TUBE);                                    // the tube
+        cy(-2.5 * sc, 5 * sc, 2.3 * sc, DK); cy(-4.5 * sc, 1.2 * sc, 2.8 * sc, DK);   // rear venturi flare
+        cy(6 * sc, 6.5 * sc, 1.9 * sc, WOOD);                                     // wooden heat guard
+        bx(4 * sc, -3.2 * sc, 2.2 * sc, 4.6 * sc, 1.6 * sc, DK); bx(-.5 * sc, -3.6 * sc, 2.0 * sc, 4.2 * sc, 1.5 * sc, WOOD);   // trigger grip + rear grip
+        bx(15 * sc, 2.2 * sc, .8 * sc, 2.6 * sc, .6 * sc, DK); bx(1 * sc, 2.4 * sc, .8 * sc, 2.0 * sc, .6 * sc, DK);            // front + rear sights
+        if (!(relP > 0)) {                                                         // loaded: the PG-7 grenade — booster stem, bulbous shaped-charge head, pointed nose
+          cy(25 * sc, 5 * sc, 1.0 * sc, OLV);
+          const q = at(30 * sc); put(P.head, X(q[0], gr), q[1], Z(q[0], gr), 0, ry, HPI + dip, 2.7 * sc, 4.6 * sc, 2.7 * sc, OLV);
+          const q2 = at(34.5 * sc); put(P.head, X(q2[0], gr), q2[1], Z(q2[0], gr), 0, ry, HPI + dip, 1.4 * sc, 2.4 * sc, 1.4 * sc, DK);
+          for (let k = 0; k < 4; k++) { const an = k * HPI + .4, q3 = at(23.5 * sc); put(P.box, X(q3[0], gr + Math.cos(an) * 1.5 * sc), q3[1] + Math.sin(an) * 1.5 * sc, Z(q3[0], gr + Math.cos(an) * 1.5 * sc), 0, ry, dip + an, 2.2 * sc, .4 * sc, 1.6 * sc, DK); }   // folded stabiliser fins
+        }
       } else if (hand.base && !med && o.ut && GUNKIT[o.ut]) {
         // role-specific weapon kits, laid along the bore from the stock at the shoulder (hands already sit at .28 / .6 of the bore)
         const B = hand.base, gr = B.r, cd = cd0, sd = sd0, kit = GUNKIT[o.ut];
@@ -15455,7 +15482,14 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         bb(partsAdd, x, y, z, (.09 + len * .1) * dk * sh, 1, .82, .5, .8 * dk);
         if (b.kind === 'shell') bb(partsAdd, x - ca * cp * .3, y, z - sa * cp * .3, .5, 1, .6, .3, .35);
       }
-      if (b.kind === 'rocket') bb(partsAdd, x, y, z, .35, 1, .75, .4, .9);
+      if (b.kind === 'rocket') {   // the PG-7 grenade in flight: olive body, fat shaped-charge head, and a fierce white-orange exhaust off the tail
+        const ca2 = Math.cos(a), sa2 = Math.sin(a), sp2 = Math.sin(pit), cp2 = Math.cos(pit);
+        put(P.cyl, x, y, z, 0, -a, HPI + pit, .028, .26, .028, RPG_BODY);
+        put(P.head, x + ca2 * cp2 * .12, y + sp2 * .12, z + sa2 * cp2 * .12, 0, -a, HPI + pit, .055, .09, .055, RPG_BODY);
+        bb(partsAdd, x - ca2 * cp2 * .16, y - sp2 * .16, z - sa2 * cp2 * .16, .45, 1, .8, .45, 1);
+        bb(partsAdd, x - ca2 * cp2 * .3, y - sp2 * .3, z - sa2 * cp2 * .3, .7, 1, .55, .2, .55);
+        bb(partsAdd, x, y, z, .3, 1, .95, .8, .9);
+      }
       if (b.kind === 'acid') bb(partsAdd, x, y, z, .28, .6, .95, .25, .9);
     }
     PF('bullets');
@@ -16324,7 +16358,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b127';
+const BUILD_TAG = 'b128';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
