@@ -3214,6 +3214,13 @@ const RESEARCH = {
    The combat loop only ever walks allWeps. */
 /* Every foot soldier also carries a sidearm: a 9mm pistol drawn only while the primary is being reloaded and a
    target is right on top of them (see updateWeapons). It is a real weapon slot with its own magazine. */
+/* ECONOMY SCALE: the farm buildings (refinery / factory / warehouse) pay out fast, so everything you BUY costs 15x — units,
+   structures, upgrades, research — while income stays as it is. Starting stocks and supply crates are scaled with it so the
+   opening plays the same; it is the mid-game that has to be earned. */
+const ECON = 15;
+for (const k in UDEF) { const c = UDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; } }
+for (const k in BDEF) { const c = BDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; } }
+for (const k in RESEARCH) { const c = RESEARCH[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; } }
 const PISTOL = { dmg: 8, rng: 150, cd: .28, spread: .06, spd: 1000, kind: 'bullet', sfx: 'pistol', casings: 1, mag: 12, reload: 1.5, sidearm: true, close: 130 };
 for (const k in UDEF) {
   const d = UDEF[k];
@@ -4532,7 +4539,7 @@ const G = {
   gridB: new Int32Array(MW * MH),
   hUnits: new Hash(), hZeds: new Hash(),
   sel: [], groups: {}, uid: 1,
-  sup: 400, scr: 150, pop: 0, cap: 24,
+  sup: 6000, scr: 2250, pop: 0, cap: 24,
   t: 0, dt: 0, day: 0.28, dayLen: 800, night: false, days: 0, rainDay: 7,           // a full day-night cycle is 4x longer
   wave: 0, waveT: 34, waveQueue: null, waveAlive: 0, peace: true,
   up: { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 },
@@ -5983,7 +5990,7 @@ function updateVillages(dt) {
     const winner = mp ? (v.capTeam || 'A') : 'A';
     if (v.cap >= 1 && v.owner !== winner) {
       v.owner = winner; v.cap = 1;
-      const keep = G.cur; for (let pi = 0; pi < G.players.length; pi++) if (G.players[pi].team === winner) { G.cur = pi; G.sup += 80; G.scr += 30; G.bonus += 1; } G.cur = keep;
+      const keep = G.cur; for (let pi = 0; pi < G.players.length; pi++) if (G.players[pi].team === winner) { G.cur = pi; G.sup += 80 * 15; G.scr += 30 * 15; G.bonus += 1; } G.cur = keep;
       popText(v.x, v.y, '+80 ▲ ' + v.name + ' secured' + (mp ? ' by team ' + winner : ''), TEAM_COL[winner] || '#8dffbe');
       if (!mp || winner === myTeam()) { alertMsg(v.name + ' secured — +80 supply', 'good'); AU.ui('ok'); } else alertMsg(v.name + ' taken by team ' + winner, 'bad');
     } else if (v.cap <= -1 && v.owner !== 'invader') {
@@ -5994,7 +6001,7 @@ function updateVillages(dt) {
     // bonus income while a team holds the village: every player of that team is paid
     if (v.owner && v.owner.length === 1) {
       v._acc += dt;
-      if (v._acc >= 3) { v._acc = 0; const keep = G.cur; for (let pi = 0; pi < G.players.length; pi++) if (G.players[pi].team === v.owner) { G.cur = pi; G.sup += 10; G.scr += 4; } G.cur = keep; popText(v.x, v.y - 10, '+10 ▲', TEAM_COL[v.owner] || '#8dffbe'); }
+      if (v._acc >= 3) { v._acc = 0; const keep = G.cur; for (let pi = 0; pi < G.players.length; pi++) if (G.players[pi].team === v.owner) { G.cur = pi; G.sup += 150; G.scr += 60; } G.cur = keep; popText(v.x, v.y - 10, '+150 ▲', TEAM_COL[v.owner] || '#8dffbe'); }
     }
     v.flag += dt;
     if (v.owner === 'invader' && G.mode === 'invaders') {                       // a village in the host's hands raises militia (up to 8 at a time)
@@ -7323,7 +7330,7 @@ function callAirdrop(manual) {
   const by = G.hq && !G.hq.dead ? G.hq.y : BASE_Y;
   for (let i = 0; i < n; i++) {
     const p = dropPoint(bx, by, 4 * TS, 9 * TS) || { x: bx, y: by };
-    G.crates.push({ x: p.x, y: p.y, z: 360 + i * 40, vz: 0, amt: manual ? 90 : 110, chute: 1, flare: 1, claimed: null, life: 999, bob: rnd(TAU), landed: false });
+    G.crates.push({ x: p.x, y: p.y, z: 360 + i * 40, vz: 0, amt: (manual ? 90 : 110) * 15, chute: 1, flare: 1, claimed: null, life: 999, bob: rnd(TAU), landed: false });
   }
   alertMsg(manual ? 'Emergency drop inbound' : 'Supply drop inbound at the base', 'info');
   AU.ui('ready');
@@ -7335,7 +7342,7 @@ function callBigDrop() {
   const p = dropPoint();
   if (!p) return;
   G.crates.push({
-    x: p.x, y: p.y, z: 520, vz: 0, amt: rndi(380, 560), chute: 1, big: 1, flare: 1,
+    x: p.x, y: p.y, z: 520, vz: 0, amt: rndi(380, 560) * 15, chute: 1, big: 1, flare: 1,
     claimed: null, life: 999, bob: rnd(TAU), landed: false
   });
   const bx = G.hq ? G.hq.x : BASE_X, by = G.hq ? G.hq.y : BASE_Y;
@@ -12139,8 +12146,8 @@ function cancelRelocate() {
 function addAllyGifts(btns) {
   if (!G.mp || typeof myAllies !== 'function') return;
   for (const { p, i } of myAllies()) {
-    btns.push({ g: '🤝', n: '▲100 → ' + p.name, badge: 'sup', tip: 'Send 100 supply to your ally ' + p.name + '.', dis: !G.players[G.me].unlim.sup && G.sup < 100, fn: () => { if (giveResource(i, 'sup', 100)) { popText(G.hq ? G.hq.x : 0, G.hq ? G.hq.y : 0, '−100 ▲ → ' + p.name, '#8dffbe'); AU.ui('ok'); } else AU.ui('no'); refreshCard(true); } });
-    btns.push({ g: '🤝', n: '◆100 → ' + p.name, badge: 'scr', tip: 'Send 100 scrap to your ally ' + p.name + '.', dis: !G.players[G.me].unlim.scr && G.scr < 100, fn: () => { if (giveResource(i, 'scr', 100)) { AU.ui('ok'); } else AU.ui('no'); refreshCard(true); } });
+    btns.push({ g: '🤝', n: '▲1500 → ' + p.name, badge: 'sup', tip: 'Send 1500 supply to your ally ' + p.name + '.', dis: !G.players[G.me].unlim.sup && G.sup < 1500, fn: () => { if (giveResource(i, 'sup', 1500)) { popText(G.hq ? G.hq.x : 0, G.hq ? G.hq.y : 0, '−1500 ▲ → ' + p.name, '#8dffbe'); AU.ui('ok'); } else AU.ui('no'); refreshCard(true); } });
+    btns.push({ g: '🤝', n: '◆1500 → ' + p.name, badge: 'scr', tip: 'Send 1500 scrap to your ally ' + p.name + '.', dis: !G.players[G.me].unlim.scr && G.scr < 1500, fn: () => { if (giveResource(i, 'scr', 1500)) { AU.ui('ok'); } else AU.ui('no'); refreshCard(true); } });
   }
 }
 function cardFor() {
@@ -12258,7 +12265,7 @@ function cardFor() {
     }
     if (d.ability === 'airdrop') {
       const rdy = G.dropT < 40;
-      btns.push({ g: '🪂', n: 'Emergency Drop', k: 'D', cost: { s: 0, c: 60 }, tip: 'Immediate 3-crate supply drop near the command post.', dis: G.scr < 60, fn: () => { if (G.scr < 60) { AU.ui('no'); return; } G.scr -= 60; callAirdrop(true); } });
+      btns.push({ g: '🪂', n: 'Emergency Drop', k: 'D', cost: { s: 0, c: 900 }, tip: 'Immediate 3-crate supply drop near the command post.', dis: G.scr < 900, fn: () => { if (G.scr < 900) { AU.ui('no'); return; } G.scr -= 900; callAirdrop(true); } });
     }
     if (bld.t === 'hq') {
       const me = G.players[G.me];
@@ -15724,10 +15731,10 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
 
 /* ============================ BOOT & LOOP ============================ */
 const DIFFS = {
-  easy:     { label: 'Easy',     sup: 700,   scr: 350,   hpMul: .7,  dmgMul: .7,  waveMul: 1.35, dev: false },
-  normal:   { label: 'Normal',   sup: 400,   scr: 150,   hpMul: 1,   dmgMul: 1,   waveMul: 1,    dev: false },
-  hard:     { label: 'Hard',     sup: 280,   scr: 100,   hpMul: 1.5, dmgMul: 1.35, waveMul: .72, dev: false },
-  creative: { label: 'Creative', sup: 99999, scr: 99999, hpMul: .6,  dmgMul: .5,  waveMul: 1.5,  dev: true }
+  easy:     { label: 'Easy',     sup: 700 * 15,   scr: 350 * 15,   hpMul: .7,  dmgMul: .7,  waveMul: 1.35, dev: false },
+  normal:   { label: 'Normal',   sup: 400 * 15,   scr: 150 * 15,   hpMul: 1,   dmgMul: 1,   waveMul: 1,    dev: false },
+  hard:     { label: 'Hard',     sup: 280 * 15,   scr: 100 * 15,   hpMul: 1.5, dmgMul: 1.35, waveMul: .72, dev: false },
+  creative: { label: 'Creative', sup: 9999999, scr: 9999999, hpMul: .6,  dmgMul: .5,  waveMul: 1.5,  dev: true }
 };
 function newGame(opts) {
   opts = opts || {};
@@ -15799,7 +15806,7 @@ function newGame(opts) {
     for (let i = 0; i < 3; i++) spawnUnit('engineer', hx + rnd(-70, 90), hy + rnd(-70, 70), true);
     for (let i = 0; i < 4; i++) spawnUnit('rifleman', hx + rnd(40, 150), hy + rnd(-90, 90), true);
     for (let i = 0; i < 2; i++) spawnUnit('support', hx + rnd(-40, 60), hy + rnd(-70, 70), true);
-    for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
+    for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100 * 15, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
   }
   G.cur = G.me; const hq = myHQ;
   BASE_TX = sites[G.me][0]; BASE_TY = sites[G.me][1]; BASE_X = BASE_TX * TS; BASE_Y = BASE_TY * TS;
@@ -15826,7 +15833,7 @@ function spawnPlayerBaseAt(pi, gx, gy) {
   for (let i = 0; i < 3; i++) spawnUnit('engineer', hx + rnd(-70, 90), hy + rnd(-70, 70), true);
   for (let i = 0; i < 4; i++) spawnUnit('rifleman', hx + rnd(40, 150), hy + rnd(-90, 90), true);
   for (let i = 0; i < 2; i++) spawnUnit('support', hx + rnd(-40, 60), hy + rnd(-70, 70), true);
-  for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
+  for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100 * 15, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
   G.cur = prev; return hq;
 }
 /* the local commander clicks the map to site their post */
@@ -16309,7 +16316,7 @@ const CFG_DIFF = [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard'], ['cr
 const CFG_SIZE = [['small', 'Small'], ['average', 'Average'], ['large', 'Large']];
 const randCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join('');
 const uid = () => 'u' + Math.random().toString(36).slice(2, 8);
-const defaultCfg = () => ({ mode: 'invaders', enemy: 'medieval', diff: 'normal', size: 'average', seed: (Math.random() * 1e6) | 0, sup: 400, scr: 150, cap: 20, maxCap: 80, unlim: { sup: false, scr: false, cap: false } });
+const defaultCfg = () => ({ mode: 'invaders', enemy: 'medieval', diff: 'normal', size: 'average', seed: (Math.random() * 1e6) | 0, sup: 6000, scr: 2250, cap: 20, maxCap: 80, unlim: { sup: false, scr: false, cap: false } });
 
 /* ---------------- NET: transport-agnostic room + command bus ---------------- */
 const NET = {
@@ -16447,7 +16454,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b132';
+const BUILD_TAG = 'b133';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -16475,7 +16482,7 @@ function buildCfgControls() {
     const unl = box.querySelector('.unl'); if (unl) unl.onclick = () => { if (!amHost()) return; const u = unl.dataset.u; LOBBY.room.cfg.unlim[u] = !LOBBY.room.cfg.unlim[u]; NET.publishRoom(LOBBY.room); renderLobby(); };
   }
 }
-function stepNum(k, d) { if (!amHost()) return; const step = k === 'sup' || k === 'scr' ? 50 : 5; LOBBY.room.cfg[k] = Math.max(0, (LOBBY.room.cfg[k] || 0) + d * step); NET.publishRoom(LOBBY.room); renderLobby(); }
+function stepNum(k, d) { if (!amHost()) return; const step = k === 'sup' || k === 'scr' ? 750 : 5; LOBBY.room.cfg[k] = Math.max(0, (LOBBY.room.cfg[k] || 0) + d * step); NET.publishRoom(LOBBY.room); renderLobby(); }
 
 /* ---------------- spawn-point map (click to pick your spawn) ---------------- */
 function bindSpawnMap() { /* spawn points are gone — commanders site their own HQ in-match */ }
