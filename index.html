@@ -8012,9 +8012,9 @@ function rotorWash(u, k, dt) {
    accelerate straight, climb out, then resume normal flight. Returns true while it is still busy landing/climbing. */
 function fixedWingLand(u, dt) {
   if (u.altK === undefined) u.altK = 1;
-  if (u.landed) {                                                         // rolling out (or parked) — bleed off the ground speed to a stop
-    u.vx *= Math.pow(.04, dt); u.vy *= Math.pow(.04, dt);
-    if (Math.hypot(u.vx, u.vy) < 5) { u.vx = u.vy = 0; } else { u.x += u.vx * dt; u.y += u.vy * dt; }
+  if (u.landed) {                                                         // rolling out: a 3-second ground run from touchdown speed down to a stop, then parked
+    if (u._rollT > 0) { u._rollT -= dt; const k = Math.max(0, u._rollT / 3), gs = u.spd * .5 * k, a = u.ang || 0; u.vx = Math.cos(a) * gs; u.vy = Math.sin(a) * gs; u.x += u.vx * dt; u.y += u.vy * dt; fixedWingGroundFx(u, dt, .35 + .65 * k); }
+    else { u.vx = u.vy = 0; }
     return true;
   }
   if (u._appAng === undefined) u._appAng = u.ang || 0;                    // lock the approach heading dead straight
@@ -8022,8 +8022,9 @@ function fixedWingLand(u, dt) {
   u.altK = Math.max(0, u.altK - dt * .17);                               // long, shallow glide (~6 s from cruise to the deck)
   const gs = u.spd * (.5 + .5 * u.altK);
   u.vx = Math.cos(a) * gs; u.vy = Math.sin(a) * gs; u.x += u.vx * dt; u.y += u.vy * dt;
+  if (u.altK < .3) fixedWingGroundFx(u, dt, (.3 - u.altK) / .3);          // on short final the prop wash / jet blast starts kicking dust off the deck
   if (u.altK <= .001) {                                                  // touchdown
-    u.landed = true; u._appAng = undefined; addShake(u.x, u.y, 3); AU.ui('ok');
+    u.landed = true; u._appAng = undefined; u._rollT = 3; addShake(u.x, u.y, 3); AU.ui('ok');
     if (typeof grassStamp === 'function') { const gt = MAP.t[tileIdx((u.x / TS) | 0, (u.y / TS) | 0)]; if (gt === T_GRASS || gt === T_FOREST || gt === T_SWAMP) grassStamp(u.x, u.y, u.r * 1.2); }
   }
   return true;
@@ -8031,11 +8032,44 @@ function fixedWingLand(u, dt) {
 /* take-off roll for a parked fixed-wing given a flying order: accelerate straight and climb out before normal flight resumes. */
 function fixedWingTakeoff(u, dt) {
   if (u.altK === undefined) u.altK = 0;
-  const a = u.ang || 0, gs = u.spd * (.45 + .55 * u.altK);
+  const a = u.ang || 0;
+  if (u._toT === undefined) u._toT = 0;
+  if (u._toT < 3) {                                                      // the take-off run: 3 seconds accelerating down the strip, wheels on the ground, before rotation
+    u._toT += dt; const k = u._toT / 3, gs = u.spd * (.08 + .5 * k);
+    u.vx = Math.cos(a) * gs; u.vy = Math.sin(a) * gs; u.x += u.vx * dt; u.y += u.vy * dt;
+    fixedWingGroundFx(u, dt, .5 + .5 * k);
+    return true;
+  }
+  const gs = u.spd * (.58 + .42 * u.altK);
   u.vx = Math.cos(a) * gs; u.vy = Math.sin(a) * gs; u.x += u.vx * dt; u.y += u.vy * dt;
+  if (u.altK < .3) fixedWingGroundFx(u, dt, (.3 - u.altK) / .3);
   u.altK += dt * .24;                                                    // long climb-out
-  if (u.altK >= 1) { u.altK = 1; u.landed = false; return false; }       // airborne — hand back to normal flight
+  if (u.altK >= 1) { u.altK = 1; u.landed = false; u._toT = undefined; return false; }   // airborne — hand back to normal flight
   return true;
+}
+/* Wash off a fixed-wing near the deck. AC-130: each of the four turboprops blasts a stream of dust straight back off its
+   wing. Jet: the afterburner scours a long plume out behind the tail, and the wingtips shed vortices — dust curling up
+   and outward beside each wing as the air rolls off it. k = 0..1 strength. */
+function fixedWingGroundFx(u, dt, k) {
+  if (!(k > .02) || G.parts.length > PMAX * .85) return;
+  const a = u.ang || 0, ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca, jet = !!u.def.jet, span = u.r * (jet ? 2.4 : 3.2);
+  if (!jet) {   // four engines on the wing line, exhaust streaming back
+    for (const f of [-.66, -.3, .3, .66]) {
+      if (Math.random() > dt * 22 * k) continue;
+      const ex = u.x + px * f * span + ca * u.r * .2, ey = u.y + py * f * span + sa * u.r * .2;
+      part('dust', ex, ey, -ca * rnd(120, 260) + rnd(-20, 20), -sa * rnd(120, 260) * .7 + rnd(-14, 14), rnd(.5, 1.0), rnd(5, 9), 'rgba(196,186,156,1)', { a: .5, z: rnd(0, 4), vz: rnd(6, 20), grow: 22, drag: .92, wind: 1 });
+    }
+  } else {
+    if (Math.random() < dt * 40 * k) {   // afterburner plume: dust and heat blasted straight back down the strip
+      part('dust', u.x - ca * u.r * 1.3, u.y - sa * u.r * 1.3, -ca * rnd(220, 420) + rnd(-25, 25), -sa * rnd(220, 420) * .7 + rnd(-18, 18), rnd(.5, 1.1), rnd(6, 11), 'rgba(200,190,160,1)', { a: .55, z: rnd(0, 5), vz: rnd(8, 26), grow: 28, drag: .93, wind: 1 });
+      part('fire', u.x - ca * u.r * 1.3, u.y - sa * u.r * 1.3, -ca * rnd(160, 300), -sa * rnd(160, 300) * .7, rnd(.08, .16), rnd(3, 6), Math.random() < .5 ? '#ff9a3a' : '#ffd090', { glow: 1, z: 6, drag: .85, grow: 10 });
+    }
+    for (const f of [-1, 1]) {   // wingtip vortices: air rolling off each wing lifts dust up and outward beside it, trailing back
+      if (Math.random() > dt * 14 * k) continue;
+      const wx = u.x + px * f * span * .5 - ca * u.r * .1, wy = u.y + py * f * span * .5 - sa * u.r * .1;
+      part('dust', wx, wy, px * f * rnd(20, 60) - ca * rnd(60, 140), (py * f * rnd(20, 60) - sa * rnd(60, 140)) * .7, rnd(.6, 1.2), rnd(4, 7), 'rgba(206,198,170,1)', { a: .45, z: rnd(1, 6), vz: rnd(14, 40), vr: f * 8, grow: 18, drag: .93, wind: 1 });
+    }
+  }
 }
 function updateAircraft(u, dt) {
   u.hurt = Math.max(0, u.hurt - dt * 4);
@@ -14984,7 +15018,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   }
   render = function () {
     if (mapStamp !== MAP.t || structStamp !== MAP.structs) { resetWorld(); mapStamp = MAP.t; structStamp = MAP.structs; lastPX = 1e9; }
-    { const _n = performance.now() / 1000; const _d = render._t ? Math.min(.1, _n - render._t) : 0; render._t = _n; if (G.started && !G.paused && G.speed > 0) healCraters(_d); }
+    { const _n = performance.now() / 1000; const _d = render._t ? Math.min(.1, _n - render._t) : 0; render._t = _n; render._dt = _d; if (G.started && !G.paused && G.speed > 0) healCraters(_d); }
     SHX = G.shake ? rnd(-G.shake, G.shake) : 0; SHY = G.shake ? rnd(-G.shake, G.shake) : 0;
     updateSun();
     PF('props_begin'); if (G.prof) G.renderProf = {};
@@ -15271,7 +15305,18 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
         if (!um) { um = mkVehicle(d.spr, ut); um.g.scale.setScalar(d.fly ? (AIRSC[d.spr] || 1.45) : (u.r * K) / .9 * (d.spr === 'abrams' ? 1.68 : d.spr === 'stryker' ? 1.92 : d.spr === 'humvee' ? 2.0 : 1)); scene3.add(um.g); unitMeshes.set(u.id, um); }   // aircraft drawn at 3x
         um.g.visible = vis; if (!vis) continue;
         const alt = d.fly ? (d.alt || 150) * K * ALTK * (u.altK === undefined ? 1 : u.altK) + (d.fly && u.altK !== undefined && u.altK < .02 ? .05 : 0) : 0; um.g.position.set(x, gy + alt, z);
-        if (d.fly) { um.g.rotation.set(0, -u.ang, Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
+        if (d.fly) { um.g.rotation.set(0, -u.ang, 0);
+          if (d.rotor) {   // helicopter attitude from its flight physics: nose dips as it accelerates / flies forward and lifts as it brakes, it banks into turns and sideslips a touch through them, and hovers with a gentle rock
+            const rdt = Math.max(1e-3, render._dt || .016), vf = (u.vx || 0) * Math.cos(u.ang) + (u.vy || 0) * Math.sin(u.ang), spd0 = u.def.spd || 100;
+            const af = u._pvf === undefined ? 0 : (vf - u._pvf) / rdt; u._pvf = vf;
+            let dA = u._pAng === undefined ? 0 : u.ang - u._pAng; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); const yawRate = dA / rdt; u._pAng = u.ang;
+            const hov = (u.altK === undefined ? 1 : u.altK) * (u.landed ? 0 : 1);
+            const pitT = Math.max(-.55, Math.min(.55, (vf / spd0) * .3 + af * .0022)) * hov + Math.sin(G.t * 1.3 + u.id) * .02 * hov;
+            const rolT = Math.max(-.7, Math.min(.7, yawRate * .42 + (vf / spd0) * yawRate * .25)) * hov + Math.sin(G.t * 1.1 + u.id * 2) * .025 * hov;
+            const yawT = Math.max(-.25, Math.min(.25, -yawRate * .07)) * hov;
+            u._pit = (u._pit || 0) + (pitT - (u._pit || 0)) * Math.min(1, rdt * 4); u._rol = (u._rol || 0) + (rolT - (u._rol || 0)) * Math.min(1, rdt * 3.2); u._yw = (u._yw || 0) + (yawT - (u._yw || 0)) * Math.min(1, rdt * 3);
+            um.g.rotateY(-u._yw); um.g.rotateX(u._rol); um.g.rotateZ(-u._pit);
+          } else { um.g.rotateZ(Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); } /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
         else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil) um.tur.position.x = -.15 - u.recoil * .12;
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); } }   // roof MGs slew on their own pintles, relative to the turret they ride on
         if (u.order && u.order.lead && !d.fly) { const pl = G.players && G.players[u.owner || 0]; drawBanner(x, gy + u.r * K * .9, z, u.ang, 1.35 * FS, col3(pl && pl.color ? pl.color : '#7dffb2'), col3('#f2f2f2'), u.id); }   // convoy leader flies the pennant
@@ -16358,7 +16403,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b128';
+const BUILD_TAG = 'b129';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
