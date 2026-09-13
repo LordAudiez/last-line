@@ -2937,16 +2937,16 @@ const UDEF = {
     desc: 'M82 Barrett anti-materiel rifle. Abrams-range .50 BMG rounds that punch through two bodies in a line. Slow to cycle, but devastating. Sees in day and night without penalty.'
   },
   littlebird1: {
-    name: 'Little Bird MK1', key: 'Z', g: '🚁', hp: 260, spd: 175, r: 15, sight: 380, armor: 1, pop: 3, veh: true, fly: 1, alt: 450,
+    name: 'Little Bird MK1', key: 'Z', g: '🚁', hp: 260, spd: 175, r: 15, sight: 380, armor: 1, pop: 3, veh: true, fly: 1, alt: 450, fixedGuns: true,
     cost: { s: 200, c: 120 }, time: 20, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
-    wep: { dmg: 9, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true },
+    wep: { dmg: 9, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true, fixed: true },   // forward-fixed: the whole helicopter turns to bring it on
     desc: 'Light scout helicopter with a single minigun. Fast, fragile, engages one target.'
   },
   littlebird2: {
-    name: 'Little Bird MK2', key: 'X', g: '🚁', hp: 300, spd: 168, r: 15, sight: 390, armor: 1, pop: 4, veh: true, fly: 1, alt: 450,
+    name: 'Little Bird MK2', key: 'X', g: '🚁', hp: 300, spd: 168, r: 15, sight: 390, armor: 1, pop: 4, veh: true, fly: 1, alt: 450, fixedGuns: true,
     cost: { s: 300, c: 220 }, time: 26, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
-    wep: { dmg: 10, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true },
-    weps: [{ dmg: 46, rng: 340, cd: .28, spread: .05, spd: 700, kind: 'rocket', splash: 46, sfx: 'hydra', mag: 12, reload: 6, off: 14, slew: .002 }],
+    wep: { dmg: 10, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true, fixed: true },
+    weps: [{ dmg: 46, rng: 340, cd: .28, spread: .05, spd: 700, kind: 'rocket', splash: 46, sfx: 'hydra', mag: 12, reload: 6, off: 14, slew: .002, fixed: true }],
     desc: 'Minigun plus a 12-round Hydra rocket pod that reloads after emptying. Hits one target with each weapon.'
   },
   blackhawk: {
@@ -5046,13 +5046,15 @@ function grassStamp(x, y, r) {
   const fresh = grassFlat(x, y) < .25;                 // first time over this patch
   const c0 = ((x - r) / GRASS_CELL) | 0, c1 = ((x + r) / GRASS_CELL) | 0;
   const d0 = ((y - r) / GRASS_CELL) | 0, d1 = ((y + r) / GRASS_CELL) | 0;
-  for (let cy = d0; cy <= d1; cy++) for (let cx = c0; cx <= c1; cx++) G.grass.set(cx * 100003 + cy, G.t);
+  // a ROUND footprint: only the cells whose centre lies inside the radius are pressed (a landed helicopter, a tyre, a boot all leave discs — never a square block)
+  const rr2 = (r + GRASS_CELL * .45) * (r + GRASS_CELL * .45), inR = (cx, cy) => { const dx = (cx + .5) * GRASS_CELL - x, dy = (cy + .5) * GRASS_CELL - y; return dx * dx + dy * dy <= rr2; };
+  for (let cy = d0; cy <= d1; cy++) for (let cx = c0; cx <= c1; cx++) if (inR(cx, cy)) G.grass.set(cx * 100003 + cy, G.t);
   const T = G.grassTex;                                 // GPU grass: same cells into the trample texture (the shader derives regrowth from the timestamp)
   if (T) {
     const x0 = Math.max(0, c0), x1 = Math.min(T.w - 1, c1), y0 = Math.max(0, d0), y1 = Math.min(T.h - 1, d1);
     if (x1 >= x0 && y1 >= y0) {
       const d = T.d, W = T.w, t = G.t;
-      for (let cy = y0; cy <= y1; cy++) { const row = cy * W; for (let cx = x0; cx <= x1; cx++) d[row + cx] = t; }
+      for (let cy = y0; cy <= y1; cy++) { const row = cy * W; for (let cx = x0; cx <= x1; cx++) if (inR(cx, cy)) d[row + cx] = t; }
       const rd = T.dirty; if (!rd) T.dirty = [x0, y0, x1, y1]; else { if (x0 < rd[0]) rd[0] = x0; if (y0 < rd[1]) rd[1] = y0; if (x1 > rd[2]) rd[2] = x1; if (y1 > rd[3]) rd[3] = y1; }
     }
   }
@@ -6418,7 +6420,7 @@ function npTick(dt) {
 /* ---- broadcast my own units/buildings (+ the horde, if I'm the host) ---- */
 function broadcastState() {
   const U = [], B = [];
-  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0) | (u.mgOut ? 8 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0)]); }   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
+  for (const u of G.units) { if (u.dead || u.remote || (u.owner || 0) !== G.me) continue; U.push([u.id, u.t, Math.round(u.x), Math.round(u.y), Math.round((u.ang || 0) * 100), Math.round(u.hp), u.inside ? 1 : 0, u.pose === 'prone' ? 2 : u.pose === 'crouch' ? 1 : 0, u.altK === undefined ? 100 : Math.round(u.altK * 100), (u.landed ? 1 : 0) | (u.rope ? 2 : 0) | (u.ropePistol ? 4 : 0) | (u.mgOut ? 8 : 0), (u.roping > 0 ? Math.round(u.roping) : 0), (u.roping > 0 && u.ropeFrom ? u.ropeFrom.id : 0), (u.rolling > 0 ? Math.round(u.rolling * 100) : 0), (u.coverCrouch ? 1 : 0) | ((u.dodgeKind || 0) << 1) | (u.dodgeProneT > 0 ? 8 : 0) | (((u.gunIdx || 0) & 3) << 4)]); }   // + which weapon is in his hands (0 primary / 1 secondary / last = pistol) so allies see the same gun and the draw animation   // [.. , roping-height, rope-heli-id, dodge-roll, cover-crouch] so allies see the same rappelling, dodge-rolls and hunkering-in-cover
   for (const b of G.builds) { if (b.dead || b.remote || (b.owner || 0) !== G.me) continue; B.push([b.id, b.t, b.tx, b.ty, Math.round(b.hp), Math.round((b.prog || 0) * 100), b.done ? 1 : 0]); }
   const snap = { u: U, b: B, v: (typeof BUILD_TAG !== 'undefined' ? BUILD_TAG : '') };   // tag every snapshot with our build so peers can detect a version mismatch
   if (NP.host) {
@@ -6466,6 +6468,9 @@ function reconcilePeer(pid, snap) {
     if (a[12] !== undefined) {   // ally dodge (roll / slide / dive, with its prone recovery) and hunkering-in-cover crouch show on my screen
       const fl = a[13] || 0; g.rolling = a[12] / 100; g.coverCrouch = !!(fl & 1); g.dodgeKind = (fl >> 1) & 3; g.dodgeDur = g.dodgeKind === 0 ? .42 : g.dodgeKind === 1 ? .52 : .46;
       if (fl & 8) { if (!(g.dodgeProneT > 0)) g.dodgeProneT = .8; } else g.dodgeProneT = 0;
+      const gi = (fl >> 4) & 3, ws = g.def && g.def.allWeps ? g.def.allWeps : [];   // weapon in hand: on a change, play the same 0.5 s draw the owner sees
+      if (g._gi !== undefined && gi !== g._gi) g.gunSwapT = .5;
+      g._gi = gi; g.gunIdx = gi; g.pistolOut = ws.length > 1 && gi === ws.length - 1; g.mgOut = gi === 1 && !!(ws[1] && ws[1].shortRange);
     }
   }
   for (const [id, g] of pg.u) { if (!seenU.has(id)) { g.dead = true; pg.u.delete(id); } }
@@ -6577,6 +6582,7 @@ function npLerp(u, dt) {
   if (u.roping > 0) u.roping = Math.max(0, u.roping - dt * 150);   // ally trooper fast-roping: slide the figure down the line continuously between snapshots (the owner streams the height ~every .18s; easing it here shows a smooth rappel, not a stepped one). Each snapshot re-syncs the authoritative height.
   if (u.rolling > 0) u.rolling = Math.max(0, u.rolling - dt);       // ally dodge: run the move down continuously between snapshots so it plays smoothly
   if (u.dodgeProneT > 0) u.dodgeProneT = Math.max(0, u.dodgeProneT - dt);
+  if (u.gunSwapT > 0) u.gunSwapT = Math.max(0, u.gunSwapT - dt);       // ally weapon draw animation runs down locally
   if (typeof groundFx === 'function') groundFx(u, dt);   // ally ghosts leave the same tuft trails & rotor downwash on my screen, in real time
 }
 function npGhostZed(z, dt) {
@@ -8114,7 +8120,7 @@ function updateAircraft(u, dt) {
     const eased = .34 + 4.0 * u.altK * (1 - u.altK), spd = (wantAlt > u.altK ? .30 : .26) * eased;
     u.altK = clamp(u.altK + clamp(wantAlt - u.altK, -spd * dt, spd * dt), 0, 1);
     if (u.altK <= .001 && wantAlt === 0) { if (!u.landed) { u.landed = true; addShake(u.x, u.y, 2); AU.ui('ok'); } }
-    if (o && o.type === 'land') { if (u.landed) { if (carry) unloadCargo(u); u.order = null; } return; }
+    if (o && o.type === 'land') { updateWeapons(u, dt, null); if (u.landed) { if (carry) unloadCargo(u); u.order = null; } return; }   // the guns keep working all the way down
     /* fast-rope: hover low and send the passengers down the ropes one at a time */
     if (carry && u.rope && !o) {
       if (u.rope.fresh) { u.rope.fresh = false; u._ropeCX = undefined; }                                                       // a NEW rope call always re-centres the ring on where the helicopter is now
@@ -8127,9 +8133,9 @@ function updateAircraft(u, dt) {
       u.vx *= .9; u.vy *= .9; updateWeapons(u, dt, null); return;
     }
     if (u.altK < .75 && !(carry && o && (o.type === 'pickup' || o.type === 'dropoff') && u.altK > .3)) {   // too low to fly anywhere: sit (or climb) in place
-      if (u.landed || stationary) { u.vx = u.vy = 0; if (u.landed) return; }
+      if (u.landed || stationary) { u.vx = u.vy = 0; if (u.landed) { updateWeapons(u, dt, null); return; } }
     }
-    if (u.landed && !o) return;
+    if (u.landed && !o) { updateWeapons(u, dt, null); return; }              // parked: still covers the ground around it
   }
 
   /* Blackhawk troop-lift: fly to the soldier, land, take every free soldier nearby aboard, stay landed */
@@ -8167,6 +8173,15 @@ function updateAircraft(u, dt) {
     // fly to the commanded point; that point becomes the new loiter centre
     u.home = { x: o.x, y: o.y };
     if (flyTo(u, o.x, o.y, dt, 24) && o.type === 'move') u.order = null;
+  } else if (focus && u.def.fixedGuns) {
+    // Little Bird: its guns are fixed down the nose, so it does NOT circle — it closes to a firing stand-off, brakes to a
+    // hover and holds there pointing at the target (crabbing to keep the distance), guns bearing straight ahead
+    u.home = { x: focus.x, y: focus.y };
+    const dd = Math.hypot(focus.x - u.x, focus.y - u.y), stand = rng * .7;
+    if (dd > stand * 1.15) flyTo(u, focus.x, focus.y, dt, stand);
+    else if (dd < stand * .6) { const a = angTo(focus.x, focus.y, u.x, u.y); flyTo(u, focus.x + Math.cos(a) * stand, focus.y + Math.sin(a) * stand, dt, 10, .6); }
+    else { u.vx *= Math.pow(.05, dt); u.vy *= Math.pow(.05, dt); u.x = clamp(u.x + u.vx * dt, 8, WW - 8); u.y = clamp(u.y + u.vy * dt, 8, WH - 8); }
+    u.ang = angLerp(u.ang, angTo(u.x, u.y, focus.x, focus.y), 1 - Math.pow(.003, dt));   // nose onto the target (yaw-rate limited outside)
   } else if (focus) {
     // remember where the fighting is, then work the target
     u.home = { x: focus.x, y: focus.y };
@@ -8412,6 +8427,7 @@ function updateWeapons(u, dt, order) {
     engaged = true;
     const want = angTo(u.x, u.y, t.x, t.y);
     u.aims[i] = angLerp(u.aims[i], want, 1 - Math.pow(w.slew || .0015, dt));
+    if (w.fixed) { u.aims[i] = u.ang; const off = Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang)); if (Math.abs(off) > .2) continue; }   // forward-fixed gun: it fires only down the airframe's nose; the helicopter itself must turn onto the target
     if (u.def.veh) { if (i === 0) u.aimT = u.aims[0]; }
     else u.ang = angLerp(u.ang, want, 1 - Math.pow(.0004, dt));
     if (u.cds[i] > 0) continue;
@@ -16431,7 +16447,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b130';
+const BUILD_TAG = 'b131';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
