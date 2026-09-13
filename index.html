@@ -2880,32 +2880,32 @@ function buildMedieval() {
 const UDEF = {
   engineer: {
     name: 'Engineer', key: 'E', g: '🔧', hp: 90, spd: 66, r: 10, sight: 230, armor: 0, pop: 1,
-    cost: { s: 50, c: 0 }, time: 11, spr: 'engineer', builder: true, repairAura: 1.5,
+    cost: { s: 60, c: 0 }, time: 11, spr: 'engineer', builder: true, repairAura: 1.5,
     wep: { dmg: 8, pellets: 7, rng: 145, cd: 1.0, spread: .30, spd: 820, kind: 'pellet', sfx: 'shotgun', casings: 1, mag: 7, reload: 3.0 },
     desc: 'Builds, relocates and repairs. Auto-repairs every structure in the 3x3 tiles around it. Carries a Benelli M4 shotgun — brutal up close, useless at range.'
   },
   rifleman: {
     name: 'Rifleman', key: 'R', g: '🪖', hp: 118, spd: 60, r: 10, sight: 265, armor: 1, pop: 1,
-    cost: { s: 75, c: 0 }, time: 13, spr: 'rifleman',
+    cost: { s: 90, c: 10 }, time: 14, spr: 'rifleman',
     wep: { dmg: 8, rng: 235, cd: .082, spread: .075, spd: 1250, kind: 'bullet', sfx: 'm4', casings: 1, sustain: true, mag: 30, reload: 2.0 },
     desc: 'Line infantry with a full-auto M4 carbine. Thirty rounds, then two seconds of reload — keep them in pairs.'
   },
   gunner: {
     name: 'Special Ops', key: 'G', g: '🕶️', hp: 140, spd: 62, r: 10, sight: 300, armor: 1, pop: 2, nightSight: true,
-    cost: { s: 130, c: 40 }, time: 19, spr: 'gunner',
+    cost: { s: 150, c: 60 }, time: 20, spr: 'gunner',
     wep: { dmg: 9, rng: 265, cd: .075, spread: .028, spd: 1080, kind: 'bullet', sfx: 'auto', casings: 1, sustain: true, mag: 60, reload: 2.2 },
     desc: 'Tier-one operator: a fast, tack-driving auto carbine with the best accuracy of any auto gun, night optics, and quick mag changes. A sharpshooter on full-auto.'
   },
   rocketeer: {
     name: 'Rocketeer', key: 'T', g: '🚀', hp: 100, spd: 52, r: 10, sight: 32 * 32, armor: 0, pop: 2, nightSight: true,
-    cost: { s: 120, c: 70 }, time: 21, spr: 'rocketeer',
+    cost: { s: 210, c: 150 }, time: 26, spr: 'rocketeer',
     wep: { dmg: 68, rng: 32 * 32, cd: 2.4, spread: .02, spd: 560, kind: 'rocket', splash: 64, sfx: 'auto', smokeTrail: true, mag: 1, reload: 2.2, standOff: 16 * 32, rpg: true },   // sniper-range RPG-7; holds fire on anything inside 16 tiles (half its reach) and lets the MG take it
     weps: [{ dmg: 8, rng: 16 * 32, cd: .085, spread: .085, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, sustain: true, mag: 100, reload: 3.6, shortRange: true }],   // close-in secondary: the same machine gun as the Humvee, 100 rounds a belt
     desc: 'High-explosive tube with the reach of a sniper rifle — deletes clusters and Brutes at range. Anything inside half that reach (16 tiles) meets his belt-fed machine gun instead (100-round belts).'
   },
   mortar: {
     name: 'Mortar Team', key: 'O', g: '💣', hp: 95, spd: 40, r: 11, sight: 200, armor: 0, pop: 2,
-    cost: { s: 140, c: 90 }, time: 22, spr: 'mortarman',
+    cost: { s: 160, c: 110 }, time: 22, spr: 'mortarman',
     wep: {
       dmg: 62, rng: 8 * 32, minRng: 96, cd: 3.4, spread: 14, spd: 0, kind: 'mortar',
       splash: 84, sfx: 'mortar', flight: 1.55, arcH: 210, mag: 1, reload: 1.4
@@ -2914,58 +2914,58 @@ const UDEF = {
   },
   support: {
     name: 'Support', key: 'U', g: '🎒', hp: 105, spd: 74, r: 10, sight: 300, armor: 0, pop: 1,
-    cost: { s: 70, c: 0 }, time: 12, spr: 'support', hauler: true,
+    cost: { s: 90, c: 15 }, time: 13, spr: 'support', hauler: true,
     wep: { dmg: 6, rng: 165, cd: .065, spread: .13, spd: 980, kind: 'bullet', sfx: 'smg', casings: 1, sustain: true, mag: 32, reload: 2.1 },
     desc: 'Fast scout with an MP5. The only trooper who hauls supply on their own — they range out on their own initiative to find crates and bring them in.'
   },
   medic: {
     name: 'Medic', key: 'D', g: '🩺', hp: 100, spd: 66, r: 10, sight: 260, armor: 0, pop: 1,
-    cost: { s: 90, c: 10 }, time: 14, spr: 'medic', healAura: 2.4,
+    cost: { s: 110, c: 30 }, time: 15, spr: 'medic', healAura: 2.4,
     wep: { dmg: 5, rng: 150, cd: .08, spread: .14, spd: 950, kind: 'bullet', sfx: 'smg', casings: 1, sustain: true, mag: 24, reload: 2.2 },
     desc: 'Combat medic. Keeps patching up every friendly trooper within a couple of tiles while the fight goes on. Light sidearm only — keep them behind the line.'
   },
   marksman: {
     name: 'Marksman', key: 'K', g: '🎯', hp: 96, spd: 56, r: 10, sight: 32 * 32, armor: 0, pop: 1, nightSight: true,
-    cost: { s: 120, c: 40 }, time: 16, spr: 'marksman',
+    cost: { s: 170, c: 90 }, time: 19, spr: 'marksman',
     wep: { dmg: 48, rng: 32 * 32, cd: .8, spread: .015, spd: 2200, kind: 'bullet', sfx: 'dmr', casings: 1, pierce: 1, mag: 20, reload: 3.0 },
     desc: 'Designated marksman with a scoped 7.62 DMR. Reaches as far as an Abrams and shoots twice as fast as the Barrett for 40% of its punch. Rounds punch clean through every body in the line. Sees in day and night without penalty.'
   },
   sniper: {
     name: 'Sniper', key: 'N', g: '🔭', hp: 90, spd: 48, r: 10, sight: 32 * 32, armor: 0, pop: 2, nightSight: true,
-    cost: { s: 190, c: 130 }, time: 22, spr: 'sniper',
+    cost: { s: 250, c: 190 }, time: 24, spr: 'sniper',
     wep: { dmg: 120, rng: 32 * 32, cd: 1.6, spread: .008, spd: 2600, kind: 'bullet', sfx: 'sniper', casings: 1, pierce: 1, pierceN: 2, mag: 10, reload: 4.0 },
     desc: 'M82 Barrett anti-materiel rifle. Abrams-range .50 BMG rounds that punch through two bodies in a line. Slow to cycle, but devastating. Sees in day and night without penalty.'
   },
   littlebird1: {
     name: 'Little Bird MK1', key: 'Z', g: '🚁', hp: 260, spd: 175, r: 15, sight: 380, armor: 1, pop: 3, veh: true, fly: 1, alt: 450, fixedGuns: true,
-    cost: { s: 200, c: 120 }, time: 20, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
+    cost: { s: 270, c: 190 }, time: 22, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
     wep: { dmg: 9, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true, fixed: true },   // forward-fixed: the whole helicopter turns to bring it on
     desc: 'Light scout helicopter with a single minigun. Fast, fragile, engages one target.'
   },
   littlebird2: {
     name: 'Little Bird MK2', key: 'X', g: '🚁', hp: 300, spd: 168, r: 15, sight: 390, armor: 1, pop: 4, veh: true, fly: 1, alt: 450, fixedGuns: true,
-    cost: { s: 300, c: 220 }, time: 26, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
+    cost: { s: 390, c: 310 }, time: 28, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
     wep: { dmg: 10, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true, fixed: true },
     weps: [{ dmg: 46, rng: 340, cd: .28, spread: .05, spd: 700, kind: 'rocket', splash: 46, sfx: 'hydra', mag: 12, reload: 6, off: 14, slew: .002, fixed: true }],
     desc: 'Minigun plus a 12-round Hydra rocket pod that reloads after emptying. Hits one target with each weapon.'
   },
   blackhawk: {
     name: 'Blackhawk', key: 'C', g: '🚁', hp: 620, spd: 150, r: 20, sight: 380, armor: 3, pop: 5, veh: true, fly: 1, alt: 480, carry: 11,
-    cost: { s: 320, c: 200 }, time: 30, spr: 'blackhawk', rotor: 'rotorM', needs: 'airbase',
+    cost: { s: 540, c: 400 }, time: 34, spr: 'blackhawk', rotor: 'rotorM', needs: 'airbase',
     wep: { dmg: 11, rng: 340, cd: .03, spread: .08, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, casings: 2, mount: [-2, -18], off: 6, slew: .002 },
     weps: [{ dmg: 11, rng: 340, cd: .03, spread: .08, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, casings: 2, mount: [-2, 18], off: 6, slew: .002 }],
     desc: 'Twin door-mounted Vulcan miniguns on separate targets — a wall of fire. Can land to pick up and airlift infantry across the map — right-click troops to load, right-click ground to drop them.'
   },
   apache: {
     name: 'AH-64 Apache', key: 'V', g: '🚁', hp: 880, spd: 140, r: 22, sight: 420, armor: 5, pop: 6, veh: true, fly: 1, alt: 495,
-    cost: { s: 480, c: 420 }, time: 40, spr: 'apache', rotor: 'rotorM', needs: 'airbase',
+    cost: { s: 640, c: 540 }, time: 42, spr: 'apache', rotor: 'rotorM', needs: 'airbase',
     wep: { dmg: 34, rng: 360, cd: .16, spread: .03, spd: 1100, kind: 'shell', splash: TS, sfx: 'chain40', casings: 1, off: 30, slew: .003 },
     weps: [{ dmg: 50, rng: 400, cd: .3, spread: .04, spd: 720, kind: 'rocket', splash: 50, sfx: 'hydra', mag: 12, reload: 7, off: 16, slew: .002 }],
     desc: '30mm chain gun with a one-tile blast plus a 12-round Hydra pod, each on its own target. The premier gunship.'
   },
   ac130: {
     name: 'AC-130 Gunship', key: 'B', g: '✈️', hp: 2600, spd: 205, r: 40, sight: 620, armor: 6, pop: 10, veh: true, fly: 1, alt: 900, orbit: 1, heavy: 1,
-    cost: { s: 900, c: 900 }, time: 70, spr: 'ac130', needs: 'airbase',
+    cost: { s: 1150, c: 1050 }, time: 72, spr: 'ac130', needs: 'airbase',
     wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 5 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },   // 105mm: biggest blast in the game — the old five-tile Abrams area
     weps: [
       { dmg: 60, rng: 540, cd: .5, spread: .02, spd: 1600, kind: 'shell', splash: TS, sfx: 'chain40', off: 20, slew: .006 },
@@ -2976,7 +2976,7 @@ const UDEF = {
   f16: {
     name: 'F-16 Falcon', key: 'N', g: '🛩️', hp: 1500, spd: 410, r: 26, sight: 660, armor: 5, pop: 8,
     veh: true, fly: 1, jet: 1, alt: 1020, turnR: 15 * TS / 2, needs: 'airbase',
-    cost: { s: 1100, c: 1000 }, time: 78, spr: 'f16',
+    cost: { s: 1350, c: 1250 }, time: 80, spr: 'f16',
     // M61 Vulcan cannon — fast forward gun
     wep: { dmg: 30, rng: 560, cd: .045, spread: .02, spd: 2000, kind: 'shell', splash: 18, sfx: 'chain40', casings: 2, smokeTrail: true, off: 26 },
     weps: [
@@ -2989,19 +2989,19 @@ const UDEF = {
   },
   humvee: {
     name: 'Humvee', key: 'H', g: '🚙', hp: 340, spd: 146, r: 17, sight: 24 * 32, armor: 2, pop: 2, veh: true,
-    cost: { s: 150, c: 100 }, time: 18, spr: 'humvee', tur: 'humvee_t', head: 1,
+    cost: { s: 200, c: 140 }, time: 20, spr: 'humvee', tur: 'humvee_t', head: 1,
     wep: { dmg: 8, rng: 24 * 32, cd: .085, spread: .085, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, sustain: true },
     desc: 'Fast gun truck. Ideal for chasing runners and screening airdrops.'
   },
   stryker: {
     name: 'M2 Bradley', key: 'S', g: '🚐', hp: 720, spd: 92, r: 22, sight: 24 * 32, armor: 6, pop: 3, veh: true, carry: 16,
-    cost: { s: 220, c: 200 }, time: 26, spr: 'stryker', tur: 'stryker_t', head: 1,
+    cost: { s: 300, c: 260 }, time: 28, spr: 'stryker', tur: 'stryker_t', head: 1,
     wep: { dmg: 24, rng: 24 * 32, cd: .34, spread: .03, spd: 900, kind: 'shell', splash: 28, sfx: 'chain40', casings: 2 },
     desc: 'Tracked infantry fighting vehicle: 25mm chain gun and a troop bay for 16. Right-click it with infantry selected to board; Unload deploys them around the ramp.'
   },
   abrams: {
     name: 'M1 Abrams', key: 'M', g: '🛡️', hp: 1250, spd: 68, r: 26, sight: 32 * 32, armor: 11, pop: 4, veh: true,
-    cost: { s: 350, c: 380 }, time: 38, spr: 'abrams', tur: 'abrams_t', head: 1, heavy: true, drawScale: 1.1,
+    cost: { s: 540, c: 540 }, time: 40, spr: 'abrams', tur: 'abrams_t', head: 1, heavy: true, drawScale: 1.1,
     wep: {
       dmg: 175, rng: 32 * 32, cd: 3.4, spread: .012, spd: 1500, kind: 'shell', splash: 3.5 * TS,   // HE round: blast area reduced 30% (was 5 tiles)
       sfx: 'tank', casings: 3, shake: 9, slew: .004, off: 82   // muzzle at the barrel tip
@@ -16447,7 +16447,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b131';
+const BUILD_TAG = 'b132';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
