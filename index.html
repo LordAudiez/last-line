@@ -1848,12 +1848,20 @@ const AU = {
     let buf = pool[(Math.random() * pool.length) | 0]; if (pool.length > 1 && buf === this._lastArty) buf = pool[(Math.random() * pool.length) | 0];   // random burst, rarely the same one twice running
     this._lastArty = buf;
     if (!this._gate('artyboom', 6, .02)) return;
-    const n = this.place(x, y, 1.0 * size, 3400, this.bus); if (!n) return;
+    const n = this.place(x, y, 1.9 * size, 5200, this.bus); if (!n) return;               // heavy: the burst dominates everything near it and carries a long way
     this._hold('artyboom', 400);
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.94, 1.06);
-    const g = c.createGain(); g.gain.value = rnd(.95, 1.1) * 1.2;
-    s.connect(g); g.connect(dst); s.start(t);
+    const g = c.createGain(); g.gain.value = rnd(.95, 1.1) * 2.3;
+    s.connect(g); g.connect(dst);
+    // the echo: the burst rolls away off the hills — a feedback delay line (~0.24 s, darkening each bounce) fed at half weight, dying over ~2.5 s
+    const dl = c.createDelay(1.0); dl.delayTime.value = rnd(.2, .28);
+    const fb = c.createGain(); fb.gain.value = .48;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = .5;
+    const wet = c.createGain(); wet.gain.value = .55;
+    g.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(dst);
+    s.start(t);
+    s.onended = () => { try { wet.gain.setTargetAtTime(0, c.currentTime + 2.2, .5); setTimeout(() => { try { dl.disconnect(); fb.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 4500); } catch (e) {} };
   },
   boom(x, y, size = 1) {
     if (!this.ok || this.muted) return;
@@ -5238,7 +5246,7 @@ function fxExplosion(x, y, r, colA, colB, snd) {
   G.lights.push({ x, y, r: r * 5.5, c: [255, 190, 100], i: 1.8 });
   scorchDecal(x, y, r * .7);
   blastProps(x, y, r * 1.6);
-  if (typeof addShock === 'function') addShock(x, y, r * 3.2, clamp(r / 45, .5, 2.2), .85);   // the pressure ring: tufts laid over and trees bent away from the blast, springing back after
+  if (typeof addShock === 'function') addShock(x, y, r * 3.8, clamp(r / 30, .9, 2.8), .95);   // the pressure ring: tufts laid over and trees bent away from the blast, springing back after
   addShake(x, y, r * .12);
   // light HE (Hydra rockets, 25/30/40 mm autocannon shells) cracks with the real 40 mm round sample; big shells keep the deep synthetic boom
   if (snd === 'hydra' || snd === 'chain40' || snd === 'auto') AU.blast(x, y, clamp(r / 45, .7, 1.4)); else AU.boom(x, y, clamp(r / 60, .5, 1.7));
@@ -5641,6 +5649,7 @@ function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
    frames by updateZeds through z.kbx/z.kby. Gore sprays from each torn body. */
 function bloaterShock(src, r) {
   const r2 = r * r;
+  if (typeof addShock === 'function') addShock(src.x, src.y, r * 2.6, 1.4, .8);   // the burst's pressure wave through the grass and trees
   for (const z of G.zeds) {
     if (z === src || z.dead || z.remote || z.def.struct || z.def.worker) continue;
     const d2 = dist2(z.x, z.y, src.x, src.y); if (d2 >= r2) continue;
@@ -5661,6 +5670,7 @@ function bloaterShock(src, r) {
 function fxMortar(x, y, r, big) {
   const _fx = G._fx; G._fx = 2;                     // explosion
   fxDustWave(x, y, r, big ? 1.15 : .95);                                                // the impact's pressure wave, as a dust ring front
+  if (typeof addShock === 'function') addShock(x, y, r * 3.8, clamp(r / 30, .9, 2.8), .95);   // …and through the tufts and the trees
   for (let i = 0; i < (big ? 26 : 16); i++) {
     const a = rnd(TAU), s = rnd(30, r * 3.4);
     part('fire', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.25, .6), rnd(r * .16, r * .34),
@@ -9946,11 +9956,11 @@ function updateStrikes(dt) {
   for (let i = S.length - 1; i >= 0; i--) {
     const s = S[i]; s.t += dt;
     if (s.kind === 'arty') {
-      while (s.next <= s.t && s.next < s.dur) {                                        // ~2 shells every second (3 less 30%), scattered across the circle
-        s.next += 1 / 2.1;
+      while (s.next <= s.t && s.next < s.dur) {                                        // ~2 shells a second on average, but at a RAGGED cadence: bunched salvos, then gaps
+        const rq = Math.random(); s.next += rq < .3 ? rnd(.05, .18) : rq < .8 ? rnd(.25, .6) : rnd(.7, 1.1);
         const a = rnd(TAU), rr = Math.sqrt(Math.random()) * s.r, tx = s.x + Math.cos(a) * rr, ty = s.y + Math.sin(a) * rr, fl = rnd(2.6, 3.0);   // ~3 s in the air: the whole incoming-shell whistle plays before the burst
         S.push({ kind: 'shell', x: tx, y: ty, t: 0, fall: fl });
-        AU.whistle(tx, ty, fl, true);
+        if (Math.random() < .03) AU.whistle(tx, ty, fl, true);                            // only one shell in ~30 is heard coming in
       }
       if (s.t >= s.dur) S.splice(i, 1);
     } else if (s.kind === 'shell') {
@@ -15501,7 +15511,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
           const lean = wm * (.07 + gust * .05); let lx = wdx * lean, lz = wdz * lean;
           if (G.shocks) for (let si = 0; si < G.shocks.length; si++) {   // a nearby blast: the whole tree is bent away from it by the pressure wave, then whips back
             const sh = G.shocks[si], ddx = q.x - sh.x, ddy = q.y - sh.y, dd = Math.hypot(ddx, ddy); if (dd >= sh.r || dd < 1e-3) continue;
-            const k = sh.t / sh.dur, env = Math.sin(Math.min(1, k) * Math.PI) * (1 - k * .45) * Math.exp(-k * 1.2), st = Math.min(.6, sh.amp * .34 * (1 - dd / sh.r)) * env;
+            const k = sh.t / sh.dur, env = Math.sin(Math.min(1, k) * Math.PI) * (1 - k * .45) * Math.exp(-k * 1.2) + Math.sin(k * Math.PI * 3) * .18 * (1 - k), st = Math.min(.75, sh.amp * .5 * (1 - dd / sh.r)) * env;   // one hard bend away, then a couple of diminishing whips back
             lx += ddx / dd * st; lz += ddy / dd * st;
           }
           const rx = lz * 1.3, rz = -lx * 1.3, v = (hash2(q.id, 7) * 5) | 0;
@@ -15566,7 +15576,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       DOWN_N = 0;
       if (G.shocks) for (let si = 0; si < G.shocks.length && DOWN_N < 5; si++) {   // blast pressure rings first: the ring races outward, strongest at its front, gone within the second
         const sh = G.shocks[si], k = sh.t / sh.dur; if (k >= 1) continue;
-        const D = DOWN_SRC[DOWN_N++]; D.x = sh.x; D.y = sh.y; D.r = sh.r * (.12 + .88 * k); D.s = sh.amp * 1.5 * (1 - k) * (k < .12 ? k / .12 : 1);
+        const D = DOWN_SRC[DOWN_N++]; D.x = sh.x; D.y = sh.y; D.r = sh.r * (.12 + .88 * k); D.s = sh.amp * 1.9 * (1 - k) * (k < .12 ? k / .12 : 1);
       }
       for (let ui = 0; ui < G.units.length && DOWN_N < 8; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; const fade = u._washK || 0; if (fade <= .01) continue; const D = DOWN_SRC[DOWN_N++]; D.x = u.x; D.y = u.y; D.r = u.r * 10.2 * (.45 + .55 * fade); D.s = 1.3 * fade; }   // ring 300% wider than the rotor; strength and radius follow the sim's time-eased downwash value (the same one the dust ring and ally ghosts use) so the press swells in and releases smoothly — on any ground, so a helicopter over a grass/dirt edge never pops
       if (useGpuGrass) {                                                                       // static chunks + shader wind/trample (see GPU GRASS above)
@@ -16898,7 +16908,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b140';
+const BUILD_TAG = 'b142';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
