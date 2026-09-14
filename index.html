@@ -1618,13 +1618,21 @@ const AU = {
     const loud = fam === 'tank' ? 2 : 1;                        // the 120mm report is twice as loud as anything else
     const buf = this.smp[fam] || this.buf[fam];   // real sample first, baked synth as fallback
     if (!buf) return;                  // still loading in the first moments after unlock
-    const n = this.place(x, y, GVOL[fam] || .6, GREACH[fam] || 1500, this.bus);
+    const n = this.place(x, y, (GVOL[fam] || .6) * 1.5, GREACH[fam] || 1500, this.bus);   // every gun +50%
     if (!n) return;
     this._hold(fam, 220);
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.955, 1.05) * rateK;
     const g = c.createGain(); g.gain.value = rnd(.9, 1.06) * (rateK > 1 ? .9 : rateK < 1 ? 1.12 : 1) * loud;
     s.connect(g); g.connect(dst); s.start(t);
+    // the report ECHOES: a rolling slap-back off the terrain that grows with distance and rings on after the last shot — feedback delay, darkening each bounce, dying over ~1.2 s
+    const d = this.distTo(x, y), ek = clamp(.12 + d / 2600, .12, .85);
+    const eg = c.createGain(); eg.gain.value = ek * .6;
+    const dl = c.createDelay(0.5); dl.delayTime.value = clamp(.09 + d / 5200, .09, .34);
+    const fb = c.createGain(); fb.gain.value = clamp(.28 + d / 5200, .28, .6);
+    const elp = c.createBiquadFilter(); elp.type = 'lowpass'; elp.frequency.value = clamp(3600 - d * .4, 700, 3600); elp.Q.value = .4;
+    s.connect(eg); eg.connect(dl); dl.connect(elp); elp.connect(fb); fb.connect(dl); elp.connect(dst);
+    s.onended = () => { try { setTimeout(() => { try { eg.disconnect(); dl.disconnect(); fb.disconnect(); elp.disconnect(); } catch (e) {} }, 1600); } catch (e) {} };
   },
 
   /* looping rotor sound for every airborne helicopter — one positional voice per craft, volume/pan tracking it,
@@ -1778,7 +1786,7 @@ const AU = {
     const buf = pierce ? (this.smp.fleshthru || this.smp[FLESH_KEYS[(Math.random() * FLESH_KEYS.length) | 0]])
       : this.smp[FLESH_KEYS[(Math.random() * FLESH_KEYS.length) | 0]];
     if (!buf) return this.splat(x, y);
-    const n = this.place(x, y, pierce ? .7 : .62, 1600, this.bus); if (!n) return;
+    const n = this.place(x, y, pierce ? .07 : .062, 1600, this.bus); if (!n) return;   // hit-marker volume very quiet (20% of the previous halved level)
     this._hold(fam, 500);
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.9, 1.1);
@@ -1915,7 +1923,7 @@ const AU = {
   splat(x, y) {
     if (!this.ok || this.muted) return;
     if (!this._gate('splat', 5, .012)) return;
-    const c = this.ctx, n = this.place(x, y, .34, 640); if (!n) return;
+    const c = this.ctx, n = this.place(x, y, .034, 640); if (!n) return;   // flesh-impact fallback very quiet
     this._hold('splat', 260);
     const { dst, t } = n;
     const s = this.noiseSrc();
@@ -17054,7 +17062,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b148';
+const BUILD_TAG = 'b150';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
