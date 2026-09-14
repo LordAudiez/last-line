@@ -9962,7 +9962,7 @@ function startArtillery(x, y, r) { (G.strikes || (G.strikes = [])).push({ kind: 
 /* ---- napalm run: a jet screams in at high altitude along the line, lays a stick of canisters and is gone ---- */
 function startNapalm(x0, y0, x1, y1, count) {
   const ang = Math.atan2(y1 - y0, x1 - x0), len = Math.max(2 * TS, Math.hypot(x1 - x0, y1 - y0));   // the strip is exactly the placement drag
-  const spd = 1500, back = 2400, n = Math.max(2, Math.min(40, Math.round(count || Math.max(3, len / 34))));   // the canisters are spread evenly from the first mark to the last, however many are called
+  const spd = 750, back = 1600, n = 8;                                                                  // eight canisters, spread evenly from the first mark to the last; the jet comes over at half the old speed
   const fb = { id: 'fb' + (G.frame + Math.random()), def: { spr: 'f16', fly: 1, alt: 1300, spd }, x: x0 - Math.cos(ang) * back, y: y0 - Math.sin(ang) * back, ang, altK: 1, spd, t: 0, life: (back + len + 3200) / spd, x0, y0, len, n, dropped: 0, boomed: false, kind: 'napalm', bank: 0 };
   (G.flybys || (G.flybys = [])).push(fb);
   alertMsg('NAPALM RUN inbound', 'bad'); AU.ui('alarm');
@@ -10028,9 +10028,9 @@ function updateStrikes(dt) {
   if (G.nukeWind) {   // the blast wind: dust and torn leaves streaming across the whole view with it for five seconds
     const N = G.nukeWind; N.t += dt; if (N.t >= N.dur) G.nukeWind = null;
     else if (G.parts.length < PMAX * .9) {
-      const k = N.t / N.dur, amt = (k < .1 ? k / .1 : 1) * (k > .7 ? (1 - k) / .3 : 1), n = Math.round(dt * 260 * amt);
+      const k = N.t / N.dur, amt = (k < .1 ? k / .1 : 1) * (k > .7 ? (1 - k) / .3 : 1), n = Math.round(dt * 780 * amt);
       const wx = G.wind.x, wy = G.wind.y, x0 = CAM.x - 300, y0 = CAM.y - 300, W = CAM.vw + 600, H = CAM.vh + 600;
-      for (let q = 0; q < n; q++) { const px = x0 + Math.random() * W, py = y0 + Math.random() * H, leaf = Math.random() < .12; if (leaf) part('leaf', px, py, wx * .9 + rnd(-30, 30), wy * .9 + rnd(-30, 30), rnd(.8, 1.6), rnd(1.2, 2.4), Math.random() < .5 ? '#6a8c3c' : '#4c5a32', { z: rnd(2, 30), vz: rnd(10, 50), vr: rnd(-14, 14), g: 60, drag: .97, wind: 1 }); else part('dust', px, py, wx * rnd(.7, 1.1), wy * rnd(.7, 1.1), rnd(.9, 1.8), rnd(8, 18), q & 1 ? 'rgba(190,178,150,1)' : 'rgba(160,150,128,1)', { z: rnd(0, 24), vz: rnd(0, 20), grow: 20, drag: .985, wind: 1, a: .8 }); }
+      for (let q = 0; q < n; q++) { const px = x0 + Math.random() * W, py = y0 + Math.random() * H, leaf = Math.random() < .12; if (leaf) part('leaf', px, py, wx * .9 + rnd(-30, 30), wy * .9 + rnd(-30, 30), rnd(.8, 1.6), rnd(1.2, 2.4), Math.random() < .5 ? '#6a8c3c' : '#4c5a32', { z: rnd(2, 30), vz: rnd(10, 50), vr: rnd(-14, 14), g: 60, drag: .97, wind: 1 }); else part('dust', px, py, wx * rnd(.7, 1.1), wy * rnd(.7, 1.1), rnd(1.1, 2.2), rnd(12, 26), q & 1 ? 'rgba(190,178,150,1)' : 'rgba(160,150,128,1)', { z: rnd(0, 30), vz: rnd(0, 24), grow: 32, drag: .985, wind: 1, a: 1 }); }
     }
   }
   const S = G.strikes; if (!S || !S.length) return;
@@ -12139,7 +12139,7 @@ const SP_CATS = [
     { id: 'strike', label: 'Airstrike / Artillery', icon: '💥', side: 'strike', list: ['napalm', 'artillery', 'nuke'] }
   ] }
 ];
-const STRIKE_DEF = { napalm: { name: 'Napalm run', g: '🔥', tip: 'Tap the START of the strip, then tap its END — a jet screams over at altitude and lays the stick of napalm evenly along exactly that line (the number picked with SPAWN × in the dev menu, or the Bombs button on the Airspace Command); each pool burns 30 s and the ground is back in a minute' }, artillery: { name: 'Artillery barrage', g: '🎯', tip: 'Press on the centre and DRAG the ring to size, release to fire — about 2 shells a second for 25 seconds across the circle' }, nuke: { name: 'Nuclear bomb', g: '☢️', tip: 'Tap ground zero — 5 s of siren, then the bomb: a third of a small map wiped out, the land grows back in 2 minutes' } };
+const STRIKE_DEF = { napalm: { name: 'Napalm run', g: '🔥', tip: 'Tap the START of the strip, then tap its END — a jet screams over at altitude and lays eight napalm canisters evenly along exactly that line; each pool burns 30 s and the ground is back to normal within a minute' }, artillery: { name: 'Artillery barrage', g: '🎯', tip: 'Press on the centre and DRAG the ring to size, release to fire — about 2 shells a second for 25 seconds across the circle' }, nuke: { name: 'Nuclear bomb', g: '☢️', tip: 'Tap ground zero — 5 s of siren, then the bomb: a third of a small map wiped out, the land grows back in 2 minutes' } };
 function spName(side, t) { if (side === 'strike') return STRIKE_DEF[t].name; const d = side === 'player' ? UDEF[t] : (ZDEF[t] || MDEF[t]); return (d && d.name) || t; }
 function spIcon(side, t, groupIcon) { if (side === 'strike') return STRIKE_DEF[t].g; const d = side === 'player' ? UDEF[t] : null; return (d && d.g) || groupIcon; }
 let spSel = null;                                                    // { side, t, label } currently chosen
@@ -12742,7 +12742,6 @@ function cardFor() {
         const sd = STRIKE_DEF[st], left = Math.max(0, ((G.strikeCd && G.strikeCd[st]) || 0) - G.t), can = affordable(COST[st]) && left <= 0;
         btns.push({ g: sd.g, n: sd.name + (left > 0 ? ' (' + Math.ceil(left) + 's)' : ''), k: KEYS[st], cost: COST[st], tip: sd.tip + (st === 'nuke' ? ' — 5 minutes between strikes.' : ' — ' + CD[st] + ' s between calls.'), dis: !can,
           fn: () => { if (!can) { AU.ui('no'); return; } UI.spawnDrop = { side: 'strike', t: st, n: 1, label: sd.name, cost: COST[st], cd: CD[st], bombs: st === 'napalm' ? G.napalmN : 0 }; UI.napalmA = null; alertMsg(sd.tip, 'info'); AU.ui('ok'); } });
-        if (st === 'napalm') btns.push({ g: '🧨', n: 'Bombs: ' + G.napalmN, k: 'B', tip: 'How many napalm canisters the run lays along the strip — they are always spread evenly from the first mark to the last. Press to cycle 4 / 6 / 8 / 12 / 16 / 24 / 32.', fn: () => { G.napalmN = NB[(NB.indexOf(G.napalmN) + 1) % NB.length]; AU.ui('ok'); refreshCard(true); } });
       }
     }
     if (d.ability === 'airdrop') {
@@ -13750,7 +13749,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   /* craters regrow: every cratered chunk eases its dug ground back to flat and is fully restored ~2 minutes after its last blast */
   const cratHeal = new Map();
   let healAcc = 0;
-  const HEAL_STEP = 3, HEAL_LIFE = 120, HEAL_K = Math.pow(0.03, HEAL_STEP / HEAL_LIFE);   // multiply per step so a crater is ~flat after HEAL_LIFE seconds
+  const HEAL_STEP = 3, HEAL_LIFE = 60, HEAL_K = Math.pow(0.03, HEAL_STEP / HEAL_LIFE);   // a crater is filled and flat again within a minute   // multiply per step so a crater is ~flat after HEAL_LIFE seconds
   function healCraters(dt) {
     if (!CRAT || !cratHeal.size) return;
     healAcc += dt; if (healAcc < HEAL_STEP) return; healAcc = 0;
@@ -14063,7 +14062,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   const shadeCache = new Map();
   const col3k = (hex, k) => { const key = hex + k; let c = shadeCache.get(key); if (!c) { c = shade(hex, k); shadeCache.set(key, c); } return c; };
   // ground decals: the 2D game paints these into its chunk canvases; here they are textured planes, and explosions also dig craters
-  scorchDecal = function (x, y, r) { decalList.push({ k: -1, x: x * K, y: y * K, r: r * K * 1.15, rot: rnd(TAU), c: null }); if (decalList.length > 900) decalList.splice(0, decalList.length - 900); digCrater(x, y, r); };
+  scorchDecal = function (x, y, r) { decalList.push({ k: -1, x: x * K, y: y * K, r: r * K * 1.15, rot: rnd(TAU), c: null, t0: G.t, life: 60 }); if (decalList.length > 900) decalList.splice(0, decalList.length - 900); digCrater(x, y, r); };   // the burn mark fades out and is gone within a minute, as the crater fills
   regradeChunks = function (tx0, ty0, tw, th) {   // the ground under a building was levelled to a flat platform (MAP.h changed): rebuild the terrain chunks it spans so the new heights show at once
     const SEG = CT3;   // one chunk spans CT3 tiles
     const cx0 = Math.floor(tx0 / SEG) - 1, cy0 = Math.floor(ty0 / SEG) - 1, cx1 = Math.floor((tx0 + tw) / SEG) + 1, cy1 = Math.floor((ty0 + th) / SEG) + 1;
@@ -16211,7 +16210,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     }
     PF('particles');
     /* ---- ground decals: scorch marks on crater floors, blood splatter ---- */
-    for (let i = decalList.length - 1; i >= 0; i--) { const dl = decalList[i]; if (dl.x < vx0 * K || dl.x > vx1 * K || dl.y < vy0 * K || dl.y > vy1 * K) continue; const gy = groundY(dl.x / K, dl.y / K) + .02; if (dl.k < 0) put(P.scorch, dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, WHITE); else put(P.splat[dl.k], dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, dl.c); }
+    for (let i = decalList.length - 1; i >= 0; i--) { const dl = decalList[i]; if (dl.life) { const age = G.t - dl.t0; if (age > dl.life) { decalList.splice(i, 1); continue; } } if (dl.x < vx0 * K || dl.x > vx1 * K || dl.y < vy0 * K || dl.y > vy1 * K) continue; const gy = groundY(dl.x / K, dl.y / K) + .02; if (dl.k < 0) { const fk = dl.life ? Math.min(1, (dl.life - (G.t - dl.t0)) / (dl.life * .5)) : 1; put(P.scorch, dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2 * fk, dl.r * 2 * fk, 1, WHITE); } else put(P.splat[dl.k], dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, dl.c); }
     PF('decals');
     /* ---- placement ghosts ---- */
     if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
@@ -17052,7 +17051,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b145';
+const BUILD_TAG = 'b146';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
