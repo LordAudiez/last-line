@@ -1500,6 +1500,17 @@ const AU = {
     conv.connect(wetLP); wetLP.connect(wetOut); wetOut.connect(comp);
     this.conv = conv;
 
+    /* ONE shared slap-back echo bus for the whole game. Every gunshot opens a small send into this single
+       delay+feedback loop instead of building its own — one shared loop costs the same whether one gun or fifty
+       are firing, so the audio thread never chokes on stacked feedback loops. */
+    const echoIn = c.createGain(); echoIn.gain.value = 1;
+    const echoDelay = c.createDelay(0.6); echoDelay.delayTime.value = 0.15;
+    const echoFb = c.createGain(); echoFb.gain.value = 0.44;
+    const echoLP = c.createBiquadFilter(); echoLP.type = 'lowpass'; echoLP.frequency.value = 2600; echoLP.Q.value = .4;
+    const echoOut = c.createGain(); echoOut.gain.value = 0.85;
+    echoIn.connect(echoDelay); echoDelay.connect(echoLP); echoLP.connect(echoFb); echoFb.connect(echoDelay); echoLP.connect(echoOut); echoOut.connect(comp);
+    this.echoBus = echoIn;
+
     const nb = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
     const nd = nb.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
@@ -1632,15 +1643,15 @@ const AU = {
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.955, 1.05) * rateK;
     const g = c.createGain(); g.gain.value = rnd(.9, 1.06) * (rateK > 1 ? .9 : rateK < 1 ? 1.12 : 1) * loud;
     s.connect(g); g.connect(dst); s.start(t);
-    // the report ECHOES: a rolling slap-back off the terrain that grows with distance and rings on after the last shot — feedback delay, darkening each bounce, dying over ~1.2 s
-    const emul = ECHO_MUL[fam] === undefined ? 1 : ECHO_MUL[fam];       // some guns carry much less echo (the rocketeer's close-in MG)
-    const d = this.distTo(x, y), ek = clamp(.12 + d / 2600, .12, .85);
-    const eg = c.createGain(); eg.gain.value = ek * .6 * emul;
-    const dl = c.createDelay(0.5); dl.delayTime.value = clamp(.09 + d / 5200, .09, .34);
-    const fb = c.createGain(); fb.gain.value = clamp(.28 + d / 5200, .28, .6) * emul;
-    const elp = c.createBiquadFilter(); elp.type = 'lowpass'; elp.frequency.value = clamp(3600 - d * .4, 700, 3600); elp.Q.value = .4;
-    s.connect(eg); eg.connect(dl); dl.connect(elp); elp.connect(fb); fb.connect(dl); elp.connect(dst);
-    s.onended = () => { try { setTimeout(() => { try { eg.disconnect(); dl.disconnect(); fb.disconnect(); elp.disconnect(); } catch (e) {} }, 1600); } catch (e) {} };
+    // the report ECHOES via ONE shared echo bus: a single send node per shot, scaled by distance (near = dry, far = a
+    // longer rolling tail) and the per-gun echo amount. The send is garbage-collected the moment the sound ends. The old
+    // path built a whole feedback delay loop PER SHOT that kept running for ~1.2 s, so a heavy firefight stacked hundreds
+    // of live loops and the audio thread underran into silence — that is the bug this removes.
+    if (this.echoBus) {
+      const emul = ECHO_MUL[fam] === undefined ? 1 : ECHO_MUL[fam];
+      const ek = clamp(.12 + this.distTo(x, y) / 2600, .12, .85) * emul;
+      if (ek > .02) { const eg = c.createGain(); eg.gain.value = ek * .7; s.connect(eg); eg.connect(this.echoBus); }
+    }
   },
 
   /* looping rotor sound for every airborne helicopter — one positional voice per craft, volume/pan tracking it,
@@ -17070,7 +17081,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b151';
+const BUILD_TAG = 'b152';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
