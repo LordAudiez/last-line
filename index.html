@@ -181,6 +181,9 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 #mzoom button:hover{background:#17302a;color:#dfffee;border-color:#4f8a72}
 #selall button:hover{background:#17302a;color:#dfffee;border-color:#4f8a72}
 #selall button:active{background:#1f4a3c}
+#selall button[data-f="eng"]{animation:engBlink 1.1s ease-in-out infinite}
+@keyframes engBlink{0%,100%{background:#0f1a17;color:#9fd6c0;border-color:#2f4a41;box-shadow:none}50%{background:#2a7d3e;color:#fff;border-color:#5affa0;box-shadow:0 0 8px 1px rgba(90,255,160,.7)}}
+#selall button[data-f="eng"]:hover{animation:none}
 
 /* ---------- collapsible HUD panels ---------- */
 #miniwrap,#cmd{transition:transform .28s cubic-bezier(.4,0,.2,1)}
@@ -1487,7 +1490,7 @@ const AU = {
     this.shotBus = shaper;
 
     /* --- outdoor impulse: discrete early reflections + a long rolling tail --- */
-    const len = (c.sampleRate * 2.6) | 0;
+    const len = (c.sampleRate * 1.3) | 0;   // shorter tail = far cheaper convolution on the audio thread
     const ir = c.createBuffer(2, len, c.sampleRate);
     const taps = [[0.043, .52], [0.081, .44], [0.127, .37], [0.183, .30], [0.251, .24],
     [0.336, .19], [0.442, .14], [0.58, .10], [0.74, .07]];
@@ -1607,7 +1610,7 @@ const AU = {
      the duplicates of one type are dropped while every OTHER type still gets through — the mix stays full and never cuts
      out, and the soundscape reads as variety rather than a wall of the same clip. VMAX is a hard ceiling well under where
      the audio engine glitches. */
-  VMAX: 160,
+  VMAX: 40,   // hard ceiling on SIMULTANEOUS voices — 160 overloaded the audio thread on real hardware and the whole context glitched to silence; 40 is plenty to sound full and never underruns
   /* Voice metering keyed on the AUDIO CLOCK, not wall-clock timers. Each started sound records its expiry time
      (start + its fade length) in _active. _gate prunes everything already past its expiry — using ctx.currentTime,
      which keeps advancing in real time whether or not the tab is throttled — so the counts can never get "stuck"
@@ -17089,7 +17092,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b154';
+const BUILD_TAG = 'b155';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
