@@ -7051,7 +7051,8 @@ function updateAmbient(dt) {
   const gust = 1 + .09 * Math.sin(w.t * .9) + .03 * Math.sin(w.t * 2.3 + 1.7);   // smooth breathing, no jumps
   const s = w.spd * gust;
   w.x = Math.cos(w.dir) * s; w.y = Math.sin(w.dir) * s;
-  if (G.windForce) { w.x = Math.cos(G.windForce.dir) * G.windForce.spd; w.y = Math.sin(G.windForce.dir) * G.windForce.spd; w.dir = G.windForce.dir; w.dirTarget = w.dir; w.spd = w.spdTarget = G.windForce.spd; }   // dev: steady forced wind — locked speed AND direction; the natural model resumes from it when released
+  if (G.windForce) { w.x = Math.cos(G.windForce.dir) * G.windForce.spd; w.y = Math.sin(G.windForce.dir) * G.windForce.spd; w.dir = G.windForce.dir; w.dirTarget = w.dir; w.spd = w.spdTarget = G.windForce.spd; }
+  if (G.nukeWind) { const N = G.nukeWind, k = N.t / N.dur, sp = 400 * (k < .1 ? k / .1 : 1) * (k > .7 ? (1 - k) / .3 : 1); w.x = Math.cos(N.dir) * sp; w.y = Math.sin(N.dir) * sp; }   // the blast wind: ~400 for five seconds, straight out from ground zero, then dying away   // dev: steady forced wind — locked speed AND direction; the natural model resumes from it when released
   }
 
   // expire old grass trample marks (they've fully regrown by now)
@@ -9917,12 +9918,12 @@ function napalmBurst(x, y) {
   areaDamage(x, y, 120, 110, true);
   knockback(x, y, 150, .12);
   for (const z of G.zeds) if (!z.dead && dist2(z.x, z.y, x, y) < 140 * 140) z.burn = Math.max(z.burn || 0, 5);
-  addFirePool(x, y, 82, 10); fxGrassBurn(x, y, 120);
+  addFirePool(x, y, 82, 30); fxGrassBurn(x, y, 120);                                  // the pool burns for 30 s
   addShake(x, y, 8);
   G.lights.push({ x, y, r: 420, c: [255, 160, 70], i: 3.2 });
 }
 /* a pool of burning napalm: flames and oily black smoke rolling downwind, everything that steps in it catches fire */
-function addFirePool(x, y, r, dur) { (G.firePools || (G.firePools = [])).push({ x, y, r, t: 0, dur: dur || 9, ig: 0 }); grassWipe(x, y, r * .9, 40); scorchDecal(x, y, r * .8); }
+function addFirePool(x, y, r, dur) { (G.firePools || (G.firePools = [])).push({ x, y, r, t: 0, dur: dur || 9, ig: 0 }); grassWipe(x, y, r * .9, 30); scorchDecal(x, y, r * .8); }   // the ground is bare for 30 s then regrows over 30: back in a minute
 function updateFirePools(dt) {
   const F = G.firePools; if (!F || !F.length) return;
   const camx = CAM.x + CAM.vw / 2, camy = CAM.y + CAM.vh / 2;
@@ -9959,9 +9960,9 @@ function artyImpact(x, y) {
 }
 function startArtillery(x, y, r) { (G.strikes || (G.strikes = [])).push({ kind: 'arty', x, y, r: r || 5 * TS, t: 0, dur: 25, next: 0 }); alertMsg('FIRE MISSION — artillery on the way (25 s)', 'bad'); AU.ui('alarm'); }
 /* ---- napalm run: a jet screams in at high altitude along the line, lays a stick of canisters and is gone ---- */
-function startNapalm(x0, y0, x1, y1) {
+function startNapalm(x0, y0, x1, y1, count) {
   const ang = Math.atan2(y1 - y0, x1 - x0), len = Math.max(2 * TS, Math.hypot(x1 - x0, y1 - y0));   // the strip is exactly the placement drag
-  const spd = 1500, back = 2400, n = Math.max(3, Math.min(28, Math.round(len / 34)));                  // one canister every tile along it
+  const spd = 1500, back = 2400, n = Math.max(2, Math.min(40, Math.round(count || Math.max(3, len / 34))));   // the canisters are spread evenly from the first mark to the last, however many are called
   const fb = { id: 'fb' + (G.frame + Math.random()), def: { spr: 'f16', fly: 1, alt: 1300, spd }, x: x0 - Math.cos(ang) * back, y: y0 - Math.sin(ang) * back, ang, altK: 1, spd, t: 0, life: (back + len + 3200) / spd, x0, y0, len, n, dropped: 0, boomed: false, kind: 'napalm', bank: 0 };
   (G.flybys || (G.flybys = [])).push(fb);
   alertMsg('NAPALM RUN inbound', 'bad'); AU.ui('alarm');
@@ -10018,11 +10019,20 @@ function nukeDetonate(x, y, R) {
   grassWipe(x, y, R * 1.15, 90);                                                       // the carpet is burned off: bare for 90 s, then 30 s of regrowth = 2 minutes
   scorchDecal(x, y, R * .9);
   (G.strikes || (G.strikes = [])).push({ kind: 'mushroom', x, y, t: 0, dur: 9, R });
+  { const cx = CAM.x + CAM.vw / 2, cy = CAM.y + CAM.vh / 2, dd = Math.hypot(cx - x, cy - y); G.nukeWind = { dir: dd > 40 ? Math.atan2(cy - y, cx - x) : (G.wind.dir || 0), t: 0, dur: 5.5, x, y }; }   // the blast wind blows outward from ground zero — through the viewer's part of the map
   G.lights.push({ x, y, r: R * 4, c: [255, 240, 200], i: 6 });
   addShake(x, y, 40);
   AU.nukeBlast(x, y);                                                                   // the real detonation recording
 }
 function updateStrikes(dt) {
+  if (G.nukeWind) {   // the blast wind: dust and torn leaves streaming across the whole view with it for five seconds
+    const N = G.nukeWind; N.t += dt; if (N.t >= N.dur) G.nukeWind = null;
+    else if (G.parts.length < PMAX * .9) {
+      const k = N.t / N.dur, amt = (k < .1 ? k / .1 : 1) * (k > .7 ? (1 - k) / .3 : 1), n = Math.round(dt * 260 * amt);
+      const wx = G.wind.x, wy = G.wind.y, x0 = CAM.x - 300, y0 = CAM.y - 300, W = CAM.vw + 600, H = CAM.vh + 600;
+      for (let q = 0; q < n; q++) { const px = x0 + Math.random() * W, py = y0 + Math.random() * H, leaf = Math.random() < .12; if (leaf) part('leaf', px, py, wx * .9 + rnd(-30, 30), wy * .9 + rnd(-30, 30), rnd(.8, 1.6), rnd(1.2, 2.4), Math.random() < .5 ? '#6a8c3c' : '#4c5a32', { z: rnd(2, 30), vz: rnd(10, 50), vr: rnd(-14, 14), g: 60, drag: .97, wind: 1 }); else part('dust', px, py, wx * rnd(.7, 1.1), wy * rnd(.7, 1.1), rnd(.9, 1.8), rnd(8, 18), q & 1 ? 'rgba(190,178,150,1)' : 'rgba(160,150,128,1)', { z: rnd(0, 24), vz: rnd(0, 20), grow: 20, drag: .985, wind: 1, a: .8 }); }
+    }
+  }
   const S = G.strikes; if (!S || !S.length) return;
   for (let i = S.length - 1; i >= 0; i--) {
     const s = S[i]; s.t += dt;
@@ -12129,7 +12139,7 @@ const SP_CATS = [
     { id: 'strike', label: 'Airstrike / Artillery', icon: '💥', side: 'strike', list: ['napalm', 'artillery', 'nuke'] }
   ] }
 ];
-const STRIKE_DEF = { napalm: { name: 'Napalm run', g: '🔥', tip: 'Tap the START of the strip, then tap its END — a jet screams over at altitude and lays a stick of napalm along exactly that line' }, artillery: { name: 'Artillery barrage', g: '🎯', tip: 'Press on the centre and DRAG the ring to size, release to fire — about 2 shells a second for 25 seconds across the circle' }, nuke: { name: 'Nuclear bomb', g: '☢️', tip: 'Tap ground zero — 5 s of siren, then the bomb: a third of a small map wiped out, the land grows back in 2 minutes' } };
+const STRIKE_DEF = { napalm: { name: 'Napalm run', g: '🔥', tip: 'Tap the START of the strip, then tap its END — a jet screams over at altitude and lays the stick of napalm evenly along exactly that line (the number picked with SPAWN × in the dev menu, or the Bombs button on the Airspace Command); each pool burns 30 s and the ground is back in a minute' }, artillery: { name: 'Artillery barrage', g: '🎯', tip: 'Press on the centre and DRAG the ring to size, release to fire — about 2 shells a second for 25 seconds across the circle' }, nuke: { name: 'Nuclear bomb', g: '☢️', tip: 'Tap ground zero — 5 s of siren, then the bomb: a third of a small map wiped out, the land grows back in 2 minutes' } };
 function spName(side, t) { if (side === 'strike') return STRIKE_DEF[t].name; const d = side === 'player' ? UDEF[t] : (ZDEF[t] || MDEF[t]); return (d && d.name) || t; }
 function spIcon(side, t, groupIcon) { if (side === 'strike') return STRIKE_DEF[t].g; const d = side === 'player' ? UDEF[t] : null; return (d && d.g) || groupIcon; }
 let spSel = null;                                                    // { side, t, label } currently chosen
@@ -12224,7 +12234,7 @@ function spawnDropAt(wx, wy) {
       if (!strikePay(d)) return 0;
       const A = UI.napalmA; UI.napalmA = null; UI.spawnDrop = null;
       let dx = wx - A.x, dy = wy - A.y; const L = Math.hypot(dx, dy); if (L < 8) { dx = 1; dy = 0; }
-      startNapalm(A.x, A.y, A.x + dx, A.y + dy); return 1;   // the strip is exactly what was dragged
+      startNapalm(A.x, A.y, A.x + dx, A.y + dy, d.side === 'strike' && d.bombs ? d.bombs : (d.n > 1 ? d.n : 0)); return 1;   // the strip is exactly what was dragged; the dev stepper / the command's setting picks how many canisters
     }
     return 0;
   }
@@ -12727,10 +12737,12 @@ function cardFor() {
     }
     if (d.ability === 'strikes') {
       const CD = { napalm: 45, artillery: 60, nuke: 300 }, COST = { napalm: { s: 0, c: 600 }, artillery: { s: 0, c: 750 }, nuke: { s: 0, c: 6000 } }, KEYS = { napalm: 'N', artillery: 'A', nuke: 'X' };
+      const NB = [4, 6, 8, 12, 16, 24, 32]; if (!G.napalmN) G.napalmN = 8;
       for (const st of ['napalm', 'artillery', 'nuke']) {
         const sd = STRIKE_DEF[st], left = Math.max(0, ((G.strikeCd && G.strikeCd[st]) || 0) - G.t), can = affordable(COST[st]) && left <= 0;
         btns.push({ g: sd.g, n: sd.name + (left > 0 ? ' (' + Math.ceil(left) + 's)' : ''), k: KEYS[st], cost: COST[st], tip: sd.tip + (st === 'nuke' ? ' — 5 minutes between strikes.' : ' — ' + CD[st] + ' s between calls.'), dis: !can,
-          fn: () => { if (!can) { AU.ui('no'); return; } UI.spawnDrop = { side: 'strike', t: st, n: 1, label: sd.name, cost: COST[st], cd: CD[st] }; UI.napalmA = null; alertMsg(sd.tip, 'info'); AU.ui('ok'); } });
+          fn: () => { if (!can) { AU.ui('no'); return; } UI.spawnDrop = { side: 'strike', t: st, n: 1, label: sd.name, cost: COST[st], cd: CD[st], bombs: st === 'napalm' ? G.napalmN : 0 }; UI.napalmA = null; alertMsg(sd.tip, 'info'); AU.ui('ok'); } });
+        if (st === 'napalm') btns.push({ g: '🧨', n: 'Bombs: ' + G.napalmN, k: 'B', tip: 'How many napalm canisters the run lays along the strip — they are always spread evenly from the first mark to the last. Press to cycle 4 / 6 / 8 / 12 / 16 / 24 / 32.', fn: () => { G.napalmN = NB[(NB.indexOf(G.napalmN) + 1) % NB.length]; AU.ui('ok'); refreshCard(true); } });
       }
     }
     if (d.ability === 'airdrop') {
@@ -17040,7 +17052,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b144';
+const BUILD_TAG = 'b145';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
