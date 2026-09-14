@@ -1472,6 +1472,11 @@ const AU = {
     comp.attack.value = 0.0022; comp.release.value = 0.17;
     comp.connect(m); this.bus = comp;
 
+    // keep the audio alive: under sustained load, a tab-focus change, or an audio-device switch a browser can quietly
+    // SUSPEND or INTERRUPT the context and everything goes silent until something nudges it. Poll it back to running.
+    if (!this._wd) { const self = this; this._wd = setInterval(() => { try { if (self.ctx && self.ctx.state !== 'running') self.ctx.resume(); } catch (e) {} }, 800);
+      try { document.addEventListener('visibilitychange', () => { try { if (self.ctx && !document.hidden && self.ctx.state !== 'running') self.ctx.resume(); } catch (e) {} }); } catch (e) {} }
+
     // soft-clip drive: adds the harmonics that make a gunshot feel like it hits
     const shaper = c.createWaveShaper();
     const cv = new Float32Array(1024);
@@ -1570,19 +1575,22 @@ const AU = {
     const lp = c.createBiquadFilter(); lp.type = 'lowpass';
     lp.frequency.value = clamp(19000 / (1 + d / 190), 240, 19000);
     lp.Q.value = 0.4;
-    const pan = c.createStereoPanner ? c.createStereoPanner() : null;
-    const spread = clamp((x - (CAM.x + CAM.vw / 2)) / (CAM.vw * .55), -1, 1);
-
     const out = dest || this.bus;
     g.connect(lp);
-    if (pan) { pan.pan.value = isFinite(spread) ? spread : 0; lp.connect(pan); pan.connect(out); }
+    // pan only when the sound is meaningfully off-centre — a centred sound skips the panner node entirely (fewer nodes = less audio-thread load in a heavy firefight)
+    const spread = clamp((x - (CAM.x + CAM.vw / 2)) / (CAM.vw * .55), -1, 1);
+    if (c.createStereoPanner && isFinite(spread) && Math.abs(spread) > .06) { const pan = c.createStereoPanner(); pan.pan.value = spread; lp.connect(pan); pan.connect(out); }
     else lp.connect(out);
 
-    // dry and punchy up close; the echo only opens up with distance
-    const wet = c.createGain();
-    wet.gain.value = vol * clamp(.07 + d / 1900, .07, 1.0) * clamp(fall * 2.2, .05, 1);
-    const pre = c.createDelay(0.4); pre.delayTime.value = clamp(d / 4200, .012, .18);
-    g.connect(pre); pre.connect(wet); wet.connect(this.conv);
+    // reverb send — dry and punchy up close, opening up with distance. Skipped when a lot is already sounding: under a wall
+    // of gunfire the tail is inaudible anyway, so dropping its two nodes there is where it matters most for staying glitch-free.
+    const busy = this._active ? this._active.length : 0;
+    if (this.conv && busy < 30) {
+      const wet = c.createGain();
+      wet.gain.value = vol * clamp(.07 + d / 1900, .07, 1.0) * clamp(fall * 2.2, .05, 1);
+      const pre = c.createDelay(0.4); pre.delayTime.value = clamp(d / 4200, .012, .18);
+      g.connect(pre); pre.connect(wet); wet.connect(this.conv);
+    }
 
     // propagation delay: you see the flash before you hear it
     const t = c.currentTime + clamp(d / 2600, 0, .28);
@@ -17081,7 +17089,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b153';
+const BUILD_TAG = 'b154';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
