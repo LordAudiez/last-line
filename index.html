@@ -1787,7 +1787,7 @@ const AU = {
     if (!this.ok || this.muted) return;
     const buf = this.smp.killed; if (!buf) return this.splat(x, y);
     if (!this._gate('killed', 4, .02)) return;
-    const n = this.place(x, y, .9, 2000, this.bus); if (!n) return;
+    const n = this.place(x, y, .18, 2000, this.bus); if (!n) return;   // kill sound cut to 20%
     this._hold('killed', 1200);
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.95, 1.06);
@@ -1805,7 +1805,7 @@ const AU = {
     const buf = pierce ? (this.smp.fleshthru || this.smp[FLESH_KEYS[(Math.random() * FLESH_KEYS.length) | 0]])
       : this.smp[FLESH_KEYS[(Math.random() * FLESH_KEYS.length) | 0]];
     if (!buf) return this.splat(x, y);
-    const n = this.place(x, y, pierce ? .035 : .031, 1600, this.bus); if (!n) return;   // hit-marker volume: halved again
+    const n = this.place(x, y, pierce ? .007 : .031, 1600, this.bus); if (!n) return;   // shoot-through impact cut to 20%; the normal hit unchanged
     this._hold(fam, 500);
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.9, 1.1);
@@ -17081,7 +17081,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b152';
+const BUILD_TAG = 'b153';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
