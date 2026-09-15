@@ -3208,7 +3208,7 @@ const UDEF = {
     wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 5 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },   // 105mm: biggest blast in the game — the old five-tile Abrams area
     weps: [
       { dmg: 60, rng: 540, cd: .5, spread: .02, spd: 1600, kind: 'shell', splash: TS, sfx: 'chain40', off: 20, slew: .006 },
-      { dmg: 12, rng: 520, cd: .045, spread: .05, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, off: 20, slew: .008, splash: 18 }   // 25 mm: every round bursts on the deck — a kick of dust and a bite on anything within a body and a half
+      { dmg: 24, rng: 520, cd: .045, spread: .05, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, off: 20, slew: .008, splash: 18 }   // 25 mm: every round bursts on the deck — a kick of dust and a bite on anything within a body and a half
     ],
     desc: 'Orbits a point raining down a 105mm Howitzer (five-tile blast, one-shot kill on anything), a 30mm chain gun (one-tile blast) and a minigun — three separate targets at once. Fires continuously while it circles.'
   },
@@ -4752,6 +4752,7 @@ function detonateStruct(s) {
   fxExplosion(s.x, s.y - 22, 104, '#ffd27a', '#ff5a1e');
   fxExplosion(s.x - 46, s.y + 4, 58);
   fxExplosion(s.x + 44, s.y - 8, 58);
+  if (typeof fxCinematic === 'function') fxCinematic(s.x, s.y - 10, s.st === 'gasCanopy' ? 150 * 1.5 : 30);   // the cinematic brew-up: the canopy goes up at 3× its own size, a pump at 1.5×
   areaDamage(s.x, s.y, 168, 240, true, true);
   scorchDecal(s.x, s.y, 66);
   addShake(s.x, s.y, 12);
@@ -5399,6 +5400,47 @@ function fxDustWaveOuter(x, y, r, k) {
   }
   G._fx = _fx;
 }
+/* ---- the big cinematic brew-up (napalm, a vehicle going up, a fuel dump, the gas station) — layered ON TOP of fxExplosion:
+   a boiling fireball at the base; a tall column of brown dust and smoke lit orange from below, boiling upward and leaning
+   downwind; a ring of dust rolling out along the ground; burning debris flung out in high arcs that streams flame and
+   smoke behind it, bounces and dies; a shower of sparks. S = the base radius in px — everything scales with it. ---- */
+function fxCinematic(x, y, S) {
+  const _fx = G._fx; G._fx = 2;
+  const room = G.parts.length < PMAX * .6 ? 1 : G.parts.length < PMAX * .85 ? .55 : .25, k = clamp(S / 80, .3, 3);
+  const wx = G.wind.x, wy = G.wind.y, ws = Math.hypot(wx, wy), wdx = ws > 1 ? wx / ws : 0, wdy = ws > 1 ? wy / ws : 0;
+  const N = n => Math.max(2, Math.round(n * room));
+  // 1. the fireball: a boiling mass of flame that swells, lifts and cools to red
+  for (let i = 0; i < N(8 + 10 * Math.min(1, k)); i++) {
+    const a = rnd(TAU), d = rnd(0, S * .35), sp = rnd(10, S * 1.2), c = Math.random();
+    part('fire', x + Math.cos(a) * d, y + Math.sin(a) * d * .7, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.5, 1.1), rnd(S * .28, S * .6), c < .3 ? '#fff2c0' : c < .65 ? '#ffb040' : '#ff5a1e',
+      { glow: 1, grow: S * .5, drag: .9, z: rnd(2, S * .3), vz: rnd(S * .8, S * 2.2), g: -20, wind: 1 });
+  }
+  // 2. the column: dust and smoke stacked up the vertical, each puff rising and swelling, orange-lit near the fire, brown above, black at the top
+  const H = N(14 + 16 * Math.min(1.6, k));
+  for (let i = 0; i < H; i++) {
+    const f = i / H, a = rnd(TAU), d = rnd(0, S * .3) * (1 - f * .5);
+    const col = f < .22 ? 'rgba(255,150,50,1)' : f < .5 ? 'rgba(150,100,55,1)' : f < .78 ? 'rgba(85,64,48,1)' : 'rgba(35,30,28,1)';
+    part('smoke', x + Math.cos(a) * d, y + Math.sin(a) * d * .7, Math.cos(a) * rnd(6, S * .25) + wdx * f * 30, Math.sin(a) * rnd(6, S * .25) * .7 + wdy * f * 30, rnd(2.8, 4.8) + f * 1.5, rnd(S * .36, S * .66) * (1 + f * .45), col,
+      { z: f * S * 3.4 + rnd(0, S * .3), vz: rnd(S * 1.2, S * 2.6) * (1 - f * .3), g: -S * .15, grow: S * .3, drag: .965, wind: 1, a: .95, rot: rnd(TAU), vr: rnd(-.6, .6) });
+  }
+  // 3. the base: a low ring of dust rolling outward along the ground
+  for (let i = 0; i < N(10 + 14 * Math.min(1, k)); i++) {
+    const a = rnd(TAU), sp = rnd(S * 1.2, S * 2.8);
+    part('dust', x + Math.cos(a) * S * .3, y + Math.sin(a) * S * .22, Math.cos(a) * sp + wx * .3, Math.sin(a) * sp * .7 + wy * .3, rnd(1.2, 2.4), rnd(S * .22, S * .45), i & 1 ? 'rgba(150,130,100,1)' : 'rgba(118,102,80,1)',
+      { z: rnd(0, S * .15), vz: rnd(10, S * .4), g: 40, grow: S * .5, drag: .9, wind: 1, a: .8 });
+  }
+  // 4. burning debris: chunks flung high on arcs, each streaming flame and smoke, bouncing when it lands
+  for (let i = 0; i < N(8 + 12 * Math.min(1.4, k)); i++) {
+    const a = rnd(TAU), sp = rnd(S * .8, S * 3.4), big = Math.random() < .35;
+    part('ember', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(1.1, 2.4), big ? rnd(3, 5) : rnd(1.6, 2.8), Math.random() < .5 ? '#ffc060' : '#ff7a2e',
+      { glow: 1, z: rnd(4, S * .4), vz: rnd(S * 2.2, S * 5.5), g: 420, drag: .985, bounce: .3, wind: 1, trail: big ? 34 : 18, trailK: big ? 'fire' : 'smoke', trailC: big ? '#ff9a3a' : 'rgba(90,78,66,1)', trailR: big ? .9 : 1.5 });
+    if (big && room > .5) part('debris', x, y, Math.cos(a) * sp * .9, Math.sin(a) * sp * .63, rnd(1.2, 2.2), rnd(2.5, 4.5), '#3a3028', { z: rnd(4, S * .3), vz: rnd(S * 2, S * 5), g: 420, drag: .985, bounce: .35, rot: rnd(TAU), vr: rnd(-8, 8) });
+  }
+  // 5. sparks: a fast shower that dies quickly
+  for (let i = 0; i < N(12 + 16 * Math.min(1, k)); i++) { const a = rnd(TAU), sp = rnd(S * 2, S * 6); part('spark', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.3, .8), rnd(1, 2), '#ffe6a0', { glow: 1, z: rnd(4, S * .3), vz: rnd(S, S * 4), g: 500, drag: .97 }); }
+  G.lights.push({ x, y, r: S * 6, c: [255, 170, 90], i: 2.4 });
+  G._fx = _fx;
+}
 function fxExplosion(x, y, r, colA, colB, snd) {
   const _fx = G._fx; G._fx = 2;                     // explosion
   colA = colA || '#ffd27a'; colB = colB || '#ff7a2e';
@@ -5783,6 +5825,7 @@ function killUnit(u) {
     const fly = u.def.fly;
     const R = u.r * (fly ? 3 : 2);
     fxExplosion(u.x, u.y, fly ? Math.min(150, u.r * 2.6) : (u.def.heavy ? 82 : 56));
+    fxCinematic(u.x, u.y, u.r * 1.5);                                                          // and the cinematic brew-up: fireball, dust column, burning debris — scaled 1.5× to the hull
     if (fly) { fxExplosion(u.x - u.r * .5, u.y + u.r * .3, u.r * 1.6); fxExplosion(u.x + u.r * .5, u.y - u.r * .3, u.r * 1.6); }
     areaDamage(u.x, u.y, R, 999999, false, true);                 // zombies in the blast die instantly
     scorchDecal(u.x, u.y, R * .55);
@@ -6042,7 +6085,7 @@ function updateProps(dt) {
   if (G.fuses && G.fuses.length) for (let i = G.fuses.length - 1; i >= 0; i--) {
     const f = G.fuses[i]; f.t -= dt;
     if (Math.random() < dt * 30) part('fire', f.x + rnd(-4, 4), f.y + rnd(-3, 3), rnd(-6, 6), rnd(-6, 6), rnd(.2, .45), rnd(3, 6), '#ffa030', { glow: 1, z: rnd(6, 16), vz: rnd(40, 90), g: -40 });
-    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 40, '#ffb84a', '#ff5a1e'); areaDamage(f.x, f.y, 60, 40, true, true); }
+    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 40, '#ffb84a', '#ff5a1e'); fxCinematic(f.x, f.y, 15); areaDamage(f.x, f.y, 60, 40, true, true); }   // + a small cinematic cook-off, 1.5× the drum
   }
   // toppling trees: swing over, slam down, break into logs
   if (G.topples && G.topples.length) for (let i = G.topples.length - 1; i >= 0; i--) {
@@ -8521,7 +8564,7 @@ function updateAircraft(u, dt) {
    not turn the flight path — and air drag caps the speed. Pitch/roll are
    rate-limited so every manoeuvre reads as a smooth control input.
    ------------------------------------------------------------------ */
-const LB_ACC = 430, LB_DRAG = 1.25, LB_ALTVIS = .42, LB_PMAX = .62, LB_RMAX = .6;
+const LB_ACC = 430, LB_DRAG = 1.25, LB_ALTVIS = .84, LB_PMAX = .62, LB_RMAX = .6;
 /* where the nose gun-line meets the ground: horizontal px ahead of the airframe (-1 when the nose is level or up) */
 function lbImpact(u) { const t = Math.tan(u.pitch || 0); return t > .04 ? (airZ(u) + 9) / t : -1; }
 function lbBody(u) { const ca = Math.cos(u.ang), sa = Math.sin(u.ang); return { ca, sa, vf: u.vx * ca + u.vy * sa, vl: -u.vx * sa + u.vy * ca }; }
@@ -8786,13 +8829,15 @@ function updateWeapons(u, dt, order) {
       let da = want - u.aims[i]; da = Math.atan2(Math.sin(da), Math.cos(da));
       const inArc = !w.arc || Math.abs(Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang))) <= w.arc;
       const onTgt = Math.abs(da) < (w.fixed ? .2 : u.def.fly ? .32 : w.kind === 'bullet' ? .16 : .1);   // an orbiting gunship's mounts always trail the sight a little — they fire through that lag
-      const inRng = d2 <= r2 && !(w.minRng && d2 < w.minRng * w.minRng);
-      C.st[i] = !inArc ? 'NO ARC' : !inRng ? 'RANGE' : !onTgt ? 'SLEW' : u.cds[i] > 0 ? 'CYCLE' : 'READY';
+      const gv = u.def.veh && !u.def.fly, far = gv && d2 > r2 ? Math.sqrt(d2) / rng : 0;   // a ground vehicle's gunner may fire at ANY range the sight reaches — past the gun's range the round loses power and scatters (the distance penalty)
+      const inRng = (d2 <= r2 || gv) && !(w.minRng && d2 < w.minRng * w.minRng);
+      C.far[i] = far;
+      C.st[i] = !inArc ? 'NO ARC' : !inRng ? 'RANGE' : !onTgt ? 'SLEW' : u.cds[i] > 0 ? 'CYCLE' : (far > 1 ? 'FAR' : 'READY');
       if (u.def.fixedGuns && u.pitch !== undefined && !u.landed && w.fixed) continue;   // (Little Birds are never player-controlled; keep their dive logic untouched)
       if (!(C.fire && C.gun === i)) continue;
       if (!inArc || !inRng || !onTgt || u.cds[i] > 0) continue;
       if (w.mag && u.ammos[i] <= 0) { u.reloads[i] = w.reload; AU.reload(u.x, u.y, w.sfx); continue; }
-      fire(u, pt, w, muzzleFor(u, i, w));
+      u._far = far; fire(u, pt, w, muzzleFor(u, i, w)); u._far = 0;
       if (w.mag) u.ammos[i]--;
       u.cds[i] = w.cd; C.shots = (C.shots || 0) + 1; C.lastShot = G.t;
       continue;
@@ -8910,7 +8955,7 @@ const VTUR = { abrams: -.1, stryker: .15, humvee: -.1 };
 /* aircraft gun muzzles: how far forward (px) the round leaves the nose of the drawn model, and the tail nozzle offset (px) for the jet's afterburner */
 const AMUZ = { littlebird: 30, blackhawk: 60, apache: 58, f16: 36, ac130: 22 };
 const AEXH = { f16: 74, ac130: 60 };
-const AIR_ZK = 0.42;                    // matches the 3D renderer's ALTK: an aircraft is drawn at alt*ALTK*altK tiles up
+const AIR_ZK = 0.84;                    // matches the 3D renderer's ALTK: an aircraft is drawn at alt*ALTK*altK tiles up
 function airZ(u) { return (u.def.alt || 150) * AIR_ZK * (u.altK === undefined ? 1 : u.altK); }   // muzzle/effect height in the b.z (tiles) space
 function muzzlePos(u) {
   const a = u.def.veh ? u.aimT : u.ang;
@@ -8960,8 +9005,9 @@ function fire(src, tgt, wep, muz) {
   const lead = wep.spd < 900 ? Math.hypot(tgt.x - src.x, tgt.y - src.y) / wep.spd : 0;
   const px = tgt.x + (tgt.vx || 0) * lead * .6, py = tgt.y + (tgt.vy || 0) * lead * .6;
   const base = (wep.fixed && src.pitch !== undefined && src.def && src.def.fixedGuns && !src.landed) ? src.ang : angTo(m.x, m.y, px, py);
-  const spread = wep.spread * (G.night && !G.up.nvg && !(src.def && src.def.nightSight) && litAt(src.x, src.y) < .4 && !towerAt(src.x, src.y) ? 1.6 : 1) * paceSpread(src);
-  const dmg = wep.dmg * dmgMul(src) * bd;
+  const farK = src._far > 1 ? src._far : 1;                                                    // direct-control shot past the gun's range: 1/farK of the damage, farK× the scatter, and the round flies the whole way
+  const spread = wep.spread * (G.night && !G.up.nvg && !(src.def && src.def.nightSight) && litAt(src.x, src.y) < .4 && !towerAt(src.x, src.y) ? 1.6 : 1) * paceSpread(src) * farK;
+  const dmg = wep.dmg * dmgMul(src) * bd / farK;
   const wc = weaponClass(src, wep);
   const z0 = 9 + srcZ;
   // where the round is aimed vertically: a ground target sits near the deck, an airborne one at its own altitude.
@@ -8976,7 +9022,7 @@ function fire(src, tgt, wep, muz) {
     // stance accuracy: an aimed round holds close to the line of aim; a thrown one is pushed off it by at least a body's width at range
     const a = base + (acc == null ? rnd(-spread, spread) : (Math.random() < acc ? rnd(-spread, spread) * .25 : (Math.random() < .5 ? -1 : 1) * (.06 + rnd(0, spread * 1.6 + .05))));
     const spd = wep.spd * (shots > 1 ? rnd(.85, 1.1) : 1);
-    const life = f3 ? Math.min(wep.rng * rngMul(src) * 1.35, hdist + 70) / spd : (wep.rng * rngMul(src) * (shots > 1 ? 1.05 : 1.35)) / spd;   // a nose-gun round dies just past its ground impact
+    const life = f3 ? Math.min(wep.rng * rngMul(src) * 1.35, hdist + 70) / spd : Math.max(farK > 1 ? (hdist + 60) / spd : 0, (wep.rng * rngMul(src) * (shots > 1 ? 1.05 : 1.35)) / spd);   // a nose-gun round dies just past its ground impact
     G.bullets.push({
       x: m.x, y: m.y, px: m.x, py: m.y, ox: m.x, oy: m.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       dmg: inc ? dmg * .85 : dmg, inc: inc ? 1 : 0, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx, small: wep.kind === 'bullet' && !wep.pierce && (wep.dmg || 0) <= 16, pistol: !!wep.sidearm,
@@ -9690,8 +9736,8 @@ function ignite(e, b) {
 }
 /* a small-calibre cannon round bursting on the ground: a puff of dust thrown up and out, a few sparks and a brief flash */
 function fxRoundBurst(x, y, ang, gnd) {
-  const n = G.parts.length < PMAX * .9 ? 7 : 3;
-  for (let k = 0; k < n; k++) { const a = rnd(TAU), sp = rnd(20, 90); part('dust', x + rnd(-3, 3), y + rnd(-3, 3), Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .7 + G.wind.y * .3, rnd(.35, .8), rnd(3, 5.5), k & 1 ? 'rgba(186,174,150,1)' : 'rgba(150,138,116,1)', { z: rnd(0, 4), vz: rnd(20, 70), g: 90, grow: 14, drag: .9, wind: 1, a: .55 }); }
+  const n = G.parts.length < PMAX * .9 ? 21 : 9;
+  for (let k = 0; k < n; k++) { const a = rnd(TAU), sp = rnd(20, 110); part('dust', x + rnd(-3, 3), y + rnd(-3, 3), Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .7 + G.wind.y * .3, rnd(.35, .8), rnd(3, 5.5), k & 1 ? 'rgba(186,174,150,1)' : 'rgba(150,138,116,1)', { z: rnd(0, 4), vz: rnd(20, 70), g: 90, grow: 14, drag: .9, wind: 1, a: .55 }); }
   part('flash', x, y, 0, 0, .07, 7, '#ffe6b0', { glow: 1, z: 4 });
   fxSpark(x, y, ang + Math.PI, 3, '#ffc27a');
   if (Math.random() < .35) part('smoke', x, y, rnd(-8, 8), rnd(-8, 8), rnd(.5, .9), 3, 'rgba(90,84,76,1)', { z: 4, vz: 20, grow: 9, drag: .93, wind: 1, a: .4 });
@@ -9949,6 +9995,7 @@ function updateParticles(dt) {
       }
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.trail && Math.random() < dt * p.trail && G.parts.length < PMAX) part(p.trailK || 'smoke', p.x, p.y, rnd(-6, 6), rnd(-6, 6), rnd(.35, .7), p.r * (p.trailR || 1.6), p.trailC || 'rgba(96,84,72,1)', { z: p.z, vz: rnd(4, 18), grow: p.r * 3, drag: .94, wind: 1, a: .55, glow: p.trailK === 'fire' ? 1 : 0 });   // burning debris streams a smoke / flame trail behind it
     const dr = dt60 === 1 ? p.drag : Math.pow(p.drag, dt60);
     if (p.wind) {
       // aerodynamic: drag acts on the velocity RELATIVE to the air, so a puff decelerates into the wind stream
@@ -10189,6 +10236,7 @@ function grassWipe(x, y, r, secs) {
 function napalmBurst(x, y) {
   const _fx = G._fx; G._fx = 2;
   AU._skipBoom = true; try { fxExplosion(x, y, 80, '#ffd070', '#ff5a1e'); } finally { AU._skipBoom = false; }
+  fxCinematic(x, y, 80);                                                                       // the cinematic brew-up on top: fireball, tall dust column, burning debris arcs
   const wx = G.wind.x * .35, wy = G.wind.y * .35;
   for (let k = 0; k < 70; k++) { const a = rnd(TAU), sp = rnd(20, 220), up = k < 28; part('fire', x + Math.cos(a) * rnd(0, 24), y + Math.sin(a) * rnd(0, 18), Math.cos(a) * sp + wx, Math.sin(a) * sp * .7 + wy, rnd(.5, 1.3), rnd(16, 36), k % 3 === 0 ? '#fff0b0' : k % 3 === 1 ? '#ffb040' : '#ff5a1e', { glow: 1, grow: 40, drag: .88, z: rnd(2, 26), vz: up ? rnd(150, 380) : rnd(30, 140), g: -60 }); }   // the fireball: a mass of fat flame tongues boiling up and rolling out
   for (let k = 0; k < 40; k++) { const a = rnd(TAU), sp = rnd(30, 260); part('fire', x + Math.cos(a) * 10, y + Math.sin(a) * 8, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.25, .6), rnd(5, 10), Math.random() < .5 ? '#ffe090' : '#ff8a30', { glow: 1, grow: 8, drag: .9, z: rnd(4, 30), vz: rnd(60, 260), g: 120, bounce: .3 }); }   // burning gobs of fuel flung out in arcs
@@ -13629,7 +13677,7 @@ function ctrlEnter(u) {
   const a0 = u.def.veh && !u.def.fly && u.aimT !== undefined ? u.aimT : (u.ang || 0), d0 = u.def.fly ? Math.min(360, u.def.wep.rng * .6) : 320;
   const pt = { x: t0 ? t0.x : u.x + Math.cos(a0) * d0, y: t0 ? t0.y : u.y + Math.sin(a0) * d0, vx: 0, vy: 0, dead: false, kind: 'pt', r: 6, hp: 1 };
   pt.x = clamp(pt.x, 8, WW - 8); pt.y = clamp(pt.y, 8, WH - 8);
-  const C = { on: true, u, gun: list[0].i, list, pt, fire: false, fov: CTRL_FOV[u.t] || 40, st: [], filt: 0, shots: 0, lastShot: -9, touch: { f: 0, t: 0 }, zoom0: CAM.zoom, zoomT0: CAM.zoomT, t0: G.t };
+  const C = { on: true, u, gun: list[0].i, list, pt, fire: false, fov: CTRL_FOV[u.t] || 40, st: [], far: [], filt: 0, shots: 0, lastShot: -9, touch: { f: 0, t: 0 }, zoom0: CAM.zoom, zoomT0: CAM.zoomT, t0: G.t };
   UI.ctrl = C; u.ctrl = C;
   UI.place = null; UI.pending = null; UI.attackMove = false; UI.clearMode = false; UI.moving = null; IN.dragging = false; IN.down = false;
   CAM.zoomT = undefined; CAM.zoom = Math.max(CAM.zoom * .5, scene.width / 1500); CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
@@ -13678,7 +13726,7 @@ function ctrlAimDelta(dx, dy) {
 function ctrlClampAim() {
   const C = UI.ctrl, u = C.u, pt = C.pt;
   let maxR = 0; for (const g of C.list) { const w = u.def.allWeps[g.i]; if (w) maxR = Math.max(maxR, weapRange(u, w)); }
-  maxR = maxR * (u.def.fly ? 1.3 : 1.05) || 600;
+  maxR = maxR * (u.def.fly ? 1.3 : 4.0) || 600;   // a ground vehicle's sight reaches four times the gun's range (shots out there take the distance penalty)
   const minR = u.def.fly ? 0 : 120;
   const dx = pt.x - u.x, dy = pt.y - u.y, d = Math.hypot(dx, dy) || 1;
   if (d > maxR) { pt.x = u.x + dx / d * maxR; pt.y = u.y + dy / d * maxR; }
@@ -13712,7 +13760,7 @@ function ctrlKey(e) {
 }
 
 /* ---- the 3D camera pose: at the selected gun's mount, stepped a little out along the sight line, looking at the aim point ---- */
-const _ctv1 = new THREE.Vector3(), _ctv2 = new THREE.Vector3(), _ctv3 = new THREE.Vector3();
+const _ctv1 = new THREE.Vector3(), _ctv2 = new THREE.Vector3(), _ctv3 = new THREE.Vector3(), _ctq = new THREE.Quaternion();
 function ctrlCamPose(cam, R) {
   const C = UI.ctrl; if (!C || !C.on) return false;
   const u = C.u; if (!u || u.dead) return false;
@@ -13722,7 +13770,15 @@ function ctrlCamPose(cam, R) {
   if (um && um.g.visible) {
     um.g.updateMatrixWorld(true);
     const guns = um.g.userData.guns;
-    if (guns && guns.length) { const gd = guns.find(g => g.slot === C.gun) || guns[0]; gd.g.getWorldPosition(eye); got = true; }
+    if (guns && guns.length) {   // the sight rides the held gun: just above and behind the breech, so the barrel itself runs out through the lower picture
+      const gd = guns.find(g => g.slot === C.gun) || guns[0]; gd.g.getWorldPosition(eye); got = true; noStep = true; const sc = um.g.scale.x;
+      if (gd.axis === 'z') {   // gunship: the sight hangs just outside the port skin beside the held gun, a little above its breech — the barrel runs out below the crosshair
+        um.g.getWorldQuaternion(_ctq); _ctv3.set(0, 0, -1).applyQuaternion(_ctq); _ctv3.y = 0; _ctv3.normalize();
+        eye.addScaledVector(_ctv3, .55 * sc); eye.y += .22 * sc;
+      } else {                 // chin gun: on top of the cradle, looking down the barrel
+        eye.y += .1 * sc;
+      }
+    }
     else if (um.tur) {   // gunner's sight on the turret roof: above and just to the right of the main gun, looking down the barrel line
       um.tur.getWorldPosition(eye); const sc = um.g.scale.x, hx = tgt.x - eye.x, hz = tgt.z - eye.z, hl = Math.hypot(hx, hz) || 1, fx = hx / hl, fz = hz / hl;
       eye.x += fx * 1.3 * sc - fz * .5 * sc; eye.z += fz * 1.3 * sc + fx * .5 * sc; eye.y += 1.22 * sc; got = true; noStep = true;
@@ -13844,6 +13900,7 @@ function ctrlHudTick(dt) {
     else if (st === 'NO ARC') { txt = 'OUTSIDE GUN ARC — TURNING'; cls = 'hot'; }
     else if (st === 'RANGE') { txt = 'OUT OF RANGE'; cls = 'hot'; }
     else if (st === 'SLEW') { txt = 'SLEWING'; cls = 'rl'; }
+    else if (st === 'FAR' || (C.far[C.gun] > 1)) { const f = C.far[C.gun]; txt = (C.fire ? 'FIRING · ' : '') + 'BEYOND RANGE −' + Math.round((1 - 1 / f) * 100) + '% DMG'; cls = C.fire ? 'hot' : 'rl'; }
     else if (C.fire) { txt = 'FIRING'; cls = 'hot'; }
     else { txt = 'ON TARGET · READY'; cls = 'ok'; }
     if (sEl.textContent !== txt) sEl.textContent = txt; sEl.className = 'st ' + cls;
@@ -13968,9 +14025,9 @@ function ctrlHudTick(dt) {
   const CLOUD_DRIFT = { a: Math.random() * 6.28, b: Math.random() * 6.28, spd: .0028 };
   function cloudDrift(dt) {
     CLOUD_DRIFT.a += (Math.random() - .5) * dt * .35; CLOUD_DRIFT.b += (Math.random() - .5) * dt * .5;
-    const o = CLOUD_U.uOff.value, o2 = CLOUD_U.uOff2.value, sp = CLOUD_DRIFT.spd * dt;
-    o.x += Math.cos(CLOUD_DRIFT.a) * sp; o.y += Math.sin(CLOUD_DRIFT.a) * sp;
-    o2.x += Math.cos(CLOUD_DRIFT.b) * sp * 1.7; o2.y += Math.sin(CLOUD_DRIFT.b) * sp * 1.7;
+    const o = CLOUD_U.uOff.value, o2 = CLOUD_U.uOff2.value, sp = CLOUD_DRIFT.spd * dt, wk = .0032 * .4 * dt, wx = (G.wind ? G.wind.x : 0) * wk, wy = (G.wind ? G.wind.y : 0) * wk;
+    o.x += Math.cos(CLOUD_DRIFT.a) * sp + wx; o.y += Math.sin(CLOUD_DRIFT.a) * sp + wy;
+    o2.x += Math.cos(CLOUD_DRIFT.b) * sp * 1.7 + wx * 1.4; o2.y += Math.sin(CLOUD_DRIFT.b) * sp * 1.7 + wy * 1.4;
   }
   function cloudHook(sh) {
     Object.assign(sh.uniforms, CLOUD_U);
@@ -14016,6 +14073,83 @@ function ctrlHudTick(dt) {
   Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 1, far: 220 }); sun.shadow.bias = -.0005; sun.shadow.normalBias = .03;
   scene3.add(sun); scene3.add(sun.target);
   const LIGHTS = []; for (let i = 0; i < 12; i++) { const L = new THREE.PointLight(0xffffff, 0, 10, 2); scene3.add(L); LIGHTS.push(L); }
+
+  /* ======================= the sky =======================
+     A camera-centred dome drawn behind everything: a day/night gradient, the SUN crossing the sky through the day and the
+     MOON through the night (both driven by the game clock), a field of a few thousand coloured stars with a faint galaxy
+     band (a few % of them twinkle), and a 40 % cover of cumulus that drifts on the same offset the ground cloud-shadows use,
+     so the shade on the ground and the cloud overhead move together. Sunlight through thin cloud edges is pushed above 1.0
+     so the bloom pass catches it. Visible whenever the camera looks up — the tank's gun sight, mostly. */
+  const SKY_U = { uSun: { value: new THREE.Vector3(0, 1, 0) }, uMoon: { value: new THREE.Vector3(0, -1, 0) }, uDay: { value: 1 }, uTime: { value: 0 }, uOff: { value: CLOUD_U.uOff.value }, uOff2: { value: CLOUD_U.uOff2.value }, uCover: { value: .4 }, tCloud: { value: TEX.cloud }, uHor: { value: new THREE.Color(.7, .78, .85) }, uZen: { value: new THREE.Color(.3, .5, .85) }, uStorm: { value: 0 } };
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: SKY_U, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w * .99999; }',
+    fragmentShader: [
+      'uniform vec3 uSun, uMoon, uHor, uZen; uniform float uDay, uTime, uCover, uStorm; uniform vec2 uOff, uOff2; uniform sampler2D tCloud; varying vec3 vDir;',
+      'float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+      'vec3 starLayer(vec2 p, float dens, float sz, float tw){ vec2 c = floor(p), f = fract(p); vec3 acc = vec3(0.0);',
+      ' for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec2 o = vec2(float(i), float(j)); vec2 id = c + o; float h = h21(id); if (h > dens) continue;',
+      '  vec2 sp = o + vec2(h21(id + 3.1), h21(id + 7.7)); float d = length(f - sp); float mag = h21(id + 11.3);',
+      '  float r = sz * (0.35 + mag * mag * 1.3); float b = smoothstep(r, 0.0, d) * (0.35 + mag * 1.4);',
+      '  float hc = h21(id + 5.5); vec3 col = hc < 0.18 ? vec3(0.62, 0.74, 1.0) : hc < 0.5 ? vec3(0.92, 0.95, 1.0) : hc < 0.78 ? vec3(1.0, 0.94, 0.78) : hc < 0.93 ? vec3(1.0, 0.72, 0.42) : vec3(1.0, 0.45, 0.35);',
+      '  float tk = h21(id + 9.9); if (tk < 0.05) b *= 0.45 + 0.55 * sin(uTime * (4.0 + tk * 90.0) + h * 40.0);',   // ~5% of the stars flicker
+      '  acc += col * b * tw; } return acc; }',
+      'void main(){ vec3 v = normalize(vDir); float up = max(v.y, 0.0);',
+      ' float night = 1.0 - uDay;',
+      ' vec3 sky = mix(uHor, uZen, pow(up, 0.55));',
+      ' float sd = max(dot(v, uSun), 0.0), md = max(dot(v, uMoon), 0.0);',
+      // the sun: a hard disc, a tight corona and a wide warm haze — brighter than white so it blooms
+      ' float sunDisc = smoothstep(0.99962, 0.99985, sd), sunGlow = pow(sd, 220.0) * 1.1 + pow(sd, 26.0) * 0.26 + pow(sd, 5.0) * 0.05;',
+      ' vec3 sunCol = mix(vec3(1.0, 0.72, 0.42), vec3(1.0, 0.96, 0.86), clamp(uSun.y * 2.2, 0.0, 1.0));',
+      ' sky += sunCol * (sunGlow * uDay * (1.0 - uStorm * 0.8)) + sunCol * sunDisc * 4.0 * step(0.0, uSun.y) * (1.0 - uStorm);',
+      // the moon: a pale disc with a hint of maria, a soft halo
+      ' float moonDisc = smoothstep(0.99905, 0.99935, md), moonGlow = pow(md, 140.0) * 0.35 + pow(md, 12.0) * 0.05;',
+      ' vec3 mv = v - uMoon * md; float mar = texture2D(tCloud, mv.xz * 22.0 + 0.3).r;',
+      ' vec3 moonCol = vec3(0.86, 0.9, 0.98) * (0.72 + 0.28 * (1.0 - mar * 0.8));',
+      ' float moonOn = step(0.0, uMoon.y) * clamp(night * 1.6, 0.0, 1.0);',
+      ' sky += (moonCol * moonDisc * 2.6 + vec3(0.6, 0.7, 0.9) * moonGlow) * moonOn;',
+      // stars: two layers (big bright, small dense) on a gnomonic projection, plus a faint galaxy band that thickens the small layer
+      ' vec2 sp = v.xz / (v.y + 0.25); vec3 band = normalize(vec3(0.35, 0.28, 1.0)); float bd = dot(v, band); float gal = exp(-bd * bd * 14.0) * up;',
+      ' float starK = clamp(night * 1.8 - 0.15, 0.0, 1.0) * smoothstep(-0.02, 0.15, v.y) * (1.0 - uStorm);',
+      ' vec3 stars = starLayer(sp * 38.0, 0.11, 0.10, 1.0) + starLayer(sp * 110.0 + 3.7, 0.10 + gal * 0.3, 0.075, 0.6) + starLayer(sp * 200.0 + 9.1, 0.05 + gal * 0.45, 0.06, 0.4);',
+      ' sky += (stars * 4.0 + vec3(0.32, 0.26, 0.5) * gal * 0.16 + vec3(0.55, 0.45, 0.66) * gal * gal * 0.14) * starK;',
+      // clouds: two octaves of the shared cloud texture, projected onto a flat layer overhead, drifting on the ground-shadow offset
+      ' vec2 cp = v.xz / (v.y + 0.18); vec2 cuv = cp * 0.085 + uOff * 1.0; vec2 cuv2 = cp * 0.19 + uOff2 * 1.0 + 0.37;',
+      ' vec2 cuv3 = cp * 0.42 + uOff2 * 1.6 + 0.71; float cn = texture2D(tCloud, cuv).r * 0.55 + texture2D(tCloud, cuv2).r * 0.30 + texture2D(tCloud, cuv3).r * 0.15;',
+      ' float cov = mix(0.60, 0.30, uCover); float ca = smoothstep(cov, cov + 0.10, cn) * smoothstep(0.0, 0.10, v.y);',
+      ' ca = max(ca, uStorm * 0.85 * smoothstep(0.0, 0.08, v.y));',
+      ' float thick = smoothstep(cov + 0.04, cov + 0.30, cn);',
+      // cloud shading: lit face toward the sun, shadowed base, a silver lining where the sun shines through the thin edge (> 1.0 → bloom)
+      ' float lit = 0.6 + 0.4 * pow(sd, 1.5); vec3 cday = mix(vec3(1.0, 1.0, 1.0) * lit * 1.05, vec3(0.50, 0.54, 0.64), thick * 0.75);',
+      ' cday = mix(cday, cday * vec3(1.0, 0.8, 0.6), (1.0 - clamp(uSun.y * 2.0, 0.0, 1.0)) * 0.5);',
+      ' vec3 cnight = vec3(0.05, 0.06, 0.09) + moonCol * 0.12 * pow(md, 4.0) * moonOn;',
+      ' vec3 ccol = mix(cnight, cday * (1.0 - uStorm * 0.55), clamp(uDay * 1.2, 0.0, 1.0));',
+      ' float lining = pow(sd, 30.0) * (1.0 - thick) * ca * 1.5 * uDay * (1.0 - uStorm);',
+      ' sky = mix(sky, ccol, ca) + sunCol * lining;',
+      ' gl_FragColor = vec4(sky, 1.0); }'
+    ].join('\n')
+  });
+  const skyDome = new THREE.Mesh(new THREE.SphereGeometry(600, 40, 24), skyMat); skyDome.frustumCulled = false; skyDome.renderOrder = -100; scene3.add(skyDome);
+  /* where the sun (by day) and the moon (by night) stand in the sky, from the game clock: the sun climbs from one horizon
+     at dawn to the other at dusk on the south side of the map; the moon crosses the north side through the night */
+  const _sunD = new THREE.Vector3(), _moonD = new THREE.Vector3();
+  function skyBodies() {
+    const t = G.day, d = clamp((t - .22) / .56, 0, 1);
+    _sunD.set(-Math.cos(d * Math.PI) * .95, -.06 + Math.sin(d * Math.PI) * 1.05, .5).normalize();
+    const nt = ((t - .78 + 1) % 1) / .44;                                   // 0 at dusk → 1 at dawn
+    _moonD.set(-Math.cos(clamp(nt, 0, 1) * Math.PI) * .95, (nt < 0 || nt > 1) ? -1 : -.04 + Math.sin(nt * Math.PI) * .9, -.42).normalize();
+    return { sun: _sunD, moon: _moonD };
+  }
+  function updateSky(day, camPos) {
+    const b = skyBodies();
+    SKY_U.uSun.value.copy(b.sun); SKY_U.uMoon.value.copy(b.moon); SKY_U.uDay.value = day; SKY_U.uTime.value = G.t;
+    SKY_U.uStorm.value = (typeof WX !== 'undefined') ? WX.k : 0;
+    const c = skyCol(G.day);
+    SKY_U.uHor.value.setRGB(c[0] / 255, c[1] / 255, c[2] / 255).convertSRGBToLinear();
+    SKY_U.uZen.value.setRGB(c[0] / 255 * .45, c[1] / 255 * .62, Math.min(1, c[2] / 255 * 1.05)).convertSRGBToLinear();
+    if (day < .05) { SKY_U.uHor.value.multiplyScalar(.55); SKY_U.uZen.value.multiplyScalar(.35); }
+    skyDome.position.copy(camPos);
+  }
   G.pixLock = true;                        // the 2D adaptive-resolution swap is meaningless here
   function size3() { const portrait = innerHeight > innerWidth, w = Math.max(portrait ? 300 : 640, innerWidth), h = Math.max(portrait ? 480 : 400, innerHeight); renderer.setSize(w, h, false); cam3.aspect = w / h; cam3.updateProjectionMatrix(); if (FX.on) fxResize(); }
   /* ======================= post-processing: bloom + sunlight rays =======================
@@ -16045,7 +16179,9 @@ function ctrlHudTick(dt) {
     if (typeof WX !== 'undefined' && WX.flash > 0) { sun.intensity += WX.flash * 2.2; sun.color.lerp(new THREE.Color(.85, .9, 1), WX.flash * .8); }   // lightning: the whole scene strobes cold white
     hemi.intensity = .018 + day * .62;
     envFade(day);                                                         // night: the sky reflection map goes dark with the sky hemi.color.setRGB(c[0] / 255 * .95, c[1] / 255 * .93, c[2] / 255 * .8).convertSRGBToLinear(); hemi.groundColor.setRGB(.36, .34, .18).convertSRGBToLinear();
-    sun.position.set(cxw * K - 40, 70, cyw * K + 30); sun.target.position.set(cxw * K, 0, cyw * K);
+    { // the key light follows the sun across the sky by day (long shadows at dawn and dusk) and the moon by night — never below ~25° so shadows stay readable
+      const sb = skyBodies(), L = day > .05 ? sb.sun : sb.moon, ly = Math.max(.42, L.y), lh = Math.sqrt(Math.max(.05, 1 - ly * ly)), hl = Math.hypot(L.x, L.z) || 1;
+      sun.position.set(cxw * K + L.x / hl * lh * 80, ly * 80, cyw * K + L.z / hl * lh * 80); sun.target.position.set(cxw * K, 0, cyw * K); }
     { // distance haze at 10% of its old density (the old fully-fogged distance now carries only 10% haze), thinned further as the wind picks up
       const fn = 60 + day * 40, far0 = 200 + day * 80 - wx * 60, wsp = Math.hypot(G.wind.x, G.wind.y);
       scene3.fog.near = fn; scene3.fog.far = Math.min(1400, fn + (far0 - fn) * 30 * (1 + Math.min(1, wsp / 50) * .5)); }   // only a trace of haze now (a third of the previous 10%)
@@ -16134,7 +16270,7 @@ function ctrlHudTick(dt) {
   const CHUTE = col3('#e8e4d6'), CHUTE2 = col3('#c96a3a'), CORD = col3('#3a352c');
   const MEAT = c => { const v = rgbOf(c); return v[0] > v[1] * 1.8 || (v[1] > v[0] * 1.6 && v[1] > v[2] * 1.6); };   // red blood or spitter green
   function underBuild(x, y) { if (!G.baseBox || x < G.baseBox.x0 || x > G.baseBox.x1 || y < G.baseBox.y0 || y > G.baseBox.y1) return false; for (const b of G.builds) { if (b.dead) continue; if (Math.abs(x - b.x) < b.w * TS * .5 + 4 && Math.abs(y - b.y) < b.h * TS * .5 + 4) return true; } return false; }
-  const ALTK = .42;                                                   // flight altitude in the 3D scene (fraction of the sim's px altitude) — keeps aircraft clear of the camera when zoomed in
+  const ALTK = .84;                                                   // flight altitude in the 3D scene (fraction of the sim's px altitude) — doubled: every aircraft flies twice as high
   const AIRSC = { littlebird: 1.53, blackhawk: 1.45, apache: 1.45, ac130: 3.1, f16: 1.45 };   // absolute model scales per airframe
   /* ---- articulated guns (AC-130 port-side battery, Apache chin gun): every pivot group in um.g.userData.guns is laid onto ITS OWN
      weapon slot's target each frame — traverse (yaw) and depression (pitch) computed in the airframe's local frame, so bank and
@@ -16205,6 +16341,7 @@ function ctrlHudTick(dt) {
     if (!ctlCam && cam3.fov !== 40) { cam3.fov = 40; cam3.updateProjectionMatrix(); }
     sun.shadow.camera.left = -dist * .9; sun.shadow.camera.right = dist * .9; sun.shadow.camera.top = dist * .9; sun.shadow.camera.bottom = -dist * .9; sun.shadow.camera.updateProjectionMatrix();
     const day = updateLighting3(cxw, cyw); dayNow = day;
+    updateSky(day, cam3.position);
     TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
     const apron = ctlCam ? 1.0 : .3, mgx = CAM.vw * apron, mgy = CAM.vh * apron;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling); the gun camera looks across a much wider patch
     const vx0 = CAM.x - mgx, vx1 = CAM.x + CAM.vw + mgx, vy0 = CAM.y - Math.max(300, mgy), vy1 = CAM.y + CAM.vh + mgy;
@@ -17665,7 +17802,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b161';
+const BUILD_TAG = 'b162';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
