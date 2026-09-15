@@ -893,6 +893,73 @@ kbd{border-radius:8px;font-family:var(--sans)}
   .lobwrap{flex-direction:column}
   #tilt i.t,#tilt i.b{height:8%}
 }
+
+/* ---------- direct control: gun camera HUD (AC-130 / Apache / Abrams / Bradley) ---------- */
+#gunhud{position:absolute;inset:0;z-index:28;display:none;cursor:none;user-select:none;-webkit-user-select:none;touch-action:none;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;color:#d6ffe4;text-shadow:0 0 6px rgba(120,255,170,.45),0 1px 0 rgba(0,0,0,.8);overflow:hidden}
+html.gunctl #gunhud{display:block}
+html.gunctl #hud > *:not(#miniwrap){display:none!important}
+html.gunctl #miniwrap{opacity:.85}
+/* the "digital" video: the WebGL frame itself is filtered — white-hot FLIR by default, black-hot, NVG green or plain colour */
+html.gunctl #gl{filter:grayscale(1) contrast(1.42) brightness(1.04)}
+html.gunctl.ghbh #gl{filter:grayscale(1) invert(1) contrast(1.4) brightness(.96)}
+html.gunctl.ghnvg #gl{filter:grayscale(1) sepia(1) hue-rotate(62deg) saturate(3.2) contrast(1.22) brightness(.92)}
+html.gunctl.ghcol #gl{filter:contrast(1.08) saturate(.85)}
+html.gunctl #tilt{display:none}
+.gh-scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);opacity:.9}
+.gh-vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.6) 100%);box-shadow:inset 0 0 90px rgba(0,0,0,.5)}
+.gh-noise{position:absolute;inset:0;pointer-events:none;opacity:.05;background:repeating-linear-gradient(90deg,rgba(255,255,255,.35) 0 1px,transparent 1px 7px);animation:ghNoise .18s steps(2,end) infinite}
+@keyframes ghNoise{50%{transform:translateX(3px)}}
+.gh-corner{position:absolute;width:52px;height:52px;pointer-events:none;border:2px solid rgba(160,255,200,.55)}
+.gh-corner.tl{left:18px;top:18px;border-right:0;border-bottom:0}.gh-corner.tr{right:18px;top:18px;border-left:0;border-bottom:0}
+.gh-corner.bl{left:18px;bottom:18px;border-right:0;border-top:0}.gh-corner.br{right:18px;bottom:18px;border-left:0;border-top:0}
+.gh-top{position:absolute;left:0;right:0;top:0;height:46px;display:flex;align-items:center;gap:18px;padding:0 84px 0 84px;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;
+  background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,0));pointer-events:none}
+.gh-top b{color:#fff;font-weight:800;letter-spacing:.16em}
+.gh-top .rec{display:inline-flex;align-items:center;gap:6px;color:#ff6a5a}.gh-top .rec i{width:9px;height:9px;border-radius:50%;background:#ff4a3a;box-shadow:0 0 8px #ff4a3a;animation:ghRec 1s steps(1,end) infinite}
+@keyframes ghRec{50%{opacity:.2}}
+.gh-top .sp{flex:1}
+.gh-btn{pointer-events:auto;cursor:pointer;font:inherit;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#d6ffe4;background:rgba(6,14,10,.72);border:1px solid rgba(160,255,200,.55);border-radius:3px;padding:6px 12px;text-shadow:none}
+.gh-btn:hover{background:rgba(60,140,90,.55);color:#fff}
+.gh-btn.x{border-color:rgba(255,120,100,.7);color:#ffd0c8}.gh-btn.x:hover{background:rgba(160,50,40,.6)}
+.gh-tools{position:absolute;right:18px;top:56px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;pointer-events:none}
+.gh-guns{position:absolute;left:22px;top:56px;width:236px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.gh-guns .lab{font-size:10.5px;letter-spacing:.2em;color:rgba(214,255,228,.7);margin-bottom:2px}
+.gh-gun{pointer-events:auto;cursor:pointer;padding:6px 9px;border:1px solid rgba(160,255,200,.32);border-radius:3px;background:rgba(4,10,8,.55);font-size:12px;letter-spacing:.06em;display:flex;flex-direction:column;gap:4px}
+.gh-gun .r{display:flex;align-items:center;gap:8px}.gh-gun .k{width:18px;height:18px;border:1px solid rgba(214,255,228,.7);border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+.gh-gun .n{flex:1;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gh-gun .s{font-size:10px;letter-spacing:.1em;color:#9fe0b8;white-space:nowrap;padding-left:26px}
+.gh-gun .bar{height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden}.gh-gun .bar i{display:block;height:100%;width:0;background:#8dffbe;transition:width .08s linear}
+.gh-gun.sel{border-color:#8dffbe;background:rgba(30,90,58,.55);box-shadow:0 0 14px rgba(141,255,190,.25)}
+.gh-gun.auto{opacity:.72}.gh-gun.auto .k{border-style:dashed}
+.gh-gun.rl .bar i{background:#ffbe63}.gh-gun.rl .s{color:#ffbe63}
+.gh-gun.dry .s{color:#ff6a5a}
+.gh-ret{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
+.gh-ret svg{position:absolute;left:-130px;top:-130px;width:260px;height:260px;overflow:visible}
+.gh-ret .ring{fill:none;stroke:rgba(214,255,228,.9);stroke-width:1.5}
+.gh-ret .tick{stroke:rgba(214,255,228,.9);stroke-width:1.5}
+.gh-ret.hot .ring,.gh-ret.hot .tick{stroke:#ff5a48;filter:drop-shadow(0 0 4px rgba(255,90,72,.8))}
+.gh-ret.warn .ring,.gh-ret.warn .tick{stroke:#ffbe63}
+.gh-ret.off .ring,.gh-ret.off .tick{stroke:rgba(214,255,228,.35);stroke-dasharray:4 4}
+.gh-gunmk{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;display:none}
+.gh-gunmk svg{width:26px;height:26px;overflow:visible}.gh-gunmk path{fill:none;stroke:#ffbe63;stroke-width:1.8}
+.gh-bot{position:absolute;left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;gap:22px;padding:0 84px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0));pointer-events:none;white-space:nowrap}
+.gh-bot .v{color:#fff;font-weight:800}.gh-bot .st{padding:3px 10px;border:1px solid rgba(214,255,228,.6);border-radius:3px}
+.gh-bot .st.hot{border-color:#ff5a48;color:#ffb0a8;background:rgba(120,20,12,.35)}.gh-bot .st.ok{border-color:#8dffbe;color:#c9ffe0;background:rgba(20,80,50,.4)}.gh-bot .st.rl{border-color:#ffbe63;color:#ffe0b0}
+.gh-bot .thr{display:inline-flex;gap:2px;vertical-align:middle}.gh-bot .thr i{width:6px;height:12px;background:rgba(255,255,255,.14)}.gh-bot .thr i.on{background:#8dffbe}.gh-bot .thr i.rv{background:#ffbe63}
+.gh-hint{position:absolute;right:84px;bottom:60px;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(214,255,228,.55);pointer-events:none;white-space:nowrap}
+.gh-flash{position:absolute;inset:0;pointer-events:none;background:#fff;opacity:0}
+.gh-touch{display:none;position:absolute;inset:0;pointer-events:none}
+html.touch .gh-touch{display:block}
+.gh-touch .fire{position:absolute;right:26px;bottom:88px;width:92px;height:92px;border-radius:50%;pointer-events:auto;border:2px solid rgba(255,120,100,.85);background:rgba(120,20,12,.45);color:#ffd0c8;font:800 15px/1 inherit;letter-spacing:.14em;display:flex;align-items:center;justify-content:center}
+.gh-touch .fire:active{background:rgba(255,80,60,.6)}
+.gh-touch .pad{position:absolute;left:26px;bottom:78px;width:150px;height:150px;pointer-events:none;display:none}
+html.touch.ghdrive .gh-touch .pad{display:block}
+.gh-touch .pad button{position:absolute;width:48px;height:48px;pointer-events:auto;border:1px solid rgba(214,255,228,.6);background:rgba(6,14,10,.6);color:#d6ffe4;border-radius:6px;font:800 16px/1 inherit}
+.gh-touch .pad button:active{background:rgba(60,140,90,.6)}
+.gh-touch .pad .u{left:51px;top:0}.gh-touch .pad .d{left:51px;bottom:0}.gh-touch .pad .l{left:0;top:51px}.gh-touch .pad .rr{right:0;top:51px}
+html.touch .gh-hint{display:none}
+@media (max-width:760px){.gh-guns{width:190px;top:50px;left:14px}.gh-top{padding:0 60px 0 14px;font-size:11px;gap:10px}.gh-bot{padding:0 14px;font-size:10.5px;gap:12px}.gh-corner{display:none}.gh-tools{top:50px;right:12px}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
@@ -7920,6 +7987,7 @@ function updateUnits(dt) {
       if (dist2(p.x, p.y, u.x, u.y) < 108 * 108) p.to = u;
     }
 
+    if (u.ctrl && u.ctrl.on && u.ctrl.u === u && u.def.veh && !u.inside) { u.order = null; u.stance = 'aggr'; u.guardX = undefined; driveManual(u, dt); }   // direct control: the player drives; standing orders are dropped
     const o = u.order;
     const rng = unitRange(u);
     const engaged = updateWeapons(u, dt, o);
@@ -8407,6 +8475,7 @@ function updateAircraft(u, dt) {
   let focus = forced || u.tgts[0];
   if (!(focus && !focus.dead && dist2(focus.x, focus.y, u.x, u.y) < (rng * 1.4) * (rng * 1.4)))
     focus = findEnemy(u.x, u.y, u.def.sight * rngMul(u), 0);
+  if (u.ctrl && u.ctrl.on && u.ctrl.u === u && !(o && (o.type === 'move' || o.type === 'amove'))) focus = u.ctrl.pt;   // direct control: the airframe orbits / holds on the player's aim point
 
   if (o && (o.type === 'move' || o.type === 'amove')) {
     // fly to the commanded point; that point becomes the new loiter centre
@@ -8418,6 +8487,14 @@ function updateAircraft(u, dt) {
     // sideways and circles the target while it shoots, and pulls up (guns off the target) when it gets too close
     u.home = { x: focus.x, y: focus.y };
     lbAttack(u, focus, dt, rng);
+  } else if (focus && u.def.rotor && u.ctrl && u.ctrl.on && u.ctrl.u === u && u.def.allWeps[u.ctrl.gun] && u.def.allWeps[u.ctrl.gun].fixed) {
+    /* direct control with the forward-fixed rocket pod selected: the helicopter stops circling, holds a hover inside
+       range and swings its nose onto the sight so the pod can fire down it */
+    u.home = { x: focus.x, y: focus.y };
+    const dd = Math.hypot(focus.x - u.x, focus.y - u.y), pr = weapRange(u, u.def.allWeps[u.ctrl.gun]);
+    if (dd > pr * .8) flyTo(u, focus.x, focus.y, dt, pr * .6);
+    else { u.vx *= Math.pow(.04, dt); u.vy *= Math.pow(.04, dt); u.x = clamp(u.x + u.vx * dt, 8, WW - 8); u.y = clamp(u.y + u.vy * dt, 8, WH - 8); }
+    u.ang = angTo(u.x, u.y, focus.x, focus.y);                       // (the smooth yaw in updateUnits turns the nose onto this at a real rate)
   } else if (focus) {
     // remember where the fighting is, then work the target
     u.home = { x: focus.x, y: focus.y };
@@ -8642,6 +8719,38 @@ function muzzleFor(u, i, w) {
   return { x: bx + Math.cos(a) * off, y: by + Math.sin(a) * off, a, z };
 }
 
+/* ---- direct control helpers ----
+   ctrlOwns: which weapon slots the player holds while a vehicle is under direct control — the selected gun, plus (on a turreted
+   vehicle) the main gun and its coaxial MG, since they are bolted to the one turret the player is steering. Pintle guns that
+   slew on their own mounts stay automatic unless they are the selected gun. */
+function ctrlOwns(u, w, i) {
+  const C = u.ctrl; if (!C || !C.on) return false;
+  if (i === C.gun) return true;
+  if (u.def.tur && !u.def.fly && (i === 0 || w.coax)) return true;
+  return false;
+}
+/* driveManual: WASD tank driving. W/S = throttle forward / reverse (eased, like a tracked hull), A/D = steer (pivot in place
+   when stopped, reversed when backing). Uses the same tryMove collision as ordered movement, so it still crushes what it
+   drives over, leaves tracks and can't pass buildings. Returns true while the player is actually driving. */
+function driveManual(u, dt) {
+  const C = u.ctrl, k = (typeof IN !== 'undefined' && IN.keys) || {}, tk = C.touch || {};
+  const f = ((k.w || k.arrowup || tk.f > 0) ? 1 : 0) - ((k.s || k.arrowdown || tk.f < 0) ? 1 : 0), t = ((k.d || k.arrowright || tk.t > 0) ? 1 : 0) - ((k.a || k.arrowleft || tk.t < 0) ? 1 : 0);
+  const acc = f !== 0 ? 1.7 : 2.6;                                                   // throttle eases in, brakes a little quicker
+  u._thr = (u._thr || 0) + clamp(f - (u._thr || 0), -dt * acc, dt * acc);
+  if (Math.abs(u._thr) < .01 && f === 0) u._thr = 0;
+  const heavy = !!u.def.heavy, rate = (heavy ? 1.0 : 1.4) * (Math.abs(u._thr) > .5 ? .85 : 1), rev = u._thr < -.05 ? -1 : 1;
+  if (t) { const na = u.ang + t * rate * rev * dt; u.ang = Math.atan2(Math.sin(na), Math.cos(na)); }
+  let spd = u.def.spd * u._thr * (u._thr < 0 ? .55 : 1) * (u.slow > 0 ? .45 : 1);
+  const sg = spd < 0 ? -1 : 1, ax = Math.cos(u.ang) * sg, ay = Math.sin(u.ang) * sg;
+  if (spd) spd *= slopeMul(u.x, u.y, ax, ay);
+  const ox = u.x, oy = u.y;
+  if (Math.abs(spd) > .5) tryMove(u, u.x + ax * Math.abs(spd) * dt, u.y + ay * Math.abs(spd) * dt, true, ax, ay, Math.abs(spd), dt);
+  u.vx = (u.x - ox) / dt; u.vy = (u.y - oy) / dt; u.px = u.x; u.py = u.y;
+  u.step = (u.step || 0) + Math.abs(spd) * dt * .17 + (t && Math.abs(spd) < 6 ? dt * 2.2 : 0);   // tracks churn on a pivot turn too
+  C.thr = u._thr; C.spd = Math.hypot(u.vx, u.vy) * sg; C.steer = t;
+  return f !== 0 || t !== 0 || Math.abs(u._thr) > .01;
+}
+
 function updateWeapons(u, dt, order) {
   const ws = u.def.allWeps;
   let engaged = false;
@@ -8652,6 +8761,7 @@ function updateWeapons(u, dt, order) {
   if (cov) sr = Math.max(sr, cov.def.vision * .85); else sr *= nightPenalty(u);
 
   u.pistolOut = false; u.backOff = null;
+  const C = (u.ctrl && u.ctrl.on && u.ctrl.u === u) ? u.ctrl : null;                        // direct control (gun camera): the player owns some of this vehicle's guns
   for (let i = 0; i < ws.length; i++) {
     const w = ws[i];
     if (u.aims[i] === undefined) { u.aims[i] = u.ang; u.cds[i] = rnd(0, .3); u.ammos[i] = w.mag || 0; u.reloads[i] = 0; }
@@ -8659,6 +8769,32 @@ function updateWeapons(u, dt, order) {
     if (u.reloads[i] > 0) {
       u.reloads[i] -= dt;
       if (u.reloads[i] <= 0) u.ammos[i] = w.mag || 0;
+      if (C && ctrlOwns(u, w, i)) { C.st[i] = 'RELOAD'; u.tgts[i] = C.pt; if (i === 0 && u.def.veh) { u.aims[0] = angLerp(u.aims[0], angTo(u.x, u.y, C.pt.x, C.pt.y), 1 - Math.pow(w.slew || .0015, dt)); u.aimT = u.aims[0]; } engaged = true; }
+      continue;
+    }
+    /* ---- direct control: the selected gun (and, on a turreted vehicle, everything else that rides the turret) is laid on the
+         player's aim point instead of hunting; it fires only while the trigger is held, only once the mount has actually
+         slewed onto the point, in range and inside its traverse. Every other gun keeps working on its own exactly as before. ---- */
+    if (C && ctrlOwns(u, w, i)) {
+      const pt = C.pt, want = angTo(u.x, u.y, pt.x, pt.y), d2 = dist2(pt.x, pt.y, u.x, u.y), rng = weapRange(u, w), r2 = rng * rng;
+      if (w.coax) u.aims[i] = u.aims[0];
+      else if (w.fixed) u.aims[i] = u.ang;
+      else u.aims[i] = angLerp(u.aims[i], want, 1 - Math.pow(w.slew || .0015, dt));
+      u.tgts[i] = pt; engaged = true;
+      if (i === 0) u.tang = want;
+      if (u.def.veh && i === 0) u.aimT = u.aims[0];
+      let da = want - u.aims[i]; da = Math.atan2(Math.sin(da), Math.cos(da));
+      const inArc = !w.arc || Math.abs(Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang))) <= w.arc;
+      const onTgt = Math.abs(da) < (w.fixed ? .2 : u.def.fly ? .32 : w.kind === 'bullet' ? .16 : .1);   // an orbiting gunship's mounts always trail the sight a little — they fire through that lag
+      const inRng = d2 <= r2 && !(w.minRng && d2 < w.minRng * w.minRng);
+      C.st[i] = !inArc ? 'NO ARC' : !inRng ? 'RANGE' : !onTgt ? 'SLEW' : u.cds[i] > 0 ? 'CYCLE' : 'READY';
+      if (u.def.fixedGuns && u.pitch !== undefined && !u.landed && w.fixed) continue;   // (Little Birds are never player-controlled; keep their dive logic untouched)
+      if (!(C.fire && C.gun === i)) continue;
+      if (!inArc || !inRng || !onTgt || u.cds[i] > 0) continue;
+      if (w.mag && u.ammos[i] <= 0) { u.reloads[i] = w.reload; AU.reload(u.x, u.y, w.sfx); continue; }
+      fire(u, pt, w, muzzleFor(u, i, w));
+      if (w.mag) u.ammos[i]--;
+      u.cds[i] = w.cd; C.shots = (C.shots || 0) + 1; C.lastShot = G.t;
       continue;
     }
     /* ---- sidearm discipline ----
@@ -12951,6 +13087,19 @@ function cardFor() {
         }
       });
     }
+    if (typeof ctrlCanTake === 'function') {
+      // direct control (gun camera): one AC-130 / Apache / Abrams / Bradley at a time
+      const cu = units.length === 1 ? units[0] : (UI.ctrl && units.indexOf(UI.ctrl.u) >= 0 ? UI.ctrl.u : null);
+      if (cu && ctrlCanTake(cu)) {
+        const on = !!(UI.ctrl && UI.ctrl.u === cu);
+        btns.push({
+          g: '🎯', n: on ? 'Release' : 'Take Control', k: 'G', act: on, cls: on ? '' : 'blink',
+          tip: cu.def.fly ? 'Take the gunner\'s seat: a gun-camera view with a digital sight. Move the mouse to lay the gun, hold the left button to fire, 1 / 2 / 3 switch guns — the guns you are not holding keep firing on their own. Esc / ✕ hands control back.'
+            : 'Take the commander\'s seat: drive with W A S D, lay the gun with the mouse, hold the left button to fire, 1 / 2 / 3 switch weapons. Esc / ✕ hands control back.',
+          fn: () => { if (on) ctrlExit(); else ctrlEnter(cu); AU.ui('ok'); refreshCard(true); }
+        });
+      }
+    }
     if (units.some(u => u.def.fly)) {
       const air = units.filter(u => u.def.fly);
       const on = air.every(u => u.flareOn);
@@ -13246,6 +13395,7 @@ function clampCam() {
   CAM.y = clamp(CAM.y, -60, WH - CAM.vh + 60);
 }
 function updateCamera(dt) {
+  if (UI.ctrl && typeof ctrlCamTick === 'function') { ctrlCamTick(dt); return; }   // direct control: the RTS camera is parked on the gun's aim point
   easeZoom(dt);
   let sx = 0, sy = 0;
   const k = IN.keys;
@@ -13386,6 +13536,7 @@ window.addEventListener('keydown', e => {
   IN.keys[k] = 1;
   IN.keys.shift = e.shiftKey; IN.keys.ctrl = e.ctrlKey;
   if (!G.started) return;
+  if (UI.ctrl && typeof ctrlKey === 'function' && ctrlKey(e)) return;   // direct control: 1/2/3 pick the gun, W A S D drive, Esc releases — nothing else reaches the RTS bindings
 
   if (e.code === 'Space') { focusHQ(); e.preventDefault(); return; }
   if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.pending = null; UI.place = null; UI.tab = null; UI.attackMove = false; refreshConfirm(); refreshCard(true); return; }
@@ -13434,6 +13585,280 @@ window.addEventListener('keyup', e => {
 });
 window.addEventListener('blur', () => { IN.keys = {}; IN.hasMouse = false; });
 cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
+
+/* =====================================================================================================================
+   DIRECT CONTROL — the gunner's seat.
+   One AC-130 / Apache / Abrams / Bradley at a time can be taken over: the 3D camera rides the vehicle's own gun sight
+   (a full-screen "digital" video feed with a crosshair, scan-lines and a FLIR / black-hot / NVG filter), the mouse lays
+   the gun onto a world aim point, the left button fires, 1 / 2 / 3 switch guns, the wheel zooms the sight, and on the
+   tanks W A S D drive the hull. Only the guns the player is holding are manual — every other mount keeps hunting and
+   firing on its own exactly as it does uncontrolled (see updateWeapons / ctrlOwns in 07_sim.js). The RTS camera is
+   parked on the aim point while this is up so the world around the sight is rendered. ✕ / Esc hands control back.
+   ===================================================================================================================== */
+const CTRL_GUNS = {
+  ac130: [{ i: 0, n: '105MM HOWITZER' }, { i: 1, n: '40MM BOFORS' }, { i: 2, n: '25MM GATLING' }],
+  apache: [{ i: 0, n: '30MM CHAIN GUN' }, { i: 1, n: 'HYDRA 70 ROCKETS' }],
+  abrams: [{ i: 0, n: '120MM M256 HE' }, { i: 3, n: '7.62 COAX MG' }, { i: 2, n: '.50 COMMANDER' }, { i: 1, n: '.50 REMOTE STN', auto: true }],
+  stryker: [{ i: 0, n: '25MM M242 CHAIN GUN' }]
+};
+const CTRL_FOV = { ac130: 34, apache: 44, abrams: 42, stryker: 44 };
+const CTRL_FILT = ['FLIR', 'BLACK-HOT', 'NVG', 'COLOUR'], CTRL_FILT_CLS = ['', 'ghbh', 'ghnvg', 'ghcol'];
+
+function ctrlCanTake(u) { return !!(u && !u.dead && !u.remote && u.kind === 'unit' && u.def && CTRL_GUNS[u.t] && (u.owner || 0) === (G.me || 0) && !u.inside && !(u.def.fly && u.landed)); }
+
+function ctrlEnter(u) {
+  if (!ctrlCanTake(u)) return false;
+  if (UI.ctrl) ctrlExit();
+  const list = CTRL_GUNS[u.t];
+  // the aim point starts on whatever the main gun is already working, else a spot out ahead of the mount
+  const t0 = u.tgts && u.tgts[0] && !u.tgts[0].dead ? u.tgts[0] : null;
+  const a0 = u.def.veh && !u.def.fly && u.aimT !== undefined ? u.aimT : (u.ang || 0), d0 = u.def.fly ? Math.min(360, u.def.wep.rng * .6) : 320;
+  const pt = { x: t0 ? t0.x : u.x + Math.cos(a0) * d0, y: t0 ? t0.y : u.y + Math.sin(a0) * d0, vx: 0, vy: 0, dead: false, kind: 'pt', r: 6, hp: 1 };
+  pt.x = clamp(pt.x, 8, WW - 8); pt.y = clamp(pt.y, 8, WH - 8);
+  const C = { on: true, u, gun: list[0].i, list, pt, fire: false, fov: CTRL_FOV[u.t] || 40, st: [], filt: 0, shots: 0, lastShot: -9, touch: { f: 0, t: 0 }, zoom0: CAM.zoom, zoomT0: CAM.zoomT, t0: G.t };
+  UI.ctrl = C; u.ctrl = C;
+  UI.place = null; UI.pending = null; UI.attackMove = false; UI.clearMode = false; UI.moving = null; IN.dragging = false; IN.down = false;
+  CAM.zoomT = undefined; CAM.zoom = Math.max(CAM.zoom * .5, scene.width / 1500); CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
+  ctrlBuildHud();
+  document.documentElement.classList.add('gunctl');
+  document.documentElement.classList.toggle('ghdrive', !u.def.fly);
+  ctrlApplyFilter();
+  ctrlRenderGuns(true);
+  if (typeof AU !== 'undefined' && AU.ui) AU.ui('ok');
+  return true;
+}
+
+function ctrlExit() {
+  const C = UI.ctrl; if (!C) return;
+  const u = C.u;
+  if (u) { if (u.ctrl === C) u.ctrl = null; if (u.tgts) for (let i = 0; i < u.tgts.length; i++) if (u.tgts[i] === C.pt) u.tgts[i] = null; u._thr = 0; }
+  UI.ctrl = null;
+  try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) { }
+  document.documentElement.classList.remove('gunctl', 'ghdrive', ...CTRL_FILT_CLS.filter(Boolean));
+  CAM.zoom = C.zoom0; CAM.zoomT = C.zoomT0; CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
+  if (u && !u.dead) centerOn(u.x, u.y); else centerOn(C.pt.x, C.pt.y);
+  if (typeof refreshCard === 'function') refreshCard(true);
+}
+
+/* the RTS camera sits between the mount and the aim point each frame, so the render's culling window holds both the
+   vehicle (whose mesh the gun camera is attached to) and everything the sight is looking at */
+function ctrlCamTick(dt) {
+  const C = UI.ctrl; if (!C) return;
+  const u = C.u;
+  if (!u || u.dead || !G.started || G.over) { ctrlExit(); return; }
+  CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
+  centerOn((u.x + C.pt.x) * .5, (u.y + C.pt.y) * .5);
+}
+
+/* mouse / touch deltas move the aim point across the ground in the sight's own screen axes: right = right of the
+   picture, up = further away. Sensitivity grows with the distance to the point and shrinks as the sight zooms in. */
+function ctrlAimDelta(dx, dy) {
+  const C = UI.ctrl; if (!C) return;
+  const u = C.u, pt = C.pt;
+  const cy = angTo(u.x, u.y, pt.x, pt.y), d = Math.hypot(pt.x - u.x, pt.y - u.y);
+  const s = clamp(d / 520, .45, 2.4) * (C.fov / 40) * .95;
+  const rx = -Math.sin(cy), ry = Math.cos(cy), fx = Math.cos(cy), fy = Math.sin(cy);
+  pt.x += dx * s * rx - dy * s * fx; pt.y += dx * s * ry - dy * s * fy;
+  ctrlClampAim();
+}
+function ctrlClampAim() {
+  const C = UI.ctrl, u = C.u, pt = C.pt;
+  let maxR = 0; for (const g of C.list) { const w = u.def.allWeps[g.i]; if (w) maxR = Math.max(maxR, weapRange(u, w)); }
+  maxR = maxR * (u.def.fly ? 1.3 : 1.05) || 600;
+  const minR = u.def.fly ? 0 : 120;
+  const dx = pt.x - u.x, dy = pt.y - u.y, d = Math.hypot(dx, dy) || 1;
+  if (d > maxR) { pt.x = u.x + dx / d * maxR; pt.y = u.y + dy / d * maxR; }
+  else if (d < minR) { pt.x = u.x + dx / d * minR; pt.y = u.y + dy / d * minR; }
+  pt.x = clamp(pt.x, 8, WW - 8); pt.y = clamp(pt.y, 8, WH - 8);
+}
+function ctrlSelectGun(slot) {
+  const C = UI.ctrl; if (!C) return;
+  const g = C.list.find(x => x.i === slot); if (!g || g.auto) return;
+  if (C.gun !== slot) { C.gun = slot; ctrlRenderGuns(true); if (typeof AU !== 'undefined' && AU.ui) AU.ui('ok'); }
+}
+function ctrlApplyFilter() {
+  const C = UI.ctrl; if (!C) return;
+  const h = document.documentElement; for (const c of CTRL_FILT_CLS) if (c) h.classList.remove(c);
+  if (CTRL_FILT_CLS[C.filt]) h.classList.add(CTRL_FILT_CLS[C.filt]);
+  const b = document.getElementById('ghFilt'); if (b) b.textContent = 'VIDEO · ' + CTRL_FILT[C.filt];
+  const m = document.getElementById('ghMode'); if (m) m.textContent = 'GUN CAM · ' + CTRL_FILT[C.filt];
+}
+function ctrlKey(e) {
+  const C = UI.ctrl; if (!C) return false;
+  const k = e.key.toLowerCase();
+  if (/^[1-4]$/.test(k) && !e.ctrlKey) { const sel = C.list.filter(g => !g.auto); const g = sel[+k - 1]; if (g) ctrlSelectGun(g.i); e.preventDefault(); return true; }
+  if (k === 'escape') { if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (x) { } } else ctrlExit(); e.preventDefault(); return true; }
+  if (k === 'v') { C.filt = (C.filt + 1) % CTRL_FILT.length; ctrlApplyFilter(); e.preventDefault(); return true; }
+  if (k === '+' || k === '=' || k === ']') { C.fov = clamp(C.fov - 4, 12, 64); e.preventDefault(); return true; }
+  if (k === '-' || k === '_' || k === '[') { C.fov = clamp(C.fov + 4, 12, 64); e.preventDefault(); return true; }
+  if (k === 'w' || k === 'a' || k === 's' || k === 'd' || k.startsWith('arrow')) { e.preventDefault(); return true; }   // driving (read from IN.keys by driveManual)
+  if (k === ' ' || e.code === 'Space') { e.preventDefault(); return true; }
+  return false;
+}
+
+/* ---- the 3D camera pose: at the selected gun's mount, stepped a little out along the sight line, looking at the aim point ---- */
+const _ctv1 = new THREE.Vector3(), _ctv2 = new THREE.Vector3(), _ctv3 = new THREE.Vector3();
+function ctrlCamPose(cam, R) {
+  const C = UI.ctrl; if (!C || !C.on) return false;
+  const u = C.u; if (!u || u.dead) return false;
+  const K = R.K, um = R.unitMeshes.get(u.id);
+  const tgt = _ctv2.set(C.pt.x * K, R.groundY(C.pt.x, C.pt.y) + .3, C.pt.y * K);
+  const eye = _ctv1; let got = false, noStep = false;
+  if (um && um.g.visible) {
+    um.g.updateMatrixWorld(true);
+    const guns = um.g.userData.guns;
+    if (guns && guns.length) { const gd = guns.find(g => g.slot === C.gun) || guns[0]; gd.g.getWorldPosition(eye); got = true; }
+    else if (um.tur) {   // gunner's sight on the turret roof: above and just to the right of the main gun, looking down the barrel line
+      um.tur.getWorldPosition(eye); const sc = um.g.scale.x, hx = tgt.x - eye.x, hz = tgt.z - eye.z, hl = Math.hypot(hx, hz) || 1, fx = hx / hl, fz = hz / hl;
+      eye.x += fx * 1.3 * sc - fz * .5 * sc; eye.z += fz * 1.3 * sc + fx * .5 * sc; eye.y += 1.22 * sc; got = true; noStep = true;
+    }
+  }
+  if (!got) { const alt = u.def.fly ? (u.def.alt || 150) * K * R.ALTK * (u.altK === undefined ? 1 : u.altK) : 1.1; eye.set(u.x * K, R.groundY(u.x, u.y) + alt, u.y * K); }
+  const dir = _ctv3.subVectors(tgt, eye), L = dir.length() || 1; dir.divideScalar(L);
+  if (!noStep) eye.addScaledVector(dir, Math.min(u.def.fly ? 1.5 : .8, L * .3));                       // just outside the skin / over the barrel, never inside the model
+  cam.position.copy(eye); cam.lookAt(tgt); cam.updateMatrixWorld();
+  if (cam.fov !== C.fov) { cam.fov = C.fov; cam.updateProjectionMatrix(); }
+  return true;
+}
+
+/* ---- the HUD: DOM overlay, built once ---- */
+function ctrlBuildHud() {
+  if (document.getElementById('gunhud')) return;
+  const h = document.createElement('div'); h.id = 'gunhud';
+  h.innerHTML = [
+    '<div class="gh-scan"></div><div class="gh-noise"></div><div class="gh-vig"></div><div class="gh-flash" id="ghFlash"></div>',
+    '<div class="gh-corner tl"></div><div class="gh-corner tr"></div><div class="gh-corner bl"></div><div class="gh-corner br"></div>',
+    '<div class="gh-top"><span class="rec"><i></i>REC</span><b id="ghName"></b><span id="ghMode"></span><span class="sp"></span><span id="ghClock"></span></div>',
+    '<div class="gh-tools"><button class="gh-btn x" id="ghClose">✕ CLOSE HUD</button><button class="gh-btn" id="ghFilt">VIDEO · FLIR</button><button class="gh-btn" id="ghZoomIn">ZOOM +</button><button class="gh-btn" id="ghZoomOut">ZOOM −</button></div>',
+    '<div class="gh-guns" id="ghGuns"></div>',
+    '<div class="gh-ret" id="ghRet"><svg viewBox="-130 -130 260 260"><circle class="ring" r="34"/><circle class="ring" r="98" style="opacity:.45"/>',
+    '<line class="tick" x1="-60" y1="0" x2="-40" y2="0"/><line class="tick" x1="40" y1="0" x2="60" y2="0"/><line class="tick" x1="0" y1="-60" x2="0" y2="-40"/><line class="tick" x1="0" y1="40" x2="0" y2="60"/>',
+    '<line class="tick" x1="-8" y1="0" x2="8" y2="0"/><line class="tick" x1="0" y1="-8" x2="0" y2="8"/>',
+    '<line class="tick" x1="-120" y1="0" x2="-104" y2="0" style="opacity:.5"/><line class="tick" x1="104" y1="0" x2="120" y2="0" style="opacity:.5"/><line class="tick" x1="0" y1="-120" x2="0" y2="-104" style="opacity:.5"/><line class="tick" x1="0" y1="104" x2="0" y2="120" style="opacity:.5"/></svg></div>',
+    '<div class="gh-gunmk" id="ghGunMk"><svg viewBox="-13 -13 26 26"><path d="M0 -11 L11 0 L0 11 L-11 0 Z"/><path d="M0 -4 L0 4 M-4 0 L4 0"/></svg></div>',
+    '<div class="gh-bot"><span>RNG <span class="v" id="ghRng">—</span></span><span id="ghAir"></span><span class="st" id="ghStat">—</span><span id="ghDrive"></span><span class="sp" style="flex:1"></span><span id="ghShots"></span></div>',
+    '<div class="gh-hint" id="ghHint"></div>',
+    '<div class="gh-touch"><div class="pad"><button class="u" data-k="w">▲</button><button class="l" data-k="a">◀</button><button class="rr" data-k="d">▶</button><button class="d" data-k="s">▼</button></div><button class="fire" id="ghFire">FIRE</button></div>'
+  ].join('');
+  document.body.appendChild(h);
+  const $g = id => document.getElementById(id);
+  const stopIt = e => { e.stopPropagation(); };
+  $g('ghClose').addEventListener('click', e => { stopIt(e); ctrlExit(); });
+  $g('ghFilt').addEventListener('click', e => { stopIt(e); const C = UI.ctrl; if (!C) return; C.filt = (C.filt + 1) % CTRL_FILT.length; ctrlApplyFilter(); });
+  $g('ghZoomIn').addEventListener('click', e => { stopIt(e); const C = UI.ctrl; if (C) C.fov = clamp(C.fov - 4, 12, 64); });
+  $g('ghZoomOut').addEventListener('click', e => { stopIt(e); const C = UI.ctrl; if (C) C.fov = clamp(C.fov + 4, 12, 64); });
+  for (const b of h.querySelectorAll('.gh-tools button, .gh-touch button')) { b.addEventListener('mousedown', stopIt); b.addEventListener('mouseup', stopIt); b.addEventListener('touchstart', stopIt, { passive: true }); }
+  // mouse: hold LMB to fire (and take the pointer so the sight can slew without limit), move to lay the gun, wheel to zoom
+  h.addEventListener('contextmenu', e => e.preventDefault());
+  h.addEventListener('mousedown', e => {
+    const C = UI.ctrl; if (!C) return;
+    if (typeof AU !== 'undefined' && AU.init) AU.init();
+    if (e.button === 0) { C.fire = true; if (!document.pointerLockElement) { try { const p = h.requestPointerLock(); if (p && p.catch) p.catch(() => { }); } catch (x) { } } }
+    e.preventDefault();
+  });
+  h.addEventListener('mouseup', e => { const C = UI.ctrl; if (!C) return; if (e.button === 0) C.fire = false; });
+  window.addEventListener('mouseup', e => { const C = UI.ctrl; if (C && e.button === 0) C.fire = false; });
+  h.addEventListener('mousemove', e => { const C = UI.ctrl; if (!C) return; ctrlAimDelta(e.movementX || 0, e.movementY || 0); });
+  h.addEventListener('wheel', e => { const C = UI.ctrl; if (!C) return; C.fov = clamp(C.fov + (e.deltaY > 0 ? 3 : -3), 12, 64); e.preventDefault(); }, { passive: false });
+  document.addEventListener('pointerlockchange', () => { const C = UI.ctrl; if (C && !document.pointerLockElement) C.fire = false; });
+  // touch: one finger on the picture slews the sight, the FIRE button shoots, the pad drives
+  let tid = null, tx = 0, ty = 0;
+  h.addEventListener('touchstart', e => { const C = UI.ctrl; if (!C || tid !== null) return; const t = e.changedTouches[0]; if (t.target && t.target.closest && t.target.closest('button,.gh-gun')) return; tid = t.identifier; tx = t.clientX; ty = t.clientY; if (typeof AU !== 'undefined' && AU.init) AU.init(); }, { passive: true });
+  h.addEventListener('touchmove', e => { const C = UI.ctrl; if (!C || tid === null) return; for (const t of e.changedTouches) if (t.identifier === tid) { ctrlAimDelta((t.clientX - tx) * 1.4, (t.clientY - ty) * 1.4); tx = t.clientX; ty = t.clientY; } e.preventDefault(); }, { passive: false });
+  const tend = e => { for (const t of e.changedTouches) if (t.identifier === tid) tid = null; };
+  h.addEventListener('touchend', tend, { passive: true }); h.addEventListener('touchcancel', tend, { passive: true });
+  const fire = $g('ghFire');
+  fire.addEventListener('touchstart', e => { const C = UI.ctrl; if (C) C.fire = true; e.preventDefault(); }, { passive: false });
+  fire.addEventListener('touchend', e => { const C = UI.ctrl; if (C) C.fire = false; e.preventDefault(); }, { passive: false });
+  fire.addEventListener('mousedown', e => { const C = UI.ctrl; if (C) C.fire = true; });
+  fire.addEventListener('mouseup', e => { const C = UI.ctrl; if (C) C.fire = false; });
+  for (const b of h.querySelectorAll('.pad button')) {
+    const k = b.dataset.k;
+    const on = e => { const C = UI.ctrl; if (!C) return; if (k === 'w') C.touch.f = 1; else if (k === 's') C.touch.f = -1; else if (k === 'a') C.touch.t = -1; else C.touch.t = 1; e.preventDefault(); };
+    const off = e => { const C = UI.ctrl; if (!C) return; if (k === 'w' || k === 's') C.touch.f = 0; else C.touch.t = 0; e.preventDefault(); };
+    b.addEventListener('touchstart', on, { passive: false }); b.addEventListener('touchend', off, { passive: false }); b.addEventListener('touchcancel', off, { passive: false });
+    b.addEventListener('mousedown', on); b.addEventListener('mouseup', off); b.addEventListener('mouseleave', off);
+  }
+}
+
+/* the gun list on the left: key, name, live status (READY / SLEWING / CYCLING / RELOADING / OUT OF RANGE / NO ARC / AUTO) and a cycle / magazine bar */
+function ctrlRenderGuns(rebuild) {
+  const C = UI.ctrl; if (!C) return;
+  const u = C.u, box = document.getElementById('ghGuns'); if (!box) return;
+  const ws = u.def.allWeps;
+  if (rebuild || box.childElementCount !== C.list.length + 1) {
+    let html = '<div class="lab">WEAPONS · 1 2 3 SELECT</div>'; let n = 0;
+    for (const g of C.list) { const key = g.auto ? 'A' : String(++n); html += '<div class="gh-gun' + (g.i === C.gun ? ' sel' : '') + (g.auto ? ' auto' : '') + '" data-i="' + g.i + '"><div class="r"><span class="k">' + key + '</span><span class="n">' + g.n + '</span></div><div class="s">—</div><div class="bar"><i></i></div></div>'; }
+    box.innerHTML = html;
+    for (const el of box.querySelectorAll('.gh-gun')) { el.addEventListener('mousedown', e => { e.stopPropagation(); }); el.addEventListener('click', e => { e.stopPropagation(); ctrlSelectGun(+el.dataset.i); }); el.addEventListener('touchstart', e => { e.stopPropagation(); ctrlSelectGun(+el.dataset.i); }, { passive: true }); }
+    const nm = document.getElementById('ghName'); if (nm) nm.textContent = u.def.name.toUpperCase();
+    const hint = document.getElementById('ghHint'); if (hint) hint.textContent = (u.def.fly ? 'MOUSE AIM · HOLD LMB FIRE · 1-3 GUN · WHEEL ZOOM · V VIDEO · ESC EXIT' : 'WASD DRIVE · MOUSE AIM · HOLD LMB FIRE · 1-3 WEAPON · WHEEL ZOOM · V VIDEO · ESC EXIT');
+  }
+  const els = box.querySelectorAll('.gh-gun');
+  for (let k = 0; k < C.list.length; k++) {
+    const g = C.list[k], el = els[k], w = ws[g.i]; if (!el || !w) continue;
+    const i = g.i, rl = u.reloads && u.reloads[i] > 0, cd = u.cds ? u.cds[i] : 0;
+    let st, frac, cls = '';
+    if (g.auto) { const t = u.tgts && u.tgts[i]; st = rl ? 'AUTO · RELOAD' : (t && !t.dead ? 'AUTO · FIRING' : 'AUTO · SEARCH'); frac = rl ? 1 - u.reloads[i] / w.reload : (w.mag ? u.ammos[i] / w.mag : 1); if (rl) cls = 'rl'; }
+    else if (rl) { st = 'RELOAD ' + Math.round((1 - u.reloads[i] / w.reload) * 100) + '%'; frac = 1 - u.reloads[i] / w.reload; cls = 'rl'; }
+    else if (w.mag && u.ammos[i] <= 0) { st = 'EMPTY'; frac = 0; cls = 'dry'; }
+    else if (cd > 0 && w.cd >= .3) { st = 'CYCLING'; frac = 1 - cd / w.cd; }
+    else { const s = C.st[i] || 'READY'; st = s === 'SLEW' ? 'SLEWING' : s === 'RANGE' ? 'OUT OF RANGE' : s === 'CYCLE' ? 'READY' : s; frac = w.mag ? u.ammos[i] / w.mag : 1; if (s === 'RANGE' || s === 'NO ARC') cls = 'dry'; }
+    if (w.mag && !rl) st += ' · ' + u.ammos[i] + '/' + w.mag;
+    el.className = 'gh-gun' + (i === C.gun ? ' sel' : '') + (g.auto ? ' auto' : '') + (cls ? ' ' + cls : '');
+    const sEl = el.querySelector('.s'); if (sEl.textContent !== st) sEl.textContent = st;
+    el.querySelector('.bar i').style.width = Math.round(clamp(frac, 0, 1) * 100) + '%';
+  }
+}
+
+/* per-frame HUD refresh: range, air data / drive data, sight state, the gun-position marker (where the barrel actually points right now) */
+function ctrlHudTick(dt) {
+  const C = UI.ctrl; if (!C) return;
+  const u = C.u;
+  if (!u || u.dead || !G.started || G.over || G.units.indexOf(u) < 0) { ctrlExit(); return; }
+  if (u.ctrl !== C) u.ctrl = C;
+  const $g = id => document.getElementById(id);
+  ctrlRenderGuns(false);
+  const w = u.def.allWeps[C.gun], pt = C.pt, d = Math.hypot(pt.x - u.x, pt.y - u.y);
+  const rng = $g('ghRng'); if (rng) rng.textContent = Math.round(d / TS * 10) + ' M';
+  const st = C.st[C.gun] || 'READY', rl = u.reloads && u.reloads[C.gun] > 0;
+  const sEl = $g('ghStat');
+  if (sEl) {
+    let txt, cls;
+    if (rl) { txt = 'RELOADING'; cls = 'rl'; }
+    else if (st === 'NO ARC') { txt = 'OUTSIDE GUN ARC — TURNING'; cls = 'hot'; }
+    else if (st === 'RANGE') { txt = 'OUT OF RANGE'; cls = 'hot'; }
+    else if (st === 'SLEW') { txt = 'SLEWING'; cls = 'rl'; }
+    else if (C.fire) { txt = 'FIRING'; cls = 'hot'; }
+    else { txt = 'ON TARGET · READY'; cls = 'ok'; }
+    if (sEl.textContent !== txt) sEl.textContent = txt; sEl.className = 'st ' + cls;
+  }
+  const ret = $g('ghRet'); if (ret) ret.className = 'gh-ret' + (rl || st === 'RANGE' || st === 'NO ARC' ? ' off' : st === 'SLEW' ? ' warn' : C.fire ? ' hot' : '');
+  const air = $g('ghAir');
+  if (air) {
+    if (u.def.fly) { const hdg = Math.round(((u.ang || 0) * 180 / Math.PI + 90 + 720) % 360), alt = Math.round((u.def.alt || 150) * (u.altK === undefined ? 1 : u.altK) * 3.2), spd = Math.round(Math.hypot(u.vx || 0, u.vy || 0) / TS * 10 * 3.6); air.innerHTML = 'ALT <span class="v">' + alt + ' FT</span> &nbsp; HDG <span class="v">' + String(hdg).padStart(3, '0') + '</span> &nbsp; GS <span class="v">' + spd + ' KT</span>' + (u.def.orbit ? ' &nbsp; ORBIT' : ''); }
+    else { const spd = Math.round((C.spd || 0) / TS * 10 * 3.6), hdg = Math.round(((u.ang || 0) * 180 / Math.PI + 90 + 720) % 360); air.innerHTML = 'HDG <span class="v">' + String(hdg).padStart(3, '0') + '</span> &nbsp; SPD <span class="v">' + spd + ' KM/H</span>'; }
+  }
+  const dr = $g('ghDrive');
+  if (dr) {
+    if (u.def.fly) { if (dr.innerHTML) dr.innerHTML = ''; }
+    else { const th = C.thr || 0; let s = 'THR <span class="thr">'; for (let k = -3; k <= 5; k++) { const on = k < 0 ? th <= (k + .5) / 3 : k === 0 ? true : th >= k / 5 - .05; s += '<i class="' + (k < 0 && on ? 'rv' : k > 0 && on ? 'on' : k === 0 ? 'on' : '') + '"></i>'; } s += '</span>' + (Math.abs(th) < .02 && !C.steer ? ' HOLD' : th < -.02 ? ' REVERSE' : C.steer ? (C.steer < 0 ? ' LEFT' : ' RIGHT') : ' FORWARD'); dr.innerHTML = s; }
+  }
+  const sh = $g('ghShots'); if (sh) sh.textContent = 'RDS ' + (C.shots || 0) + ' · T+' + Math.max(0, Math.round(G.t - C.t0)) + 'S';
+  const ck = $g('ghClock'); if (ck) { const dd = new Date(); ck.textContent = String(dd.getHours()).padStart(2, '0') + ':' + String(dd.getMinutes()).padStart(2, '0') + ':' + String(dd.getSeconds()).padStart(2, '0') + ' Z'; }
+  // where the barrel actually points right now (it lags the sight while the mount slews): projected onto the picture
+  const mk = $g('ghGunMk');
+  if (mk && G._r3d && G._r3d.toScreen && u.aims) {
+    const a = u.aims[C.gun] !== undefined ? u.aims[C.gun] : (u.aimT !== undefined ? u.aimT : u.ang);
+    const gx = u.x + Math.cos(a) * d, gy = u.y + Math.sin(a) * d;
+    const s = G._r3d.toScreen(gx, gy, G._r3d.groundY(gx, gy) + .3);
+    const cw = cv.getBoundingClientRect(), kx = cw.width / cv.width, ky = cw.height / cv.height;
+    if (s[2] < 1 && s[0] > 0 && s[0] < cv.width && s[1] > 0 && s[1] < cv.height) { mk.style.display = 'block'; mk.style.left = (s[0] * kx) + 'px'; mk.style.top = (s[1] * ky) + 'px'; }
+    else mk.style.display = 'none';
+  }
+  // a brief white flash on the feed each time the held gun fires a heavy round
+  const fl = $g('ghFlash'); if (fl) { const age = G.t - (C.lastShot || -9); fl.style.opacity = (w && w.cd >= .3 && age < .12) ? String(.35 * (1 - age / .12)) : '0'; }
+}
 
 /* ============================ 3D RENDERER ============================
    Draws the ORIGINAL simulation in three.js. Nothing about gameplay changes:
@@ -14849,7 +15274,8 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       g.add(box(.5, .3, .36, GLASS, .5, .96, 0)); g.add(box(.45, .28, .34, GLASS, 1.02, .82, 0)); g.add(box(.2, .22, .34, GLASS, 1.3, .74, 0, 0, 0, -.6));   // flat-panel canopies, sloped front screen
       g.add(box(.52, .02, .38, FRAME, .5, 1.11, 0)); g.add(box(.02, .3, .38, FRAME, .76, .96, 0)); g.add(box(.02, .28, .36, FRAME, 1.25, .82, 0)); g.add(box(.47, .02, .36, FRAME, 1.02, .96, 0));   // canopy frames
       g.add(box(.4, .3, .36, AP, 1.42, .56, 0)); g.add(cyl(.15, .15, .3, DK, 1.62, .52, 0, 'x')); g.add(box(.1, .12, .18, matFor('#0f2030', { roughness: .2, metalness: .4 }), 1.72, .54, .02));   // nose + TADS/PNVS turret with sensor window
-      g.add(box(.14, .12, .14, DK, 1.05, .32, 0)); g.add(cyl(.03, .03, .55, BARREL, 1.38, .3, 0, 'x')); g.add(box(.08, .08, .1, DK, 1.2, .3, 0));   // M230 chin gun cradle + barrel
+      { const CG = new THREE.Group(); CG.position.set(1.05, .32, 0); CG.add(box(.14, .12, .14, DK, 0, 0, 0)); const bar = new THREE.Group(); bar.add(cyl(.03, .03, .55, BARREL, .33, -.02, 0, 'x')); bar.add(box(.08, .08, .1, DK, .15, -.02, 0)); CG.add(bar); g.add(CG);   // M230 chin gun: cradle + barrel on a pivot that slews (±135°) and depresses onto the gun's own target
+        g.userData.guns = [{ g: CG, bar, slot: 0, axis: 'x', yawLim: 2.356, pitMin: -1.2, pitMax: .2, rest: 0, rate: 2.6, kick: .05, cy: 0, cp: 0 }]; }
       for (const s of [-1, 1]) { g.add(cyl(.14, .13, .95, AP, -.2, .8, s * .34, 'x')); g.add(cyl(.1, .09, .2, DK, -.72, .8, s * .34, 'x')); g.add(box(.2, .1, .14, DK, .25, .82, s * .4)); }   // engine nacelles, exhaust cans, intake FOD screens
       g.add(box(.36, .06, 1.7, AP, .05, .7, 0)); g.add(box(.36, .04, .5, APD, .05, .74, 0));                                             // stub wings + root fairing
       for (const s of [-1, 1]) {
@@ -14897,10 +15323,13 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       g.add(plate([[-2.7, 1.0], [-2.85, 1.98], [-2.97, 1.98], [-2.97, 1.0]], .085, FUSD, 'xy'));                                            // rudder
       g.add(plate([[-1.3, .78], [-1.95, .95], [-1.95, .78]], .06, FUS, 'xy'));                                                              // dorsal fillet
       for (const sd of [-1, 1]) { g.add(plate([[-2.3, sd * .3], [-2.55, sd * 1.3], [-2.95, sd * 1.3], [-2.9, sd * .3]], .06, FUS, 'xz', .95)); g.add(plate([[-2.78, sd * .35], [-2.85, sd * 1.25], [-2.96, sd * 1.25], [-2.96, sd * .35]], .065, FUSD, 'xz', .95)); }   // tailplanes + elevators
-      // port-side armament: 105 mm howitzer aft, 40 mm Bofors amidships, 25 mm gatling forward — every barrel out through the left skin
-      g.add(box(.3, .24, .16, DK, -.7, .52, -.36)); g.add(cyl(.055, .055, .8, BARREL, -.7, .5, -.6, 'z')); g.add(cyl(.08, .08, .14, DK, -.7, .5, -.95, 'z'));
-      g.add(box(.26, .2, .14, DK, .0, .52, -.36)); g.add(cyl(.038, .038, .7, BARREL, .0, .5, -.6, 'z')); g.add(cyl(.05, .05, .08, DK, .0, .5, -.92, 'z'));
-      g.add(box(.2, .18, .12, DK, .5, .52, -.36)); for (let i = 0; i < 5; i++) g.add(cyl(.014, .014, .55, BARREL, .5 + Math.cos(i / 5 * TAU) * .03, .5 + Math.sin(i / 5 * TAU) * .03, -.55, 'z'));
+      // port-side armament: 105 mm howitzer aft, 40 mm Bofors amidships, 25 mm gatling forward — every barrel out through the left skin.
+      // Each gun is its own pivot group (breech inside the fuselage) so it TRAVERSES and DEPRESSES onto its own target every frame
+      // (see aimGuns): weapon slot 0 = 105 mm, 1 = 40 mm, 2 = 25 mm — the barrel kicks back on recoil, the gatling cluster spins while firing.
+      const guns = g.userData.guns = [];
+      { const G0 = new THREE.Group(); G0.position.set(-.7, .5, -.36); G0.add(box(.3, .24, .16, DK, 0, .02, 0)); const bar = new THREE.Group(); bar.add(cyl(.055, .055, .8, BARREL, 0, 0, -.24, 'z')); bar.add(cyl(.08, .08, .14, DK, 0, 0, -.59, 'z')); G0.add(bar); g.add(G0); guns.push({ g: G0, bar, slot: 0, axis: 'z', yawLim: .5, pitMin: -1.3, pitMax: .12, rest: -.3, rate: 1.5, kick: .16, cy: 0, cp: -.3 }); }
+      { const G1 = new THREE.Group(); G1.position.set(.0, .5, -.36); G1.add(box(.26, .2, .14, DK, 0, .02, 0)); const bar = new THREE.Group(); bar.add(cyl(.038, .038, .7, BARREL, 0, 0, -.24, 'z')); bar.add(cyl(.05, .05, .08, DK, 0, 0, -.56, 'z')); G1.add(bar); g.add(G1); guns.push({ g: G1, bar, slot: 1, axis: 'z', yawLim: .5, pitMin: -1.3, pitMax: .12, rest: -.3, rate: 2.2, kick: .08, cy: 0, cp: -.3 }); }
+      { const G2 = new THREE.Group(); G2.position.set(.5, .5, -.36); G2.add(box(.2, .18, .12, DK, 0, .02, 0)); const gat = new THREE.Group(); for (let i = 0; i < 5; i++) gat.add(cyl(.014, .014, .55, BARREL, Math.cos(i / 5 * TAU) * .03, Math.sin(i / 5 * TAU) * .03, -.19, 'z')); G2.add(gat); g.add(G2); guns.push({ g: G2, bar: gat, gat, slot: 2, axis: 'z', yawLim: .5, pitMin: -1.3, pitMax: .12, rest: -.3, rate: 3.0, kick: 0, cy: 0, cp: -.3 }); }
       g.add(sph(.1, DK, 1.15, .4, -.22)); g.add(box(.06, .06, .06, matFor('#0f2030', { roughness: .2, metalness: .4 }), 1.15, .4, -.31)); g.add(sph(.09, DK, .3, .78, -.42, 1, .8, 1)); g.add(sph(.08, DK, -1.1, .62, -.38));   // AAQ sensor balls: chin, upper port, aft port
       g.add(box(.2, .5, .06, FUSD, 1.0, .62, .32)); for (let i = 0; i < 6; i++) g.add(box(.08, .08, .02, GLASS, -1.1 + i * .3, .7, .32));   // starboard crew door, windows
       g.add(box(.4, .04, .2, DK, -.6, .95, .0)); g.add(cyl(.008, .008, .5, TRACK, .6, 1.2, .0, 'y')); g.add(cyl(.008, .008, .4, TRACK, -1.3, 1.15, .0, 'y'));   // satcom hump, antennae
@@ -15692,6 +16121,36 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
   function underBuild(x, y) { if (!G.baseBox || x < G.baseBox.x0 || x > G.baseBox.x1 || y < G.baseBox.y0 || y > G.baseBox.y1) return false; for (const b of G.builds) { if (b.dead) continue; if (Math.abs(x - b.x) < b.w * TS * .5 + 4 && Math.abs(y - b.y) < b.h * TS * .5 + 4) return true; } return false; }
   const ALTK = .42;                                                   // flight altitude in the 3D scene (fraction of the sim's px altitude) — keeps aircraft clear of the camera when zoomed in
   const AIRSC = { littlebird: 1.53, blackhawk: 1.45, apache: 1.45, ac130: 3.1, f16: 1.45 };   // absolute model scales per airframe
+  /* ---- articulated guns (AC-130 port-side battery, Apache chin gun): every pivot group in um.g.userData.guns is laid onto ITS OWN
+     weapon slot's target each frame — traverse (yaw) and depression (pitch) computed in the airframe's local frame, so bank and
+     attitude are accounted for; rate-limited so the mounts visibly slew like machinery; the barrel kicks back on each round and
+     the gatling cluster spins while it fires. axis 'z' = barrel out the port side (−z), 'x' = forward (+x). ---- */
+  const _gtv = new THREE.Vector3();
+  function aimGuns(u, um, dt) {
+    const guns = um.g.userData.guns; if (!guns) return;
+    um.g.updateMatrixWorld(true);
+    const ws = u.def.allWeps || [u.def.wep];
+    for (let k = 0; k < guns.length; k++) {
+      const gd = guns[k], i = gd.slot, w = ws[i], t = u.tgts && u.tgts[i];
+      let yaw = 0, pit = gd.rest;
+      if (t && !t.dead && w) {
+        const th = groundY(t.x, t.y) + (t.def && t.def.fly ? (t.def.alt || 150) * K * ALTK * (t.altK === undefined ? 1 : t.altK) : .25);
+        _gtv.set(t.x * K, th, t.y * K); gd.g.parent.worldToLocal(_gtv); _gtv.sub(gd.g.position);
+        const L = _gtv.length() || 1;
+        pit = Math.asin(Math.max(-1, Math.min(1, _gtv.y / L)));
+        yaw = gd.axis === 'z' ? Math.atan2(-_gtv.x, -_gtv.z) : Math.atan2(-_gtv.z, _gtv.x);
+        yaw = Math.max(-gd.yawLim, Math.min(gd.yawLim, yaw)); pit = Math.max(gd.pitMin, Math.min(gd.pitMax, pit));
+      }
+      const r = gd.rate * dt;
+      gd.cy += Math.max(-r, Math.min(r, yaw - gd.cy)); gd.cp += Math.max(-r, Math.min(r, pit - gd.cp));
+      if (gd.axis === 'z') gd.g.rotation.set(gd.cp, gd.cy, 0, 'YXZ'); else gd.g.rotation.set(0, gd.cy, gd.cp, 'YZX');
+      // recoil: the barrel slams back into the mount right after a round leaves (cds is reset to the weapon's cd on every shot)
+      const cd = u.cds ? u.cds[i] : 0;
+      if (gd.kick && w && cd > 0 && w.cd >= .3) { const kk = Math.max(0, Math.min(1, (cd - (w.cd - .18)) / .18)); if (gd.axis === 'z') gd.bar.position.z = kk * gd.kick; else gd.bar.position.x = -kk * gd.kick; }
+      else if (gd.kick) { if (gd.axis === 'z') gd.bar.position.z = 0; else gd.bar.position.x = 0; }
+      if (gd.gat) { gd.spin = Math.max(0, Math.min(1, (gd.spin || 0) + ((cd > 0 && t && !t.dead) ? dt * 4 : -dt * 1.2))); gd.gat.rotation.z += dt * 40 * gd.spin; }   // the gatling cluster spins up while firing and winds down after
+    }
+  }
   const gunOf = t => t === 'sniper' || t === 'marksman' ? 'long' : 'rifle';
   const zedMv = zz => { const sp = Math.hypot(zz.vx || 0, zz.vy || 0); const t = Math.min(1, sp / 22); zz._mv = (zz._mv === undefined ? 1 : zz._mv) + (t - (zz._mv === undefined ? 1 : zz._mv)) * .2; return zz._mv; };   // eased stride blend for the horde
   /* a structure under construction: a warm layer-line that climbs the model as it rises, plus a crew of workers circling
@@ -15725,10 +16184,14 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const dist = (CAM.vw * K) / (2 * Math.tan(cam3.fov * Math.PI / 360) * cam3.aspect);
     const tx = cxw * K + SHX * K * .5, tz = cyw * K + SHY * K * .5, ty = groundY(cxw, cyw);
     cam3.position.set(tx, ty + Math.sin(TILT) * dist, tz + Math.cos(TILT) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
+    /* direct-control gun camera: the 3D camera rides the controlled vehicle's gun sight (see 095_control.js) — the RTS camera (CAM)
+       is parked on the aim point by ctrlCamTick so the culling window below still covers everything the gun sees */
+    const ctlCam = (typeof UI !== 'undefined' && UI.ctrl && typeof ctrlCamPose === 'function') ? ctrlCamPose(cam3, { K, ALTK, groundY, unitMeshes }) : false;
+    if (!ctlCam && cam3.fov !== 40) { cam3.fov = 40; cam3.updateProjectionMatrix(); }
     sun.shadow.camera.left = -dist * .9; sun.shadow.camera.right = dist * .9; sun.shadow.camera.top = dist * .9; sun.shadow.camera.bottom = -dist * .9; sun.shadow.camera.updateProjectionMatrix();
     const day = updateLighting3(cxw, cyw); dayNow = day;
     TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
-    const mgx = CAM.vw * .3, mgy = CAM.vh * .3;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling)
+    const apron = ctlCam ? 1.0 : .3, mgx = CAM.vw * apron, mgy = CAM.vh * apron;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling); the gun camera looks across a much wider patch
     const vx0 = CAM.x - mgx, vx1 = CAM.x + CAM.vw + mgx, vy0 = CAM.y - Math.max(300, mgy), vy1 = CAM.y + CAM.vh + mgy;
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
     if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
@@ -16020,7 +16483,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     const live = new Set();
     for (const u of G.units) {
       if (u.dead || u.inside) continue; live.add(u.id);
-      const vis = u.x > vx0 && u.x < vx1 && u.y > vy0 && u.y < vy1; const d = u.def, x = u.x * K, z = u.y * K, gy = groundY(u.x, u.y);
+      const d = u.def, vis = u.x > vx0 && u.x < vx1 && u.y > vy0 && (d.fly ? effY(u) : u.y) < vy1, x = u.x * K, z = u.y * K, gy = groundY(u.x, u.y);   // an aircraft is drawn well above its ground position: it stays on screen while either its airframe or its shadow is in the window
       if (d.veh) {
         let um = unitMeshes.get(u.id); const ut = tierOf(u); if (um && (um.tier || 1) !== ut) { scene3.remove(um.g); unitMeshes.delete(u.id); um = null; }
         if (!um) { um = mkVehicle(d.spr, ut); um.g.scale.setScalar(d.fly ? (AIRSC[d.spr] || 1.45) : (u.r * K) / .9 * (d.spr === 'abrams' ? 1.68 : d.spr === 'stryker' ? 1.92 : d.spr === 'humvee' ? 2.0 : 1)); scene3.add(um.g); unitMeshes.set(u.id, um); }   // aircraft drawn at 3x
@@ -16042,7 +16505,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
             }
             u._pit = (u._pit || 0) + (pitT - (u._pit || 0)) * Math.min(1, rdt * 4); u._rol = (u._rol || 0) + (rolT - (u._rol || 0)) * Math.min(1, rdt * 3.2); u._yw = (u._yw || 0) + (yawT - (u._yw || 0)) * Math.min(1, rdt * 3);
             um.g.rotateY(-u._yw); um.g.rotateX(u._rol); um.g.rotateZ(-u._pit);
-          } else { um.g.rotateZ(Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); } /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
+          } else { um.g.rotateZ(Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); } /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; if (um.g.userData.guns) aimGuns(u, um, Math.max(1e-3, render._dt || .016)); const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
         else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil) um.tur.position.x = -.15 - u.recoil * .12;
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); } }   // roof MGs slew on their own pintles, relative to the turret they ride on
         if (u.order && u.order.lead && !d.fly) { const pl = G.players && G.players[u.owner || 0]; drawBanner(x, gy + u.r * K * .9, z, u.ang, 1.35 * FS, col3(pl && pl.color ? pl.color : '#7dffb2'), col3('#f2f2f2'), u.id); }   // convoy leader flies the pennant
@@ -16394,7 +16857,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     if (typeof drawRain === 'function') drawRain(ctx);
     if (!vig || vigW !== cv.width || vigH !== cv.height) buildVignette(cv.width, cv.height);
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = .7; ctx.drawImage(vig, 0, 0); ctx.globalAlpha = 1;
-    drawCursor(); drawMinimap();
+    if (!(typeof UI !== 'undefined' && UI.ctrl)) drawCursor(); drawMinimap();   // (the gun camera draws its own reticle)
     if (G.cutscene) drawCutscene(ctx);
   };
   /* billboard particle pools (instanced quads: gl_Points are size-capped) */
@@ -16457,7 +16920,7 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
     gh.g.position.set(wx * K, gy, wy * K);
   }
   postFX = function () { };                 // the 2D post pass is not used here
-  G._r3d = { P, PER_FRAME, PROPS, drawFigure, drawFigureC, FIG, MODEL, decals: decalList, crat: () => CRAT, crw: () => CRW, groundY, chunks: chunks3, renderer, scene3, unitMeshes, structMeshes, buildMeshes, wreckMeshes };
+  G._r3d = { P, PER_FRAME, PROPS, drawFigure, drawFigureC, FIG, MODEL, decals: decalList, crat: () => CRAT, crw: () => CRW, groundY, chunks: chunks3, renderer, scene3, unitMeshes, structMeshes, buildMeshes, wreckMeshes, toScreen, cam3, K, ALTK };
 })();
 
 /* ============================ BOOT & LOOP ============================ */
@@ -16744,6 +17207,7 @@ function loop(ts) {
   if (present) render();
   if (typeof AU !== 'undefined' && AU.heliTick) AU.heliTick();
   if (G.started) updateHUD(dt);
+  if (UI.ctrl && typeof ctrlHudTick === 'function') ctrlHudTick(dt);   // direct-control gun camera HUD
 }
 
 function boot() {
@@ -17186,7 +17650,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b159';
+const BUILD_TAG = 'b160';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
