@@ -9995,12 +9995,16 @@ function updateParticles(dt) {
       }
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.kind === 'fire' && p.r >= 3 && p.max >= .45 && PARTS.length < PMAX * .82) {   // every real flame gives off oily black vapour from its tip and spits burning fragments that ride the wind
+      if (Math.random() < dt * 4.5) part('smoke', p.x + rnd(-2, 2), p.y + rnd(-2, 2), wx * .3 + rnd(-6, 6), wy * .3 + rnd(-6, 6), rnd(1.4, 2.8), p.r * .9, 'rgba(22,19,17,1)', { a: .62, z: (p.z || 0) + p.r * 2.4, vz: rnd(26, 62), g: -10, grow: p.r * 1.7, drag: .95, wind: 1 });
+      if (Math.random() < dt * 2.0) part('ember', p.x, p.y, wx * .5 + rnd(-14, 14), wy * .5 + rnd(-14, 14), rnd(.7, 1.7), rnd(.8, 1.7), Math.random() < .5 ? '#ffc860' : '#ff8030', { glow: 1, z: (p.z || 0) + p.r * 1.6, vz: rnd(40, 120), g: 30, drag: .97, wind: 1 });
+    }
     if (p.trail && Math.random() < dt * p.trail && G.parts.length < PMAX) part(p.trailK || 'smoke', p.x, p.y, rnd(-6, 6), rnd(-6, 6), rnd(.35, .7), p.r * (p.trailR || 1.6), p.trailC || 'rgba(96,84,72,1)', { z: p.z, vz: rnd(4, 18), grow: p.r * 3, drag: .94, wind: 1, a: .55, glow: p.trailK === 'fire' ? 1 : 0 });   // burning debris streams a smoke / flame trail behind it
     const dr = dt60 === 1 ? p.drag : Math.pow(p.drag, dt60);
-    if (p.wind) {
+    if (p.wind || p.kind === 'fire') {
       // aerodynamic: drag acts on the velocity RELATIVE to the air, so a puff decelerates into the wind stream
-      // and is carried along it; light smoke/dust follows the air almost fully, heavier debris only partly
-      const k = (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog') ? .85 : .55, ax = wx * k, ay = wy * k;
+      // and is carried along it; light smoke/dust follows the air almost fully, heavier debris only partly; every flame streams downwind
+      const k = (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog') ? .85 : p.kind === 'fire' ? .5 : .55, ax = wx * k, ay = wy * k;
       p.vx = ax + (p.vx - ax) * dr; p.vy = ay + (p.vy - ay) * dr;
       if (k > .8) { const tb = 26 * dt; p.vx += rnd(-tb, tb); p.vy += rnd(-tb, tb); }   // eddies
     } else { p.vx *= dr; p.vy *= dr; }
@@ -10035,6 +10039,8 @@ function updateParticles(dt) {
   }
   // compact: survivors already sit in [0, w); anything spawned during this pass (flare trails) sits past n0 and is pulled down
   const nl = PARTS.length; for (let i = n0; i < nl; i++) PARTS[w++] = PARTS[i]; PARTS.length = w;
+  // fire spreads: a few flames a tick are checked against the ground they stand on — dry grass catches and a tree trunk close by starts to burn
+  if (w && G.started) { G._ignT = (G._ignT || 0) + dt; if (G._ignT > .12) { G._ignT = 0; G._ignN = 0; for (let k = 0; k < 14; k++) { const p = PARTS[(Math.random() * w) | 0]; if (!p || p.kind !== 'fire' || p.max < .4 || p.r < 3 || (p.z || 0) > 26) continue; igniteAt(p.x, p.y, false); } } }
 }
 
 /* ==================== CAMP (infantry field camp) ====================
@@ -10251,6 +10257,53 @@ function napalmBurst(x, y) {
   addShake(x, y, 8);
   G.lights.push({ x, y, r: 420, c: [255, 160, 70], i: 3.2 });
 }
+/* ---- fire spreading to the ground cover: dry grass / tufts scorch away (bare for 30 s, regrown a minute after they caught),
+   and any tree standing in the flames starts to burn — a burning tree throws flames up its trunk and through its crown,
+   pours black smoke, sheds embers, sets its neighbours and the grass around it alight downwind, and after ~10 s comes
+   down as a charred fall; it regrows a minute later. Bounded: at most 6 new ignitions a tick. ---- */
+function igniteAt(x, y, fromTree) {
+  if ((G._ignN || 0) >= 6) return false;
+  const tx = (x / TS) | 0, ty = (y / TS) | 0; if (!inMap(tx, ty)) return false;
+  const tt = MAP.t[tileIdx(tx, ty)]; let lit = false;
+  if ((tt === T_GRASS || tt === T_FOREST || tt === T_SWAMP) && grassFlat(x, y) < .3 && Math.random() < (fromTree ? .6 : .4)) {   // fresh tufts → they burn off
+    grassWipe(x, y, 7, 30); fxGrassBurn(x, y, 9); decal(x, y, 7, '#141009', .5); lit = true; G._ignN = (G._ignN || 0) + 1;   // the tufts burn off and leave a black scorch until they regrow
+  }
+  const ps = chunkProps((x / CH) | 0, (y / CH) | 0);
+  for (let i = 0; i < ps.length; i++) {
+    const q = ps[i]; if (q.s !== 'tree' || G.deadProps.has(q.id)) continue;
+    const tr = 8 + q.sc * 5; if (dist2(q.x, q.y, x, y) > tr * tr) continue;
+    if (!G.burnTrees) G.burnTrees = new Map();
+    if (G.burnTrees.has(q.id)) continue;
+    if (Math.random() < (fromTree ? .5 : .55)) { G.burnTrees.set(q.id, { id: q.id, x: q.x, y: q.y, sc: q.sc, t: 0, dur: rnd(8, 12), sp: rnd(.8, 1.6) }); lit = true; G._ignN = (G._ignN || 0) + 1; }
+    break;
+  }
+  return lit;
+}
+function updateBurnTrees(dt) {
+  const B = G.burnTrees; if (!B || !B.size) return;
+  const wx = G.wind.x, wy = G.wind.y, camx = CAM.x + CAM.vw / 2, camy = CAM.y + CAM.vh / 2;
+  for (const [id, b] of B) {
+    b.t += dt; b.sp -= dt;
+    if (G.deadProps.has(id)) { B.delete(id); continue; }
+    const H = 26 + b.sc * 30, k = b.t < 1.2 ? b.t / 1.2 : 1, near = dist2(b.x, b.y, camx, camy) < 2400 * 2400;
+    if (near && G.parts.length < PMAX * .85) {
+      if (Math.random() < dt * 22 * k) { const up = Math.random(); part('fire', b.x + rnd(-6, 6) * (1 + up * b.sc), b.y + rnd(-4, 4) * (1 + up * b.sc), wx * .3 + rnd(-8, 8), wy * .3 + rnd(-8, 8), rnd(.55, 1.2), rnd(5, 10) * (.7 + b.sc * .3), Math.random() < .4 ? '#ffd060' : '#ff7a26', { glow: 1, grow: 12, z: 4 + up * H, vz: rnd(30, 70), g: -30, drag: .92 }); }   // flames up the trunk and through the crown
+      if (Math.random() < dt * 6 * k) part('smoke', b.x + rnd(-8, 8), b.y + rnd(-6, 6), wx * .5 + rnd(-8, 8), wy * .5 + rnd(-8, 8), rnd(2.8, 4.8), rnd(10, 16), 'rgba(24,20,18,1)', { a: .85, z: H * rnd(.7, 1.1), vz: rnd(30, 70), g: -12, grow: 26, drag: .95, wind: 1 });
+      if (Math.random() < dt * 5 * k) part('ember', b.x + rnd(-6, 6), b.y + rnd(-4, 4), wx * .6 + rnd(-20, 20), wy * .6 + rnd(-20, 20), rnd(.9, 2), rnd(1, 2), '#ffb040', { glow: 1, z: H * rnd(.5, 1.1), vz: rnd(30, 100), g: 40, drag: .97, wind: 1 });
+      if (Math.random() < dt * 3) part('leaf', b.x + rnd(-10, 10), b.y + rnd(-8, 8), wx * .4 + rnd(-20, 20), wy * .4 + rnd(-20, 20), rnd(.8, 1.6), rnd(1.2, 2.2), '#2a2018', { z: H * rnd(.6, 1), vz: rnd(-10, 20), vr: rnd(-8, 8), g: 120, drag: .95, wind: 1 });   // charred leaves flutter down
+    }
+    G.lights.push({ x: b.x, y: b.y, r: 90 + b.sc * 40, c: [255, 150, 60], i: .9 * k });
+    for (const z of G.zeds) if (!z.dead && dist2(z.x, z.y, b.x, b.y) < 26 * 26) z.burn = Math.max(z.burn || 0, 1.5);                          // anything under the burning crown catches
+    if (b.sp <= 0) { b.sp = rnd(1.4, 2.4); igniteAt(b.x + wx * .35 + rnd(-30, 30), b.y + wy * .35 + rnd(-24, 24), true); }             // and it spreads — downwind
+    if (b.t >= b.dur) {                                                                                                                   // burnt through: the charred tree comes down, regrows a minute later
+      B.delete(id); G.deadProps.set(id, G.t + 60);
+      fxDebris(b.x, b.y, 8, '#2a1e14'); grassWipe(b.x, b.y, 10, 30); scorchDecal(b.x, b.y, 12 + b.sc * 6);
+      for (let l = 0; l < 10; l++) part('leaf', b.x + rnd(-10, 10), b.y + rnd(-10, 10), rnd(-30, 30), rnd(-30, 30), rnd(.6, 1.3), rnd(1.4, 2.4), l & 1 ? '#2a2018' : '#3a2a1c', { z: rnd(10, 40), vz: rnd(10, 40), g: 200, drag: .95, wind: 1 });
+      for (let l = 0; l < 6; l++) part('smoke', b.x + rnd(-8, 8), b.y + rnd(-8, 8), rnd(-10, 10), rnd(-10, 10), rnd(2, 3.5), rnd(8, 14), 'rgba(40,34,30,1)', { a: .7, z: rnd(4, 30), vz: rnd(20, 50), grow: 20, drag: .95, wind: 1 });
+      if (typeof AU !== 'undefined' && AU.treeFall) AU.treeFall(b.x, b.y);
+    }
+  }
+}
 /* a pool of burning napalm: flames and oily black smoke rolling downwind, everything that steps in it catches fire */
 function addFirePool(x, y, r, dur) { (G.firePools || (G.firePools = [])).push({ x, y, r, t: 0, dur: dur || 9, ig: 0 }); grassWipe(x, y, r * .9, 30); scorchDecal(x, y, r * .8); }   // the ground is bare for 30 s then regrows over 30: back in a minute
 function updateFirePools(dt) {
@@ -10436,7 +10489,7 @@ function step(dt) {
   updateItems(dt);
   updateProps(dt); if (SP) SP('items_props');
   updateParticles(dt); if (SP) SP('particles');
-  updateShocks(dt); updateStrikes(dt); updateFlybys(dt); updateFirePools(dt);   // blast pressure rings, dev strikes (artillery / napalm / nuke), fly-past jets, burning napalm
+  updateShocks(dt); updateStrikes(dt); updateFlybys(dt); updateFirePools(dt); updateBurnTrees(dt);   // blast pressure rings, dev strikes (artillery / napalm / nuke), fly-past jets, burning napalm
   if (G.mode === 'invaders') updateVillages(dt);
   if (typeof updateWeather === 'function') updateWeather(dt);
   G.shake *= Math.pow(.02, dt);
@@ -16944,11 +16997,12 @@ function ctrlHudTick(dt) {
     PF('bullets');
     /* ---- particles from G.parts: wind / gravity / bounces already applied by the sim ---- */
     const smK = (G.smokeOp !== undefined ? G.smokeOp : 1);   // Combat-smoke opacity scale (1 = default), applied to firing/explosion smoke & dust
+    const windSp = Math.hypot(G.wind.x, G.wind.y), windDx = windSp > .5 ? G.wind.x / windSp : 0, windDy = windSp > .5 ? G.wind.y / windSp : 0, flameLean = Math.min(1.6, windSp / 55) * 1.1;   // flames lean downwind, harder the more it blows
     for (const p of G.parts) {
       if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
       const x = p.x * K, z = p.y * K, gy = groundY(p.x, p.y), y = gy + (p.z || 0) * K + .05, a = p.a, k = p.kind;
       const c = rgbOf(p.col || '#ffffff'), r = p.r * K;
-      if (k === 'fire') bb(partsAdd, x, y + .1, z, r * 2.2, c[0], c[1], c[2], a * .9);
+      if (k === 'fire') { const fs = r * 2.0, ln = fs * flameLean; bbF(x, y - fs * .25, z, fs, c[0], c[1], c[2], a, p.seed === undefined ? (p.seed = Math.random()) : p.seed, windDx * ln, windDy * ln); bb(partsAdd, x, y + .1, z, r * 1.5, c[0] * .6, c[1] * .35, c[2] * .15, a * .3); }
       else if (k === 'flash') bb(partsAdd, x, y + .1, z, r * 4, 1, .92, .7, a);
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
       else if (k === 'flare') {   // a magnesium flare: a big flickering orange halo, hot amber body, white-hot core — and it LIGHTS the ground beneath it
@@ -16993,8 +17047,8 @@ function ctrlHudTick(dt) {
     figFrameEnd();
     for (const im of PER_FRAME) flush(im);
     atmosphereFX(dayNow);
-    bbFlush(partsAdd); bbFlush(partsAlpha); bbFlush(partsNoise);
-    if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; partsNoise.geo.instanceCount = 0; }
+    bbFlush(partsAdd); bbFlush(partsAlpha); bbFlush(partsNoise); bbFlush(partsFlame);
+    if (G._r3d && G._r3d.skipBB) { partsAdd.geo.instanceCount = 0; partsAlpha.geo.instanceCount = 0; partsNoise.geo.instanceCount = 0; partsFlame.geo.instanceCount = 0; }
     PF('flush'); renderFrame(dayNow); PF('three_render');
     for (const im of PER_FRAME) im.count = 0;
     growPools();                                                     // any pool that ran dry this frame (huge waves) gets a bigger buffer for the next one
@@ -17041,8 +17095,32 @@ function ctrlHudTick(dt) {
     const pts = new THREE.Mesh(geo, m); pts.frustumCulled = false; scene3.add(pts); geo.instanceCount = 0; return { geo, n: 0, N, mat: m };
   }
   const partsAdd = mkBillboards(THREE.AdditiveBlending, 1.6), partsAlpha = mkBillboards(THREE.NormalBlending, 1.0), partsNoise = mkBillboards(THREE.NormalBlending, .7, true);
+  /* ---- FLAMES: their own billboard system. Each flame is a tall quad standing on its particle position whose top is
+     skewed downwind (iLean, world xz); the shader carves a licking tongue out of the cloud texture scrolling upward —
+     a tapering body that wobbles, a white-yellow core, orange flanks, dark-red ragged edges — instead of a soft disc. ---- */
+  function mkFlames() {
+    const N = 4000, geo = new THREE.InstancedBufferGeometry(), quad = new THREE.PlaneGeometry(1, 1);
+    geo.index = quad.index; geo.setAttribute('position', quad.attributes.position); geo.setAttribute('uv', quad.attributes.uv);
+    geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3)); geo.setAttribute('iCol', new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4)); geo.setAttribute('iSz', new THREE.InstancedBufferAttribute(new Float32Array(N), 1));
+    geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(new Float32Array(N), 1)); geo.setAttribute('iLean', new THREE.InstancedBufferAttribute(new Float32Array(N * 2), 2));
+    for (const k of ['iPos', 'iCol', 'iSz', 'iSeed', 'iLean']) geo.attributes[k].setUsage(THREE.DynamicDrawUsage);
+    const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { tN: { value: TEX.cloud }, uT: { value: 0 } },
+      vertexShader: 'attribute vec3 iPos; attribute vec4 iCol; attribute float iSz; attribute float iSeed; attribute vec2 iLean; varying vec4 vc; varying vec2 vu; varying float vs; void main(){ vc=iCol; vu=uv; vs=iSeed; float ty = uv.y; vec3 wp = iPos + vec3(iLean.x, 0.0, iLean.y) * ty * ty; vec4 mv = modelViewMatrix * vec4(wp, 1.0); mv.xy += vec2(position.x * iSz, (position.y + 0.5) * iSz * 1.9); gl_Position = projectionMatrix * mv; }',
+      fragmentShader: ['varying vec4 vc; varying vec2 vu; varying float vs; uniform sampler2D tN; uniform float uT;',
+        'void main(){ vec2 q = vu; float t = uT * (1.3 + vs * .7) + vs * 9.0;',
+        ' float n1 = texture2D(tN, vec2(q.x * 1.1 + vs * 3.0, q.y * .8 - t * .32)).r; float n2 = texture2D(tN, vec2(q.x * 2.4 - vs * 5.0, q.y * 1.6 - t * .55)).r; float n = n1 * .62 + n2 * .38;',
+        ' float cx = q.x - .5; float width = .5 * (1.0 - q.y * q.y * .88) * (.75 + n * .5);',
+        ' float edge = 1.0 - smoothstep(width * .3, width, abs(cx)); float base = smoothstep(0.0, .1, q.y) * (1.0 - smoothstep(.5, 1.0, q.y * (1.15 - n * .45)));',
+        ' float i = edge * base * (.35 + n * 1.25); i = clamp(i - q.y * .22, 0.0, 1.6); if (i < .03) discard;',
+        ' vec3 col = mix(vec3(1.0, .16, .02), vec3(1.0, .52, .07), clamp(i * 1.25, 0.0, 1.0)); col = mix(col, vec3(1.0, .94, .72), smoothstep(.72, 1.35, i * (1.0 - q.y * .45)));',
+        ' col *= mix(vec3(1.0), vc.rgb * 1.2, .3);',
+        ' gl_FragColor = vec4(col * min(i, 1.25), vc.a * min(i, 1.0)); }'].join('\n') });
+    const pts = new THREE.Mesh(geo, m); pts.frustumCulled = false; scene3.add(pts); geo.instanceCount = 0; return { geo, n: 0, N, mat: m, lean: true };
+  }
+  const partsFlame = mkFlames();
+  const bbF = (x, y, z, sz, r, g, b, a, seed, lx, lz) => { const sys = partsFlame; if (sys.n >= sys.N) return; const A = sys.geo.attributes, i = sys.n++; A.iPos.array[i * 3] = x; A.iPos.array[i * 3 + 1] = y; A.iPos.array[i * 3 + 2] = z; A.iCol.array[i * 4] = r; A.iCol.array[i * 4 + 1] = g; A.iCol.array[i * 4 + 2] = b; A.iCol.array[i * 4 + 3] = a; A.iSz.array[i] = sz; A.iSeed.array[i] = seed; A.iLean.array[i * 2] = lx; A.iLean.array[i * 2 + 1] = lz; };
   const bb = (sys, x, y, z, sz, r, g, b, a, seed) => { if (sys.n >= sys.N) return; const Pp = sys.geo.attributes.iPos.array, C = sys.geo.attributes.iCol.array, S = sys.geo.attributes.iSz.array, i = sys.n++; Pp[i * 3] = x; Pp[i * 3 + 1] = y; Pp[i * 3 + 2] = z; C[i * 4] = r; C[i * 4 + 1] = g; C[i * 4 + 2] = b; C[i * 4 + 3] = a; S[i] = sz; sys.geo.attributes.iSeed.array[i] = seed === undefined ? ((i * 7919) % 1000) / 1000 : seed; };
-  const bbFlush = sys => { const n = Math.max(1, sys.n), A = sys.geo.attributes; sys.geo.instanceCount = sys.n; A.iPos.updateRange.count = n * 3; A.iCol.updateRange.count = n * 4; A.iSz.updateRange.count = n; A.iSeed.updateRange.count = n; A.iPos.needsUpdate = true; A.iCol.needsUpdate = true; A.iSz.needsUpdate = true; A.iSeed.needsUpdate = true; if (sys.mat.uniforms.uT) sys.mat.uniforms.uT.value = G.t || 0; sys.n = 0; };
+  const bbFlush = sys => { const n = Math.max(1, sys.n), A = sys.geo.attributes; sys.geo.instanceCount = sys.n; A.iPos.updateRange.count = n * 3; A.iCol.updateRange.count = n * 4; A.iSz.updateRange.count = n; A.iSeed.updateRange.count = n; A.iPos.needsUpdate = true; A.iCol.needsUpdate = true; A.iSz.needsUpdate = true; A.iSeed.needsUpdate = true; if (sys.lean) { A.iLean.updateRange.count = n * 2; A.iLean.needsUpdate = true; } if (sys.mat.uniforms.uT) sys.mat.uniforms.uT.value = G.t || 0; sys.n = 0; };
   /* ghost footprint for placement / relocation */
   /* placement ghosts: a pool of translucent boxes so a whole shift-placed / dragged blueprint row shows at once, each with an edge outline and a footprint plate on the ground so the exact tiles read clearly */
   const GHOST_MAT = { ok: new THREE.MeshStandardMaterial({ color: lin(0x8dffbe), transparent: true, opacity: .38, depthWrite: false }), bad: new THREE.MeshStandardMaterial({ color: lin(0xff6a5a), transparent: true, opacity: .38, depthWrite: false }), q: new THREE.MeshStandardMaterial({ color: lin(0x7fc8ff), transparent: true, opacity: .34, depthWrite: false }) };
@@ -17815,7 +17893,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b163';
+const BUILD_TAG = 'b164';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
