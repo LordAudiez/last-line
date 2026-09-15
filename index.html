@@ -1468,17 +1468,28 @@ const AU = {
     const c = this.ctx = new AC();
     const m = this.master = c.createGain(); m.gain.value = 0.55; m.connect(c.destination);
 
+    // Output chain = gentle "glue" compressor + a brick-wall limiter. The glue comp is loose (it must NEVER duck the whole
+    // mix toward silence just because a lot is firing — that reads as "the audio turned off"); the limiter after it only
+    // catches true peaks so the sum never clips. Together they keep the battlefield loud and steady under any load.
     const comp = c.createDynamicsCompressor();
-    // gentle: enough to survive twenty guns at once, loose enough that a .50
-    // still lands harder than a carbine instead of being levelled flat
-    comp.threshold.value = -6; comp.knee.value = 8; comp.ratio.value = 3;
-    comp.attack.value = 0.0022; comp.release.value = 0.17;
-    comp.connect(m); this.bus = comp;
+    comp.threshold.value = -3; comp.knee.value = 14; comp.ratio.value = 2;   // loose: barely reduces; a .50 still lands harder than a carbine
+    comp.attack.value = 0.004; comp.release.value = 0.09;
+    const makeup = c.createGain(); makeup.gain.value = 1.25;                 // put back the little the glue comp takes, so heavy fire stays full
+    const limiter = c.createDynamicsCompressor();
+    limiter.threshold.value = -1.5; limiter.knee.value = 0; limiter.ratio.value = 20;   // brick wall: stops clipping without collapsing the body
+    limiter.attack.value = 0.001; limiter.release.value = 0.05;
+    comp.connect(makeup); makeup.connect(limiter); limiter.connect(m);
+    this.bus = comp;
 
     // keep the audio alive: under sustained load, a tab-focus change, or an audio-device switch a browser can quietly
-    // SUSPEND or INTERRUPT the context and everything goes silent until something nudges it. Poll it back to running.
-    if (!this._wd) { const self = this; this._wd = setInterval(() => { try { if (self.ctx && self.ctx.state !== 'running') self.ctx.resume(); } catch (e) {} }, 800);
-      try { document.addEventListener('visibilitychange', () => { try { if (self.ctx && !document.hidden && self.ctx.state !== 'running') self.ctx.resume(); } catch (e) {} }); } catch (e) {} }
+    // SUSPEND or INTERRUPT the context and everything goes silent until something nudges it. Poll it back to running AND —
+    // crucially for mobile — resume on any user gesture, since that's the only thing some browsers accept to un-suspend.
+    if (!this._wd) { const self = this;
+      const wake = () => { try { if (self.ctx && self.ctx.state !== 'running') self.ctx.resume(); } catch (e) {} };
+      this._wd = setInterval(() => { wake(); self._dbgTick(); }, 500);
+      try { document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); }); } catch (e) {}
+      for (const ev of ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'click']) { try { window.addEventListener(ev, wake, { passive: true, capture: true }); } catch (e) {} }
+      try { window.addEventListener('keydown', e => { if (e.key === 'F8') { self.dbgOn = !self.dbgOn; self._dbgTick(); } }); } catch (e) {} }
 
     // soft-clip drive: adds the harmonics that make a gunshot feel like it hits
     const shaper = c.createWaveShaper();
@@ -1610,30 +1621,88 @@ const AU = {
      the duplicates of one type are dropped while every OTHER type still gets through — the mix stays full and never cuts
      out, and the soundscape reads as variety rather than a wall of the same clip. VMAX is a hard ceiling well under where
      the audio engine glitches. */
-  VMAX: 40,   // hard ceiling on SIMULTANEOUS voices — 160 overloaded the audio thread on real hardware and the whole context glitched to silence; 40 is plenty to sound full and never underruns
-  /* Voice metering keyed on the AUDIO CLOCK, not wall-clock timers. Each started sound records its expiry time
-     (start + its fade length) in _active. _gate prunes everything already past its expiry — using ctx.currentTime,
-     which keeps advancing in real time whether or not the tab is throttled — so the counts can never get "stuck"
-     high and silence the game. This was the old bug: setTimeout releases were throttled/dropped when a burst of
-     sounds fired at once, the counter leaked upward, hit the ceiling, and then nothing played at all. */
-  _active: null,
-  _gate(fam, cap, gap) {
-    if (!this.ctx) return true;
-    const now = this.ctx.currentTime, a = this._active || (this._active = []);
-    let k = 0; for (let i = 0; i < a.length; i++) { if (a[i].exp > now) a[k++] = a[i]; }   // drop expired voices (self-healing)
-    a.length = k;
-    if (a.length >= this.VMAX) return false;                          // real ceiling (well under where Web Audio glitches)
-    let famN = 0, lastT = -9; for (let i = 0; i < a.length; i++) { const e = a[i]; if (e.fam === fam) { famN++; if (e.t > lastT) lastT = e.t; } }
-    if (famN >= cap) return false;                                    // too many of this exact sound sounding right now
-    if (gap && now - lastT < gap) return false;                       // one just fired a blink ago — thin it
-    return true;
+  /* ============================================================================
+     VOICE MANAGER — pooled, prioritised, steal-instead-of-reject.
+     ----------------------------------------------------------------------------
+     CORE RULE: the audio system NEVER globally mutes. A capacity problem only
+     ever costs ONE individual low-priority voice, never the whole engine.
+
+     How continuous fire is prevented from exhausting the system:
+       • Every sound belongs to a CATEGORY (weapon / explode / impact / unit /
+         vehicle / ambient / world / ui) each with its own concurrent-voice cap
+         and, for UI, a reserved floor — so one kind of sound can never eat every
+         voice and starve the others.
+       • Every sound also belongs to an EMITTER (a spatial bucket ≈ one unit's
+         position). A single emitter may hold at most EMIT_CAP live voices in a
+         category; a continuously-firing unit's next shot STEALS that unit's own
+         oldest voice, so it cycles through ≤EMIT_CAP voices forever instead of
+         allocating a new one every shot. Five machine-guns firing for ten
+         minutes therefore hold ≤15 voices total and never grow.
+       • When a category or the global pool is full, a new sound does NOT get
+         rejected wholesale — it STEALS the lowest-priority active voice (the most
+         distant / least important) if it outranks it. Only if nothing lower-
+         priority exists is that single sound skipped (counted as "rejected"),
+         and the rest of the battlefield keeps sounding.
+     Priority is dynamic: category weight + nearness-to-listener + a per-call bias.
+     ============================================================================ */
+  MAXV: 56,                 // global ceiling on SIMULTANEOUS active voices (protects the audio thread; well under underrun)
+  EMIT_CAP: 3,              // max live voices one emitter (≈one unit) may hold in a category — this is what bounds continuous fire
+  CATS: { ui:{cap:8}, player:{cap:12}, weapon:{cap:22}, explode:{cap:12}, impact:{cap:12}, unit:{cap:10}, vehicle:{cap:8}, ambient:{cap:6}, world:{cap:5} },
+  CATW: { ui:3, player:2.4, explode:1.5, weapon:1.0, vehicle:.9, unit:.8, impact:.7, world:.6, ambient:.3 },
+  _voices: null,
+  _dbg: { rejected:0, stolen:0, aggregated:0 },
+  _prune(now) { const V=this._voices||(this._voices=[]); let k=0; for(let i=0;i<V.length;i++){ const v=V[i]; if(!v.done && v.exp>now) V[k++]=v; else v.done=true; } V.length=k; return V; },
+  _catN(cat){ const V=this._voices; let n=0; if(V) for(let i=0;i<V.length;i++) if(!V[i].done && V[i].cat===cat) n++; return n; },
+  _steal(v){ if(!v||v.done) return; v.done=true; this._dbg.stolen++; if(v.src){ try{ v.src.stop(); }catch(e){} } },
+  /* reserve a voice for one sound; returns a voice record (attach the source as .src, and set src.onended = rec.rel) or null */
+  claim(cat, x, y, ms, bias){
+    if(!this.ctx) return { rel: ()=>{}, src:null };            // no metering before init — never blocks
+    const now=this.ctx.currentTime, V=this._prune(now);
+    const cd=this.CATS[cat]||this.CATS.world;
+    const d=this.distTo(x,y);
+    const prio=(this.CATW[cat]||.5) + clamp(1.6*(1 - d/2600), 0, 1.6) + (bias||0);
+    const emit=(((x/64)|0)&8191)*8192 + (((y/64)|0)&8191);      // spatial emitter bucket (~2 tiles)
+    // 1) per-emitter reuse: a unit firing continuously recycles its OWN oldest voice instead of allocating a new one
+    let emitN=0, eo=null; for(let i=0;i<V.length;i++){ const v=V[i]; if(v.cat===cat && v.emit===emit){ emitN++; if(!eo||v.t<eo.t) eo=v; } }
+    if(emitN>=this.EMIT_CAP && eo){ this._steal(eo); }
+    // 2) category cap: steal the lowest-priority voice in this category (if we outrank it), else skip this one sound
+    if(this._catN(cat)>=cd.cap){
+      let lo=null; for(let i=0;i<V.length;i++){ const v=V[i]; if(v.done||v.cat!==cat) continue; if(!lo||v.p<lo.p||(v.p===lo.p&&v.t<lo.t)) lo=v; }
+      if(lo && lo.p<=prio) this._steal(lo); else { this._dbg.rejected++; return null; }
+    }
+    // 3) global cap: steal the lowest-priority voice anywhere (never a UI voice, which is reserved), else skip this one sound
+    let live=0; for(let i=0;i<V.length;i++) if(!V[i].done) live++;
+    if(live>=this.MAXV){
+      let lo=null; for(let i=0;i<V.length;i++){ const v=V[i]; if(v.done||v.cat==='ui') continue; if(!lo||v.p<lo.p||(v.p===lo.p&&v.t<lo.t)) lo=v; }
+      if(lo && lo.p<=prio) this._steal(lo); else { this._dbg.rejected++; return null; }
+    }
+    const rec={ cat, emit, p:prio, t:now, exp:now+ms/1000, done:false, src:null };
+    rec.rel=()=>{ rec.done=true; };
+    V.push(rec); if(V.length>256) this._prune(now);
+    return rec;
   },
-  _hold(fam, ms) {                                                    // register a voice we just started; it releases itself once ctx time passes its expiry
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime, a = this._active || (this._active = []);
-    a.push({ fam, t: now, exp: now + ms / 1000 });
-    if (a.length > 400) a.splice(0, a.length - 400);                  // hard safety cap on the bookkeeping array
+  /* live snapshot for the debug overlay */
+  stats(){
+    const V=this._prune(this.ctx?this.ctx.currentTime:0), by={}; let live=0;
+    for(let i=0;i<V.length;i++){ const v=V[i]; if(v.done) continue; live++; by[v.cat]=(by[v.cat]||0)+1; }
+    return { active:live, max:this.MAXV, byCat:by, rejected:this._dbg.rejected, stolen:this._dbg.stolen };
   },
+  /* debug overlay (toggle with F8): live voice usage by category + rejected/stolen counters */
+  dbgOn: false,
+  _dbgTick(){
+    let el = this._dbgEl;
+    if (!this.dbgOn) { if (el) el.style.display='none'; return; }
+    if (!el) { try { el=document.createElement('div'); el.id='auddbg'; el.style.cssText='position:fixed;left:8px;bottom:8px;z-index:99999;font:600 11px/1.45 ui-monospace,Menlo,monospace;color:#8dffbe;background:rgba(6,12,10,.82);border:1px solid #2f4a41;border-radius:6px;padding:7px 9px;pointer-events:none;white-space:pre'; document.body.appendChild(el); this._dbgEl=el; } catch(e){ return; } }
+    el.style.display='block';
+    if (!this.ctx) { el.textContent='AUDIO: not started'; return; }
+    const st=this.stats(); const order=['ui','player','weapon','explode','impact','unit','vehicle','ambient','world'];
+    let lines='AUDIO VOICES  '+st.active+' / '+st.max+'   (F8)\n';
+    for(const c of order){ const cap=this.CATS[c].cap, n=st.byCat[c]||0; const bar='█'.repeat(n)+'·'.repeat(Math.max(0,Math.min(cap,cap)-n)); lines += c.padEnd(8)+' '+String(n).padStart(2)+'/'+String(cap).padStart(2)+' '+bar+'\n'; }
+    lines += 'stolen '+st.stolen+'   rejected '+st.rejected+'   ctx '+this.ctx.state;
+    el.textContent=lines;
+  },
+  /* legacy no-op shims: any sound path not yet routed through claim() still plays (never silenced) */
+  _gate(){ return true; }, _hold(){},
 
   /* Play the baked realistic shot for this weapon family, positioned by the
      distance chain (air absorption + rolling echo). Per-shot pitch/level
@@ -1641,7 +1710,6 @@ const AU = {
   shot(x, y, kind, cd) {
     if (!this.ok || this.muted) return;
     const fam = SFX2FAM[kind] || 'rifle';
-    if (!this._gate(fam, 6, .012)) return;   // at most a few of the same gun's report at once
     // machine guns: the report tightens with the cyclic rate — a faster gun sounds higher and snappier
     const rateK = (fam === 'mg' && cd) ? clamp(Math.pow(.085 / cd, .45), .8, 1.35) : 1;
     const loud = fam === 'tank' ? 2 : 1;                        // the 120mm report is twice as loud as anything else
@@ -1649,11 +1717,11 @@ const AU = {
     if (!buf) return;                  // still loading in the first moments after unlock
     const n = this.place(x, y, (GVOL[fam] || .6) * 1.5, GREACH[fam] || 1500, this.bus);   // every gun +50%
     if (!n) return;
-    this._hold(fam, 220);
+    const V = this.claim('weapon', x, y, 240, loud > 1 ? 1.2 : 0); if (!V) return;   // a firing unit recycles its own voices — continuous fire never exhausts the pool
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.955, 1.05) * rateK;
     const g = c.createGain(); g.gain.value = rnd(.9, 1.06) * (rateK > 1 ? .9 : rateK < 1 ? 1.12 : 1) * loud;
-    s.connect(g); g.connect(dst); s.start(t);
+    s.connect(g); g.connect(dst); s.start(t); V.src = s; s.onended = V.rel;
     // the report ECHOES via ONE shared echo bus: a single send node per shot, scaled by distance (near = dry, far = a
     // longer rolling tail) and the per-gun echo amount. The send is garbage-collected the moment the sound ends. The old
     // path built a whole feedback delay loop PER SHOT that kept running for ~1.2 s, so a heavy firefight stacked hundreds
@@ -1785,25 +1853,23 @@ const AU = {
   gore(x, y, size = 1) {
     if (!this.ok || this.muted) return;
     const buf = this.smp.gore; if (!buf) return this.splat(x, y);
-    if (!this._gate('gore', 5, .012)) return;
     const n = this.place(x, y, .95 * size, 2200, this.bus); if (!n) return;
-    this._hold('gore', 300);
+    const V = this.claim('unit', x, y, 320, .2); if (!V) return;
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.9, 1.08);
     const g = c.createGain(); g.gain.value = rnd(.9, 1.1) * size;
-    s.connect(g); g.connect(dst); s.start(t);
+    s.connect(g); g.connect(dst); s.start(t); V.src = s; s.onended = V.rel;
   },
   /* a body going down — recorded death cry, used for a foot soldier or a zombie/invader dying (falls back to the synth splat) */
   killed(x, y) {
     if (!this.ok || this.muted) return;
     const buf = this.smp.killed; if (!buf) return this.splat(x, y);
-    if (!this._gate('killed', 4, .02)) return;
     const n = this.place(x, y, .18, 2000, this.bus); if (!n) return;   // kill sound cut to 20%
-    this._hold('killed', 1200);
+    const V = this.claim('unit', x, y, 700, 0); if (!V) return;
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.95, 1.06);
     const g = c.createGain(); g.gain.value = rnd(.9, 1.06);
-    s.connect(g); g.connect(dst); s.start(t);
+    s.connect(g); g.connect(dst); s.start(t); V.src = s; s.onended = V.rel;
   },
   /* a round striking flesh — for any bullet/arrow that hits a foot soldier or a zombie (player or enemy). A normal round
      plays one of five recorded meaty impacts at random; a round from a weapon that punches straight through the body
@@ -1812,28 +1878,26 @@ const AU = {
   fleshHit(x, y, pierce) {
     if (!this.ok || this.muted) return;
     const fam = pierce ? 'fleshthru' : 'flesh';
-    if (!this._gate(fam, 5, .02)) return;                              // thin out repeated flesh impacts; other sounds still get through
     const buf = pierce ? (this.smp.fleshthru || this.smp[FLESH_KEYS[(Math.random() * FLESH_KEYS.length) | 0]])
       : this.smp[FLESH_KEYS[(Math.random() * FLESH_KEYS.length) | 0]];
     if (!buf) return this.splat(x, y);
     const n = this.place(x, y, pierce ? .007 : .031, 1600, this.bus); if (!n) return;   // shoot-through impact cut to 20%; the normal hit unchanged
-    this._hold(fam, 500);
+    const V = this.claim('impact', x, y, 300, -.2); if (!V) return;
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.9, 1.1);
     const g = c.createGain(); g.gain.value = rnd(.72, 1);
-    s.connect(g); g.connect(dst); s.start(t);
+    s.connect(g); g.connect(dst); s.start(t); V.src = s; s.onended = V.rel;
   },
   /* generic one-shot recorded sample at a world position — used for the ancient host's melee sounds */
   sampleAt(fam, x, y, vol = .95, reach = 1900, rate = [.96, 1.05]) {
     if (!this.ok || this.muted) return;
     const buf = this.smp[fam]; if (!buf) return this.splat(x, y);
-    if (!this._gate(fam, 3, .03)) return;
     const n = this.place(x, y, vol, reach, this.bus); if (!n) return;
-    this._hold(fam, 1600);
+    const V = this.claim('unit', x, y, 700, .1); if (!V) return;
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(rate[0], rate[1]);
     const g = c.createGain(); g.gain.value = rnd(.92, 1.06) * vol / .95;
-    s.connect(g); g.connect(dst); s.start(t);
+    s.connect(g); g.connect(dst); s.start(t); V.src = s; s.onended = V.rel;
   },
   /* an ancient soldier's finishing move on a fallen trooper — one of two recorded finisher stings, at random */
   finisher(x, y) { this.sampleAt(Math.random() < .5 ? 'fin1' : 'fin2', x, y, 1, 2200); },
@@ -1846,11 +1910,10 @@ const AU = {
   treeFall(x, y, dur = 1.15, size = 1) {
     if (!this.ok || this.muted) return false;
     const buf = this.smp.treefall; if (!buf) return false;
-    if (!this._gate('treefall', 3, .05)) return true;
     const n = this.place(x, y, .9 * Math.min(1.4, size), 2400, this.bus); if (!n) return true;
-    this._hold('treefall', 3200);
+    const V = this.claim('world', x, y, 3200, .2); if (!V) return true;
     const c = this.ctx, { dst, t } = n, rate = rnd(.94, 1.04);
-    const a = c.createBufferSource(); a.buffer = buf; a.playbackRate.value = rate;                    // snap + creak while it tips
+    const a = c.createBufferSource(); a.buffer = buf; a.playbackRate.value = rate; V.src = a; a.onended = V.rel;   // snap + creak while it tips
     const ga = c.createGain(); ga.gain.setValueAtTime(1, t); ga.gain.setValueAtTime(1, t + Math.max(.2, dur - .25)); ga.gain.linearRampToValueAtTime(.0001, t + dur + .08);
     a.connect(ga); ga.connect(dst); a.start(t, 0, Math.min(1.3, dur + .15));
     const lead = .6, crashAt = 2.5;                                                                     // rustle → crash, crash on the impact frame
@@ -1862,21 +1925,20 @@ const AU = {
   blast(x, y, size = 1) {
     if (!this.ok || this.muted) return;
     const buf = this.smp.he40; if (!buf) return this.boom(x, y, size * .8);
-    if (!this._gate('he40', 4, .012)) return;
     const n = this.place(x, y, .95 * size, 2600, this.bus); if (!n) return;
-    this._hold('he40', 260);
+    const V = this.claim('explode', x, y, 320, .4); if (!V) return;
     const c = this.ctx, { dst, t } = n;
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.9, 1.04) / Math.pow(size, .25);
     const g = c.createGain(); g.gain.value = rnd(.95, 1.1) * 1.15;
-    s.connect(g); g.connect(dst); s.start(t);
+    s.connect(g); g.connect(dst); s.start(t); V.src = s; s.onended = V.rel;
   },
   /* a burning body: a short crackling roar of fire — filtered noise with a few pops — re-triggered every ~0.3 s while it burns */
   burnCrackle(x, y) {
     if (!this.ok || this.muted) return;
-    if (!this._gate('burn', 6, .05)) return;
     const c = this.ctx, n = this.place(x, y, .3, 900); if (!n) return;
+    const V = this.claim('ambient', x, y, 500, -.3); if (!V) return;
     const { dst, t } = n, dur = rnd(.3, .5);
-    const s = this.noiseSrc(rnd(.5, .8));
+    const s = this.noiseSrc(rnd(.5, .8)); V.src = s; s.onended = V.rel;
     const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = rnd(900, 1800); bp.Q.value = .8;
     const g = c.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.7, t + .05);
     for (let i = 0; i < 3; i++) { const pt = t + rnd(.05, dur - .05); g.gain.setValueAtTime(.7, pt); g.gain.linearRampToValueAtTime(1.3, pt + .012); g.gain.linearRampToValueAtTime(.6, pt + .03); }   // pops
@@ -1901,11 +1963,10 @@ const AU = {
     if (!pool.length) return this.boom(x, y, size * 1.6);
     let buf = pool[(Math.random() * pool.length) | 0]; if (pool.length > 1 && buf === this._lastArty) buf = pool[(Math.random() * pool.length) | 0];   // random burst, rarely the same one twice running
     this._lastArty = buf;
-    if (!this._gate('artyboom', 6, .02)) return;
     const n = this.place(x, y, 1.9 * size, 5200, this.bus); if (!n) return;               // heavy: the burst dominates everything near it and carries a long way
-    this._hold('artyboom', 400);
+    const V = this.claim('explode', x, y, 500, .8); if (!V) return;
     const c = this.ctx, { dst, t } = n;
-    const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.94, 1.06);
+    const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(.94, 1.06); V.src = s;
     const g = c.createGain(); g.gain.value = rnd(.95, 1.1) * 2.3;
     s.connect(g); g.connect(dst);
     // the echo: the burst rolls away off the hills — a feedback delay line (~0.24 s, darkening each bounce) fed at half weight, dying over ~2.5 s
@@ -1915,16 +1976,15 @@ const AU = {
     const wet = c.createGain(); wet.gain.value = .55;
     g.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(dst);
     s.start(t);
-    s.onended = () => { try { wet.gain.setTargetAtTime(0, c.currentTime + 2.2, .5); setTimeout(() => { try { dl.disconnect(); fb.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 4500); } catch (e) {} };
+    s.onended = () => { try { V.rel(); wet.gain.setTargetAtTime(0, c.currentTime + 2.2, .5); setTimeout(() => { try { dl.disconnect(); fb.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 4500); } catch (e) {} };
   },
   boom(x, y, size = 1) {
     if (!this.ok || this.muted) return;
     if (this._skipBoom) return;                                             // a caller is about to play its own (sampled) burst
-    if (!this._gate('boom', 5, .012)) return;
     const c = this.ctx, n = this.place(x, y, .95 * size, 2800); if (!n) return;
-    this._hold('boom', 900);
+    const V = this.claim('explode', x, y, 900, .4); if (!V) return;
     const { dst, t } = n;
-    const s = this.noiseSrc(.8);
+    const s = this.noiseSrc(.8); V.src = s; s.onended = V.rel;
     const lp = c.createBiquadFilter(); lp.type = 'lowpass';
     lp.frequency.setValueAtTime(3000, t); lp.frequency.exponentialRampToValueAtTime(95, t + .95 * size);
     const g = c.createGain(); g.gain.setValueAtTime(1.15, t); g.gain.exponentialRampToValueAtTime(.001, t + 1.2 * size);
@@ -1952,11 +2012,10 @@ const AU = {
 
   splat(x, y) {
     if (!this.ok || this.muted) return;
-    if (!this._gate('splat', 5, .012)) return;
     const c = this.ctx, n = this.place(x, y, .017, 640); if (!n) return;   // flesh-impact fallback very quiet
-    this._hold('splat', 260);
+    const V = this.claim('impact', x, y, 260, -.3); if (!V) return;
     const { dst, t } = n;
-    const s = this.noiseSrc();
+    const s = this.noiseSrc(); V.src = s; s.onended = V.rel;
     const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = rnd(230, 520); bp.Q.value = 1.4;
     const g = c.createGain(); g.gain.setValueAtTime(.9, t); g.gain.exponentialRampToValueAtTime(.001, t + .19);
     s.connect(bp); bp.connect(g); g.connect(dst); s.start(t); s.stop(t + .21);
@@ -5448,14 +5507,37 @@ function clearTerrainAt(wx, wy, rTiles) {
    the footprint edge (not a hard circle), plus a soft shockwave ring. Shared by real and ally-ghost buildings. */
 function buildingDropFx(b) {
   const d = b.def, rad = (Math.max(d.w, d.h) * .5 + .4) * TS;
-  part('ring', b.x, b.y, 0, 0, .7, rad * .7, 'rgba(206,196,156,.5)', { grow: rad * 2.4, z: .3 });   // the outward shockwave
-  const n = 16 + Math.round(Math.max(d.w, d.h) * 1.5);
+  // impact flash on touchdown
+  part('flash', b.x, b.y, 0, -40, .12, rad * .8, '#fff3d0', { rot: -Math.PI / 2, glow: 1, z: 4 });
+  // TWO shockwave rings racing out, wider than before
+  part('ring', b.x, b.y, 0, 0, .55, rad * .6, 'rgba(214,204,168,.6)', { grow: rad * 3.4, z: .3 });
+  part('ring', b.x, b.y, 0, 0, .8, rad * .9, 'rgba(200,190,152,.4)', { grow: rad * 2.2, z: .2 });
+  // a thick ring of dust bumping outward all around the footprint
+  const n = 22 + Math.round(Math.max(d.w, d.h) * 2.2);
   for (let i = 0; i < n; i++) {
-    const an = i / n * TAU + rnd(-.14, .14), ca = Math.cos(an), sa = Math.sin(an), out = 40 + rnd(30, 80);
-    part('dust', b.x + ca * rad, b.y + sa * rad, ca * out, sa * out * .6, rnd(.7, 1.15), rnd(6, 11),
-      'rgba(200,190,152,.9)', { grow: 22, z: rnd(.2, 3), vz: rnd(6, 22), g: 40, drag: .92, wind: 1 });
+    const an = i / n * TAU + rnd(-.16, .16), ca = Math.cos(an), sa = Math.sin(an), out = 60 + rnd(50, 130);
+    part('dust', b.x + ca * rad, b.y + sa * rad, ca * out, sa * out * .6, rnd(.8, 1.3), rnd(8, 15),
+      'rgba(204,194,156,.92)', { grow: 34, z: rnd(.2, 4), vz: rnd(8, 30), g: 40, drag: .9, wind: 1 });
   }
-  if (typeof addShake === 'function') addShake(b.x, b.y, 3);
+  // clods of earth and debris thrown up and out on the slam
+  const dn = 10 + Math.round(Math.max(d.w, d.h));
+  for (let i = 0; i < dn; i++) {
+    const an = rnd(TAU), sp = rnd(80, 240);
+    part('ember', b.x + Math.cos(an) * rad * .5, b.y + Math.sin(an) * rad * .5, Math.cos(an) * sp, Math.sin(an) * sp * .6, rnd(.6, 1.2), rnd(1.4, 3), Math.random() < .5 ? '#6a5238' : '#4a3c2c', { z: rnd(2, 8), vz: rnd(120, 320), g: 460, drag: .96, bounce: .35 });
+  }
+  if (typeof addShake === 'function') addShake(b.x, b.y, 5);
+  if (typeof AU !== 'undefined' && AU.blast) AU.blast(b.x, b.y, .6);   // a solid thud as it lands
+}
+/* menu showcase: keep dropping a fresh construction in every couple of seconds so the drop animation is always on screen */
+function showcaseDrops(dt) {
+  if (!G.builds || !G.builds.length) return;
+  G._scDrop = (G._scDrop || 0) - dt;
+  if (G._scDrop > 0) return;
+  G._scDrop = rnd(1.6, 2.6);
+  const pool = G.builds.filter(b => !b.dead && b.done && !b.def.flat && !b.def.wall);
+  if (!pool.length) return;
+  const b = pool[(Math.random() * pool.length) | 0];
+  b._dropT0 = G.t; buildingDropFx(b);   // replay the cinematic drop on an existing structure
 }
 function addBuilding(t, tx, ty, done) {
   const d = BDEF[t];
@@ -7802,10 +7884,17 @@ function updateUnits(dt) {
     if (u.def.jet) { updateJet(u, dt); continue; }
     if (u.def.fly) {
       const a0 = u.ang || 0; updateAircraft(u, dt);
-      if (u.def.rotor) {   // helicopters yaw at a real rate: 90°/s (a full turn in 4 s) — the nimble Little Bird 40% quicker
-        let dA = (u.ang || 0) - a0; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
-        const mx = (Math.PI / 2) * (u.def.spr === 'littlebird' ? 1.4 : 1) * dt;
-        if (Math.abs(dA) > mx) { const na = a0 + Math.sign(dA) * mx; u.ang = Math.atan2(Math.sin(na), Math.cos(na)); }
+      if (u.def.rotor) {   // helicopters yaw like the real thing: the tail authority spins the nose up SMOOTHLY (rate accelerates), holds at ~90°/s through a big turn, then eases OUT as it lines up — no snapping to the heading
+        const want = u.ang;                                        // where the flight logic wants the nose this frame
+        let dA = want - a0; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+        const maxRate = (Math.PI / 2) * (u.def.spr === 'littlebird' ? 1.4 : 1);   // top yaw rate (rad/s): 90°/s, +40% for the Little Bird
+        const accel = maxRate / 0.35;                              // spin the nose up to full rate over ~0.35 s (no instant rate jump)
+        const decel = (maxRate * maxRate) / (2 * 0.6);             // decelerate to a stop right on the target over the last ~35°
+        const tgtRate = Math.sign(dA) * Math.min(maxRate, Math.sqrt(2 * decel * Math.abs(dA)));
+        u._yawV = (u._yawV || 0) + clamp(tgtRate - (u._yawV || 0), -accel * dt, accel * dt);
+        let step = u._yawV * dt;
+        if (Math.abs(step) >= Math.abs(dA)) { step = dA; u._yawV = dt > 1e-4 ? dA / dt : 0; }   // reached the heading: settle, don't overshoot
+        const na = a0 + step; u.ang = Math.atan2(Math.sin(na), Math.cos(na));
         if (u.def.fixedGuns && u.pitch !== undefined && !u._lbLive) { const k = Math.pow(.08, dt); u.pitch *= k; u.roll *= k; }   // hovering / landed / roping: the Little Bird levels off
       }
       continue;
@@ -8212,23 +8301,24 @@ function fixedWingTakeoff(u, dt) {
    wing. Jet: the afterburner scours a long plume out behind the tail, and the wingtips shed vortices — dust curling up
    and outward beside each wing as the air rolls off it. k = 0..1 strength. */
 function fixedWingGroundFx(u, dt, k) {
-  if (!(k > .02) || G.parts.length > PMAX * .85) return;
-  const a = u.ang || 0, ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca, jet = !!u.def.jet, span = u.r * (jet ? 2.4 : 3.2);
-  if (!jet) {   // four engines on the wing line, exhaust streaming back
-    for (const f of [-.66, -.3, .3, .66]) {
-      if (Math.random() > dt * 22 * k) continue;
-      const ex = u.x + px * f * span + ca * u.r * .2, ey = u.y + py * f * span + sa * u.r * .2;
-      part('dust', ex, ey, -ca * rnd(120, 260) + rnd(-20, 20), -sa * rnd(120, 260) * .7 + rnd(-14, 14), rnd(.5, 1.0), rnd(5, 9), 'rgba(196,186,156,1)', { a: .5, z: rnd(0, 4), vz: rnd(6, 20), grow: 22, drag: .92, wind: 1 });
+  if (!(k > .02) || G.parts.length > PMAX * .9) return;
+  // the ground blast is 300% wider than before: a broad sheet of dust thrown far out to either side of the aircraft
+  const a = u.ang || 0, ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca, jet = !!u.def.jet, span = u.r * (jet ? 2.4 : 3.2) * 3;
+  if (!jet) {   // AC-130: four turboprops on the wing line, exhaust streaming back — plus a wide dust wall rolling off the whole span
+    for (const f of [-.9, -.55, -.2, .2, .55, .9]) {
+      if (Math.random() > dt * 30 * k) continue;
+      const ex = u.x + px * f * span + ca * u.r * .2, ey = u.y + py * f * span + sa * u.r * .2, side = px * f;
+      part('dust', ex, ey, -ca * rnd(120, 260) + px * f * rnd(40, 120), (-sa * rnd(120, 260) + py * f * rnd(40, 120)) * .7, rnd(.6, 1.2), rnd(9, 16), 'rgba(196,186,156,1)', { a: .5, z: rnd(0, 5), vz: rnd(6, 22), grow: 46, drag: .92, wind: 1 });
     }
-  } else {
-    if (Math.random() < dt * 40 * k) {   // afterburner plume: dust and heat blasted straight back down the strip
-      part('dust', u.x - ca * u.r * 1.3, u.y - sa * u.r * 1.3, -ca * rnd(220, 420) + rnd(-25, 25), -sa * rnd(220, 420) * .7 + rnd(-18, 18), rnd(.5, 1.1), rnd(6, 11), 'rgba(200,190,160,1)', { a: .55, z: rnd(0, 5), vz: rnd(8, 26), grow: 28, drag: .93, wind: 1 });
+  } else {   // F-16: afterburner blast down the strip + wingtip vortices, all spread three times as wide
+    if (Math.random() < dt * 46 * k) {
+      part('dust', u.x - ca * u.r * 1.3, u.y - sa * u.r * 1.3, -ca * rnd(220, 420) + rnd(-45, 45), -sa * rnd(220, 420) * .7 + rnd(-30, 30), rnd(.6, 1.3), rnd(10, 18), 'rgba(200,190,160,1)', { a: .55, z: rnd(0, 6), vz: rnd(8, 28), grow: 52, drag: .93, wind: 1 });
       part('fire', u.x - ca * u.r * 1.3, u.y - sa * u.r * 1.3, -ca * rnd(160, 300), -sa * rnd(160, 300) * .7, rnd(.08, .16), rnd(3, 6), Math.random() < .5 ? '#ff9a3a' : '#ffd090', { glow: 1, z: 6, drag: .85, grow: 10 });
     }
-    for (const f of [-1, 1]) {   // wingtip vortices: air rolling off each wing lifts dust up and outward beside it, trailing back
-      if (Math.random() > dt * 14 * k) continue;
+    for (const f of [-1, -.5, .5, 1]) {   // wider vortex field: dust lifted and thrown outward well beyond the wingtips
+      if (Math.random() > dt * 20 * k) continue;
       const wx = u.x + px * f * span * .5 - ca * u.r * .1, wy = u.y + py * f * span * .5 - sa * u.r * .1;
-      part('dust', wx, wy, px * f * rnd(20, 60) - ca * rnd(60, 140), (py * f * rnd(20, 60) - sa * rnd(60, 140)) * .7, rnd(.6, 1.2), rnd(4, 7), 'rgba(206,198,170,1)', { a: .45, z: rnd(1, 6), vz: rnd(14, 40), vr: f * 8, grow: 18, drag: .93, wind: 1 });
+      part('dust', wx, wy, px * f * rnd(50, 150) - ca * rnd(60, 150), (py * f * rnd(50, 150) - sa * rnd(60, 150)) * .7, rnd(.7, 1.4), rnd(7, 13), 'rgba(206,198,170,1)', { a: .45, z: rnd(1, 7), vz: rnd(14, 44), vr: f * 8, grow: 40, drag: .93, wind: 1 });
     }
   }
 }
@@ -15807,8 +15897,11 @@ cv.addEventListener('mouseleave', () => { IN.hasMouse = false; });
       // a wall whose neighbours changed, or a building that reached a new tier, is rebuilt so its shape reflects the new state
       if (bm && ((b.def.wall && b.t !== 'gate' && bm.g.userData.mask !== wallMask(b)) || (bm.g.userData.tier || 1) !== (b.tier || 1))) { scene3.remove(bm.g); buildMeshes.delete(b.id); bm = null; }
       if (!bm) { bm = mkBuilding(b); buildMeshes.set(b.id, bm); } const g = bm.g; g.visible = b.x > vx0 - 200 && b.x < vx1 + 200 && b.y > vy0 - 300 && b.y < vy1 + 200; if (!g.visible) continue; g.position.set(b.x * K, groundY(b.x, b.y), b.y * K); { const bs = g.userData.bs || 1; const buildK = b.done ? 1 : Math.max(.06, b.prog || 0); g.scale.set(bs, bs * buildK, bs);
-        const drop = b._dropT0 !== undefined ? Math.max(0, 1 - (G.t - b._dropT0) / .5) : 0;   // a fresh structure drops onto its platform: it starts lifted and slams down (drop² = fast slam, gentle settle)
-        if (drop > 0) g.position.y += ((b.def.hgt || 30) * K * bs * .5 + 1.4) * drop * drop;
+        if (b._dropT0 !== undefined) {   // a fresh structure DROPS in: it hangs high, slams down fast, then squash-and-stretches on impact — a punchy, cinematic landing
+          const dtl = G.t - b._dropT0, DUR = .55, hgt = (b.def.hgt || 30) * K * bs;
+          if (dtl < DUR) { const tt = dtl / DUR, fall = (1 - tt) * (1 - tt) * (1 - tt); g.position.y += (hgt * 1.7 + 3.2) * fall; g.rotation.y += Math.sin(tt * 20) * .06 * fall; }   // fall (cubic = hangs, then slams)
+          else if (dtl < DUR + .30) { const bt = (dtl - DUR) / .30, sq = Math.sin(bt * Math.PI) * (1 - bt) * .2; g.scale.set(bs * (1 + sq), bs * buildK * (1 - sq * 1.3), bs * (1 + sq)); }   // impact: compress down and spring back
+        }
         if (!b.done && !b.def.flat) buildScene(b, g, bs, buildK, partsAdd);   // rising layer-line + workers hammering the structure together
       } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6; if (g.userData.tube) { const ta = Math.PI - (b.ang !== undefined ? b.ang : -HPI); let dA = ta - g.userData.tube.rotation.y; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); g.userData.tube.rotation.y += dA * Math.min(1, (render._dt || .016) * 3); }   // the mortar tubes traverse smoothly onto the target
         if (g.userData.dish) { g.userData.dish.rotation.y = G.t * .9; } if (g.userData.plane) { const P = g.userData.plane, a = G.t * .45; P.position.set(Math.cos(a) * P.userData.R, P.userData.H + Math.sin(G.t * .7) * .15, Math.sin(a) * P.userData.R); P.rotation.set(0, -a - HPI, 0); P.rotateX(-.28); if (P.userData.props) for (const pr of P.userData.props) pr.rotation.x = G.t * 60; }   // Airspace Command: the big dish sweeps, the transport orbits the tower banked into its turn
@@ -16564,6 +16657,7 @@ function tickShowcase(dt) {
   G.showSpawnT -= dt;
   if (G.showSpawnT <= 0 && G.zeds.length < 340) { G.showSpawnT = rnd(1.7, 3.1); showcaseHorde(4 + (Math.random() * 5 | 0)); }
   for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (!u.dead) u.hp = u.maxHp; }   // defenders never fall
+  if (typeof showcaseDrops === 'function') showcaseDrops(dt);   // a construction keeps dropping in behind the menu so the drop animation is always visible
 }
 function cinematicCam(dt) {
   G.showTime += dt;
@@ -17092,7 +17186,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b155';
+const BUILD_TAG = 'b159';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
