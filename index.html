@@ -5476,7 +5476,9 @@ function fxExplosion(x, y, r, colA, colB, snd) {
   if (typeof addShock === 'function') addShock(x, y, r * 3.8, clamp(r / 30, .9, 2.8), .95);   // the pressure ring: tufts laid over and trees bent away from the blast, springing back after
   addShake(x, y, r * .12);
   // light HE (Hydra rockets, 25/30/40 mm autocannon shells) cracks with the real 40 mm round sample; big shells keep the deep synthetic boom
-  if (snd === 'hydra' || snd === 'chain40' || snd === 'auto') AU.blast(x, y, clamp(r / 45, .7, 1.4)); else AU.boom(x, y, clamp(r / 60, .5, 1.7));
+  if (snd === 'hydra' || snd === 'chain40' || snd === 'auto') AU.blast(x, y, clamp(r / 45, .7, 1.4));
+  else if (snd === 'tank' || snd === 'howitzer') AU.artyBlast(x, y, snd === 'tank' ? .85 : 1.0);   // 120 mm HE / 105 mm: the sampled artillery burst, rolling away in its echo
+  else AU.boom(x, y, clamp(r / 60, .5, 1.7));
   G._fx = _fx;
 }
 /* Only what is happening on screen (or just past its edge) is allowed to move
@@ -18054,7 +18056,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b165';
+const BUILD_TAG = 'b166';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
