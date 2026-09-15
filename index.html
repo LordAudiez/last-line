@@ -1780,6 +1780,7 @@ const AU = {
     // machine guns: the report tightens with the cyclic rate — a faster gun sounds higher and snappier
     const rateK = (fam === 'mg' && cd) ? clamp(Math.pow(.085 / cd, .45), .8, 1.35) : 1;
     const loud = fam === 'tank' ? 2 : 1;                        // the 120mm report is twice as loud as anything else
+    if (fam === 'tank' || fam === 'howitzer' || fam === 'cannon') this.distEcho(x, y, .6, true);   // a heavy gun's report rumbles in from off-screen too
     const buf = this.smp[fam] || this.buf[fam];   // real sample first, baked synth as fallback
     if (!buf) return;                  // still loading in the first moments after unlock
     const n = this.place(x, y, (GVOL[fam] || .6) * 1.5, GREACH[fam] || 1500, this.bus);   // every gun +50%
@@ -1796,7 +1797,7 @@ const AU = {
     if (this.echoBus) {
       const emul = ECHO_MUL[fam] === undefined ? 1 : ECHO_MUL[fam];
       const ek = clamp(.12 + this.distTo(x, y) / 2600, .12, .85) * emul;
-      if (ek > .02) { const eg = c.createGain(); eg.gain.value = ek * .7; s.connect(eg); eg.connect(this.echoBus); }
+      if (ek > .02) { const eg = c.createGain(); eg.gain.value = ek * .7 * .05; s.connect(eg); eg.connect(this.echoBus); }   // (the report echo sits at 5 % — the distance echo below carries the far rumble instead)
     }
   },
 
@@ -1991,7 +1992,8 @@ const AU = {
   },
   blast(x, y, size = 1) {
     if (!this.ok || this.muted) return;
-    const buf = this.smp.he40; if (!buf) return this.boom(x, y, size * .8);
+    this.distEcho(x, y, size * .45);
+    const buf = this.smp.he40; if (!buf) { this._skipDE = true; try { return this.boom(x, y, size * .8); } finally { this._skipDE = false; } }
     const n = this.place(x, y, .95 * size, 2600, this.bus); if (!n) return;
     const V = this.claim('explode', x, y, 320, .4); if (!V) return;
     const c = this.ctx, { dst, t } = n;
@@ -2023,11 +2025,44 @@ const AU = {
     s.connect(g); g.connect(dst); s.start(t);
   },
   /* artillery burst: the real shell-impact sample (falls back to the synthetic boom) */
+  /* ---- the DISTANCE ECHO: what you hear of a blast that happens OFF your screen — a deep, delayed rumble rolling in over
+     the hills, scaled by how big the burst was and by how far off the screen it is, in screens:
+       inside half a screen off the edge → 30 %   ·   up to one screen off → 10 %   ·   up to 1.2 screens → 3 %   ·   further → nothing
+     (on-screen blasts are heard directly and get no distance echo). Throttled so a barrage doesn't stack fifty rumbles. ---- */
+  offScreen(x, y) {
+    const sw = CAM.vw || 1, sh = CAM.vh || 1;
+    const dx = Math.max(0, CAM.x - x, x - (CAM.x + sw)), dy = Math.max(0, CAM.y - y, y - (CAM.y + sh));
+    return Math.max(dx / sw, dy / sh);
+  },
+  distEcho(x, y, size = 1, gun) {
+    if (!this.ok || this.muted) return;
+    const off = this.offScreen(x, y); if (off <= .02) return;                                  // on screen: you hear the blast itself
+    const lvl = off <= .5 ? .30 : off <= 1.0 ? .30 - (off - .5) / .5 * .20 : off <= 1.2 ? .10 - (off - 1.0) / .2 * .07 : 0;
+    if (lvl <= 0) return;
+    const now = this.ctx.currentTime, Q = this._deQ || (this._deQ = []); while (Q.length && Q[0] < now - 1) Q.shift(); if (Q.length >= 4) return; Q.push(now);   // ≤ 4 rumbles a second
+    const V = this.claim('explode', x, y, 1800, -.5); if (!V) return;
+    const c = this.ctx, vol = lvl * clamp(size, .3, 3) * (this.sfxVol == null ? 1 : this.sfxVol) * (gun ? .55 : 1);
+    const pool = this._artyPool || (this._artyPool = []); if (!pool.length) for (let i = 1; i <= 13; i++) if (this.smp['arty' + i]) pool.push(this.smp['arty' + i]);
+    const t = now + .06 + off * .32 + Math.min(.25, this.distTo(x, y) / 2600);                  // the further off, the later it arrives
+    const g = c.createGain(); g.gain.value = vol * 1.7;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = clamp(420 - off * 160, 160, 420); lp.Q.value = .6;   // air absorption: only the thump gets through
+    const spread = clamp((x - (CAM.x + CAM.vw / 2)) / (CAM.vw * .8), -1, 1);
+    let outN = this.bus; if (c.createStereoPanner && Math.abs(spread) > .06) { const pan = c.createStereoPanner(); pan.pan.value = spread; pan.connect(this.bus); outN = pan; }
+    // the roll: a short feedback delay so the rumble rolls away instead of stopping dead
+    const dl = c.createDelay(1.0); dl.delayTime.value = .26 + off * .06; const fb = c.createGain(); fb.gain.value = .42; const wet = c.createGain(); wet.gain.value = .45;
+    g.connect(lp); lp.connect(outN); lp.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(outN);
+    let src;
+    if (pool.length && !gun) { src = c.createBufferSource(); src.buffer = pool[(Math.random() * pool.length) | 0]; src.playbackRate.value = rnd(.62, .74); src.connect(g); src.start(t); }
+    else { src = this.noiseSrc(1.2); const eg = c.createGain(); eg.gain.setValueAtTime(1.2, t); eg.gain.exponentialRampToValueAtTime(.001, t + 1.0 * clamp(size, .5, 2)); src.connect(eg); eg.connect(g); src.start(t); src.stop(t + 1.05 * clamp(size, .5, 2)); }
+    V.src = src; src.onended = () => { try { V.rel(); wet.gain.setTargetAtTime(0, c.currentTime + 1.2, .4); setTimeout(() => { try { dl.disconnect(); fb.disconnect(); wet.disconnect(); lp.disconnect(); g.disconnect(); } catch (e) {} }, 3200); } catch (e) {} };
+  },
+
   artyBlast(x, y, size = 1) {
     if (!this.ok || this.muted) return;
+    this.distEcho(x, y, size * 1.3);
     const pool = this._artyPool || (this._artyPool = []);
     if (!pool.length) for (let i = 1; i <= 13; i++) if (this.smp['arty' + i]) pool.push(this.smp['arty' + i]);
-    if (!pool.length) return this.boom(x, y, size * 1.6);
+    if (!pool.length) { this._skipDE = true; try { return this.boom(x, y, size * 1.6); } finally { this._skipDE = false; } }
     let buf = pool[(Math.random() * pool.length) | 0]; if (pool.length > 1 && buf === this._lastArty) buf = pool[(Math.random() * pool.length) | 0];   // random burst, rarely the same one twice running
     this._lastArty = buf;
     const n = this.place(x, y, 1.9 * size, 5200, this.bus); if (!n) return;               // heavy: the burst dominates everything near it and carries a long way
@@ -2040,14 +2075,15 @@ const AU = {
     const dl = c.createDelay(1.0); dl.delayTime.value = rnd(.2, .28);
     const fb = c.createGain(); fb.gain.value = .48;
     const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = .5;
-    const wet = c.createGain(); wet.gain.value = .55;
+    const wet = c.createGain(); wet.gain.value = .55 * .05;   // the burst's own echo at 5 % — the off-screen rumble is the distance echo (distEcho)
     g.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(dst);
     s.start(t);
     s.onended = () => { try { V.rel(); wet.gain.setTargetAtTime(0, c.currentTime + 2.2, .5); setTimeout(() => { try { dl.disconnect(); fb.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 4500); } catch (e) {} };
   },
   boom(x, y, size = 1) {
     if (!this.ok || this.muted) return;
-    if (this._skipBoom) return;                                             // a caller is about to play its own (sampled) burst
+    if (this._skipBoom) return;
+    if (!this._skipDE) this.distEcho(x, y, size);                                             // a caller is about to play its own (sampled) burst
     const c = this.ctx, n = this.place(x, y, .95 * size, 2800); if (!n) return;
     const V = this.claim('explode', x, y, 900, .4); if (!V) return;
     const { dst, t } = n;
@@ -18056,7 +18092,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b166';
+const BUILD_TAG = 'b167';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
