@@ -10001,10 +10001,10 @@ function updateParticles(dt) {
     }
     if (p.trail && Math.random() < dt * p.trail && G.parts.length < PMAX) part(p.trailK || 'smoke', p.x, p.y, rnd(-6, 6), rnd(-6, 6), rnd(.35, .7), p.r * (p.trailR || 1.6), p.trailC || 'rgba(96,84,72,1)', { z: p.z, vz: rnd(4, 18), grow: p.r * 3, drag: .94, wind: 1, a: .55, glow: p.trailK === 'fire' ? 1 : 0 });   // burning debris streams a smoke / flame trail behind it
     const dr = dt60 === 1 ? p.drag : Math.pow(p.drag, dt60);
-    if (p.wind || p.kind === 'fire') {
+    if (p.wind || (p.kind === 'fire' && p.fx !== 2)) {   // (blast fire is over in a flash — the wind never gets hold of it)
       // aerodynamic: drag acts on the velocity RELATIVE to the air, so a puff decelerates into the wind stream
       // and is carried along it; light smoke/dust follows the air almost fully, heavier debris only partly; every flame streams downwind
-      const k = (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog') ? .85 : p.kind === 'fire' ? .5 : .55, ax = wx * k, ay = wy * k;
+      const k = (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'fog') ? .85 : p.kind === 'fire' ? .28 : .55, ax = wx * k, ay = wy * k;
       p.vx = ax + (p.vx - ax) * dr; p.vy = ay + (p.vy - ay) * dr;
       if (k > .8) { const tb = 26 * dt; p.vx += rnd(-tb, tb); p.vy += rnd(-tb, tb); }   // eddies
     } else { p.vx *= dr; p.vy *= dr; }
@@ -14071,6 +14071,13 @@ function ctrlHudTick(dt) {
   TEX.corrHD = mkTex(128, (x, y) => { let v = .5 + Math.sin(x * 1.05) * .14 + (nz(x / 3, y / 3) - .5) * .06; if (y % 32 < 2) v -= .2; if (x % 32 < 1) v -= .08; const rust = fbm(x / 14 + 3, y / 14, 3); const r = rust > .62 ? (rust - .62) * 1.2 : 0; v -= r * .25; return [v * (1 + r * .5), v * (1 - r * .15), v * (1 - r * .5)]; }, null, { gain: 1.85 });
   TEX.lab = mkTex(128, (x, y) => { let v = .56 + (nz(x / 3, y / 3) - .5) * .03 + (fbm(x / 40, y / 40, 2) - .5) * .04; if (y % 32 < 1 || (x + Math.floor(y / 32) * 16) % 48 < 1) v -= .12; return [v * .98, v, v * 1.03]; }, null, { gain: 1.75 });
   TEX.floorHD = mkTex(128, (x, y) => { let v = .48 + (fbm(x / 20, y / 20, 3) - .5) * .12 + (nz(x / 1.5, y / 1.5) - .5) * .08; if (x % 64 < 2 || y % 64 < 2) v -= .14; if ((x % 64 > 28 && x % 64 < 36) && (y % 64 < 6)) v += .2; return gray(clamp(v, 0, 1)); }, null, { gain: 1.85 });
+
+  /* ---- HD building skins (b165): weathered brick, riveted armour plate, dark composite panelling, solar cells, camo netting — the three upgrade tiers each wear their own ---- */
+  TEX.brickHD = mkTex(256, (x, y) => { const row = Math.floor(y / 16), bx = (x + (row % 2) * 24) % 48, by = y % 16; let v = .5 + (nz(x / 2.2, y / 2.2) - .5) * .14 + (fbm(x / 26 + row * 3, y / 26, 2) - .5) * .26; const mortar = bx < 3 || by < 3; if (mortar) v = .36 + (nz(x / 1.5, y / 1.5) - .5) * .08; const moss = Math.max(0, (y / 256 - .6)) * fbm(x / 9, y / 9, 3) * 1.6, soot = fbm(x / 40 + 9, y / 40, 2) > .68 ? .1 : 0; v -= soot; return mortar ? [v, v * .98, v * .94] : [v * (1.1 - moss * .5), v * (.9 + moss * .2), v * (.78 - moss * .3)]; }, null, { gain: 1.8 });
+  TEX.plateHD = mkTex(256, (x, y) => { let v = .5 + (fbm(x / 34, y / 34, 3) - .5) * .12 + (nz(x / 1.6, y / 1.6) - .5) * .05; const px = x % 64, py = y % 64; if (px < 2 || py < 2) v -= .2; else if (px < 4 || py < 4) v += .06; const rx = ((px + 24) % 32) - 8, ry = ((py + 24) % 32) - 8; if (rx * rx + ry * ry < 9) v += .14; else if (rx * rx + ry * ry < 16) v -= .12; if (nz(x / 30, y / 3 + 50) > .9) v -= .08; const rust = fbm(x / 11 + 70, y / 11, 3), r = rust > .66 ? (rust - .66) * 1.4 : 0; v -= r * .2; return [v * (1 + r * .6), v * (1 - r * .1), v * (1 - r * .45)]; }, null, { gain: 1.85 });
+  TEX.compHD = mkTex(256, (x, y) => { let v = .36 + (fbm(x / 50, y / 50, 3) - .5) * .08 + (nz(x / 1.3, y / 1.3) - .5) * .04; const hx = x % 48, hy = (y + Math.floor(x / 48) * 24) % 48; if (hx < 2 || hy < 2) v -= .12; if (hx > 40 && hy > 40) v += .04; if ((x % 96) < 3 && (y % 24) > 6 && (y % 24) < 18) v += .3; return [v * .96, v, v * 1.06]; }, null, { gain: 1.7 });
+  TEX.solarHD = mkTex(128, (x, y) => { const cx = x % 16, cy = y % 16; let v = .24 + (nz(x / 3, y / 3) - .5) * .05 + (fbm(x / 40, y / 40, 2) - .5) * .06; if (cx < 1 || cy < 1) v = .62; if (cx > 1 && cy > 1 && ((cx + cy) & 1)) v += .02; return [v * .8, v * .9, v * 1.3]; }, null, { gain: 1.6 });
+  TEX.netHD = mkTex(128, (x, y) => { const a = fbm(x / 12, y / 12, 3), h = ((x % 8) < 1 || (y % 8) < 1) ? 1 : 0; let v = a < .45 ? .38 : a > .58 ? .62 : .5; return [v * .85, v * 1.05, v * .7, h ? 1 : (a > .5 ? .55 : .35)]; }, null, { gain: 1.7 });
   TEX.bags = mkTex(128, (x, y) => { const bx = (x + Math.floor(y / 16) * 16) % 32, by = y % 16, e = Math.min(bx, 31 - bx, by * 2, (15 - by) * 2); let v = .5 + (nz(x / 1.5, y / 1.5) - .5) * .12; v -= Math.max(0, 3 - e) * .08; return [v * 1.04, v, v * .9]; }, null, { gain: 1.85 });
   TEX.scorch = mkTex(128, (x, y, u, v) => { const d = Math.hypot(u - .5, v - .5) * 2, n = fbm(x / 10, y / 10, 3); const a = clamp((1 - d) * 1.6 + (n - .5) * .9, 0, 1); return [.03, .025, .02, a * a]; }, null, { clamp: 1 });
   TEX.splat = []; for (let i = 0; i < 4; i++) TEX.splat.push(mkTex(96, (x, y, u, v) => { const d = Math.hypot(u - .5, v - .5) * 2; return [.5, .06, .05, d < .34 + fbm(x / 8 + i * 30, y / 8, 2) * .32 ? 1 : 0]; },
@@ -15690,6 +15697,41 @@ function ctrlHudTick(dt) {
   const BAGS = matFor('#8a7c58', { map: TEX.bags, roughness: 1 });
   const SENS0 = matFor('#5ad0ff', { emissive: lin('#3ab0ff'), emissiveIntensity: 1.2 });
   function sandbagRing(g, r, n, h) { for (let i = 0; i < n; i++) { const a = i / n * TAU, s = box(.34, h, .2, BAGS, Math.cos(a) * r, h / 2, Math.sin(a) * r, 0, -a, 0); g.add(s); const s2 = box(.34, h, .2, BAGS, Math.cos(a + Math.PI / n) * r, h * 1.45, Math.sin(a + Math.PI / n) * r, 0, -a - Math.PI / n, 0); g.add(s2); } }
+  const BRICKM = { map: TEX.brickHD, bumpMap: TEX.brickHD, bumpScale: .02, roughness: .85, metalness: .05, envMapIntensity: .6 }, PLATEM = { map: TEX.plateHD, bumpMap: TEX.plateHD, bumpScale: .02, roughness: .42, metalness: .6, envMapIntensity: 1.2 };
+  const COMPM = { map: TEX.compHD, bumpMap: TEX.compHD, bumpScale: .012, roughness: .35, metalness: .55, envMapIntensity: 1.4 }, SOLARM = { map: TEX.solarHD, roughness: .18, metalness: .7, envMapIntensity: 1.8 }, CORRM = { map: TEX.corrHD, bumpMap: TEX.corrHD, bumpScale: .015, roughness: .5, metalness: .35, envMapIntensity: 1.1 };
+  function tierStyle(tier, d) {
+    const c0 = d.col ? d.col[0] : '#5d6a52', c1 = d.col ? d.col[1] : '#4a5344';
+    if (tier >= 3) return { wall: matFor('#3d434a', COMPM), roof: matFor('#1e2a3a', SOLARM), trim: matFor('#8a9298', PLATEM), acc: '#ffd24a', glow: '#ffb02e', tier };
+    if (tier === 2) return { wall: matFor('#7a6252', BRICKM), roof: matFor('#6a7076', PLATEM), trim: matFor('#5a6266', PLATEM), acc: '#c9cf8a', glow: '#8dffbe', tier };
+    return { wall: matFor(c1, CONC), roof: matFor(d.roof || c0, CORRM), trim: matFor(c0, CONC), acc: '#c9a33d', glow: '#ffc068', tier };
+  }
+  /* ---- animated fittings shared by the buildings (b165) ---- */
+  const WIND3 = { a: 0, m: 0 };
+  const addAnim = (g, fn) => { (g.userData.anim || (g.userData.anim = [])).push(fn); };
+  function mkFlag(col, x, y, z, len) {   // a cloth flag as six hinged strips that ripple down their length with the wind
+    const F = new THREE.Group(), M = matFor(col, CLOTHM), N = 6, sw = (len || .34) / N, strips = [];
+    for (let i = 0; i < N; i++) { const st = new THREE.Group(); st.position.x = i === 0 ? 0 : sw; const q = box(sw + .005, .2 - i * .008, .012, M, sw / 2, 0, 0); st.add(q); (i === 0 ? F : strips[i - 1]).add(st); strips.push(st); }
+    F.position.set(x, y, z); return { g: F, strips };
+  }
+  const animFlag = (fl, ph) => (t, dt, b, wind) => { const wm = wind.m, k = .12 + Math.min(1, wm / 60) * .5; fl.g.rotation.y = -wind.a + Math.sin(t * 1.3 + ph) * .1; for (let i = 0; i < fl.strips.length; i++) fl.strips[i].rotation.y = Math.sin(t * (5 + wm * .06) - i * .9 + ph) * k * (.4 + i * .18); };
+  function mkFan(x, y, z, r, mat, axis) { const F = new THREE.Group(); F.position.set(x, y, z); for (let i = 0; i < 4; i++) { const bl = box(r * 1.9, .012, r * .3, mat, 0, 0, 0, 0, i * HPI / 2, 0); bl.rotation.y = i * Math.PI / 4; F.add(bl); } F.add(cyl(r * .2, r * .2, .05, mat, 0, 0, 0, 'y')); if (axis === 'x') F.rotation.z = HPI; else if (axis === 'z') F.rotation.x = HPI; return F; }
+  function mkBeacon(x, y, z, col) { const B = new THREE.Group(); B.position.set(x, y, z); B.add(cyl(.07, .08, .06, TRACK, 0, .03, 0, 'y')); const lm = matFor(col, { emissive: lin(col), emissiveIntensity: 1.6, transparent: true, opacity: .9 }); const dome = cyl(.05, .06, .1, lm, 0, .11, 0, 'y'); B.add(dome); const beam = box(.02, .05, .5, matFor(col, { emissive: lin(col), emissiveIntensity: 2.2, transparent: true, opacity: .35, depthWrite: false }), 0, .11, .25); B.add(beam); B.userData.beam = beam; B.userData.dome = dome; return B; }
+  const animBeacon = (B, rate) => (t) => { B.rotation.y = t * (rate || 4); const k = .6 + .4 * Math.sin(t * (rate || 4) * 2); B.userData.dome.material.emissiveIntensity = 1 + k; };
+  const animBlink = (mesh, period, ph) => (t) => { mesh.material.emissiveIntensity = ((t + (ph || 0)) % period) < period * .12 ? 2.6 : .15; };
+  function mkWindsock(x, y, z) { const W = new THREE.Group(); W.position.set(x, y, z); W.add(cyl(.012, .012, .9, TRACK, 0, -.45, 0, 'y')); const sock = new THREE.Group(); sock.position.y = 0; const segs = []; let par = sock; for (let i = 0; i < 4; i++) { const sg = new THREE.Group(); sg.position.x = i === 0 ? 0 : .11; sg.add(cyl(.05 - i * .009, .058 - i * .009, .11, matFor(i & 1 ? '#f0f0e8' : '#e0602a'), .055, 0, 0, 'x')); par.add(sg); segs.push(sg); par = sg; } W.add(sock); W.userData.sock = sock; W.userData.segs = segs; return W; }
+  const animSock = (W) => (t, dt, b, wind) => { const wm = wind.m, lift = Math.min(1, wm / 45); W.userData.sock.rotation.y = -wind.a; W.userData.sock.rotation.z = -(1 - lift) * 1.2; for (let i = 0; i < W.userData.segs.length; i++) W.userData.segs[i].rotation.z = Math.sin(t * 6 - i * 1.1) * .12 * (.3 + lift) - (1 - lift) * .1; };
+  /* the tier cladding: Mk2 bolts riveted armour plates and a brick skirt along the walls; Mk3 hangs dark composite slabs, LED trim
+     strips and a solar array on the roof — added to every box-like structure */
+  function cladding(g, ST, w, h, H, faces) {
+    if (ST.tier < 2) return; const hw = w * .5, hh = h * .5;
+    const PLT = matFor(ST.tier >= 3 ? '#2f353c' : '#6a7076', ST.tier >= 3 ? COMPM : PLATEM), ACC = matFor(ST.acc, { emissive: lin(ST.glow), emissiveIntensity: ST.tier >= 3 ? 1.1 : .4 });
+    const ph = Math.min(H * .42, .55), py = ph * .5 + .08;
+    for (const f of faces || ['f', 'b', 'l', 'r']) {
+      if (f === 'f' || f === 'b') { const z = (f === 'f' ? 1 : -1) * (hh * .96 + .035); for (let x = -hw * .9; x < hw * .9 - .3; x += .48) g.add(box(.44, ph, .05, PLT, x + .22, py, z)); g.add(box(w * .92, .04, .05, ACC, 0, py + ph * .5 + .05, z)); }
+      else { const x = (f === 'r' ? 1 : -1) * (hw * .96 + .035); for (let z = -hh * .9; z < hh * .9 - .3; z += .48) g.add(box(.05, ph, .44, PLT, x, py, z + .22)); g.add(box(.05, .04, h * .92, ACC, x, py + ph * .5 + .05, 0)); }
+    }
+    if (ST.tier >= 3) { const n = Math.max(1, Math.floor(w * .9 / .5)); for (let i = 0; i < n; i++) g.add(box(.44, .03, .5, matFor('#1e2a3a', SOLARM), -hw * .9 + .25 + i * .5, H + .12, -hh * .3, -.32, 0, 0)); for (let i = 0; i < n; i++) g.add(box(.02, .1, .02, TRACK, -hw * .9 + .25 + i * .5, H + .05, -hh * .3 - .2)); }
+  }
   /* which of the four neighbouring tiles hold another wall/fence — bits 1:+x 2:−x 4:+z 8:−z — so segments join and corners connect */
   function wallMask(b) {
     let m = 0;
@@ -15700,7 +15742,11 @@ function ctrlHudTick(dt) {
   function mkBuilding(b) {
     // models are designed at d.mw × d.mh tiles and scaled up to fill the real footprint d.w × d.h (so the hitbox and placement match what you see)
     const d = b.def, g = new THREE.Group(), w = d.mw || d.w, h = d.mh || d.h, ht = (d.hgt || 30) * K;
-    const wall = matFor(d.col ? d.col[1] : '#4a5344', CONC), roof = matFor(d.roof || (d.col ? d.col[0] : '#5d6a52'), { map: TEX.corrHD, bumpMap: TEX.corrHD, bumpScale: .015, roughness: .5, metalness: .35, envMapIntensity: 1.1 }), trim = matFor(d.col ? d.col[0] : '#5d6a52', CONC);
+    /* three looks, one per upgrade tier: Mk1 field-built (block walls, rusting corrugated roof) · Mk2 reinforced (weathered brick and
+       bolted armour plate) · Mk3 composite (dark hex panelling, solar roofs, amber LED trim). The tier also picks the accent colour
+       every animated fitting uses — see dressBuilding. */
+    const tier0 = b.tier || 1, ST = tierStyle(tier0, d);
+    const wall = ST.wall, roof = ST.roof, trim = ST.trim;
     if (d.flat) { g.add(box(w * .9, .05, h * .9, matFor(d.col[0], { map: TEX.panel }), 0, .03, 0)); for (let i = 0; i < 6; i++) g.add(cyl(.02, 0, .16, BARREL, (i % 3 - 1) * .28, .1, (i < 3 ? -.2 : .2), 'y')); }
     else if (d.wall) {
       const fence = b.t === 'fence', isGate = !!d.gate, mask = wallMask(b); g.userData.mask = mask;
@@ -15797,7 +15843,7 @@ function ctrlHudTick(dt) {
       g.add(box(.7, .06, .1, matFor('#ffcf7a', { emissive: lin('#ffb040'), emissiveIntensity: .8 }), w * .1, H1 * .56, h * .45 + .2)); g.userData.lamp = g.children[g.children.length - 1];
       g.add(cyl(.02, .02, 2.0, TRACK, -w * .44, H1 + 1.0, h * .3, 'y')); g.add(box(.3, .18, .02, matFor('#3060b0'), -w * .44 + .16, H1 + 1.85, h * .3)); g.userData.flag = g.children[g.children.length - 1];   // air-force blue flag
       // the transport on station: a small C-130 orbiting the tower overhead, props turning, banked into the turn
-      const pl = mkVehicle('ac130', 1); pl.g.scale.setScalar(.55); pl.g.userData.R = w * .95; pl.g.userData.H = TH + 2.4; pl.g.userData.props = pl.props; g.add(pl.g); g.userData.plane = pl.g;
+      const pl = mkVehicle('littlebird', 1); pl.g.scale.setScalar(.5); pl.g.userData.R = w * .55; pl.g.userData.H = TH + 1.6; pl.g.userData.rotor = pl.rotor; pl.g.userData.disc = pl.disc; pl.g.userData.tails = pl.tails; g.add(pl.g); g.userData.plane = pl.g;   // a little scout helicopter on station, circling the tower
     }
     else if (b.t === 'barracks') {
       // Quonset hut: corrugated half-barrel roof over a low wall, end doors, stove pipes, a bench and rifle rack outside
@@ -15867,6 +15913,38 @@ function ctrlHudTick(dt) {
       for (let i = 0; i < 2; i++) g.add(box(.3, .18, .3, STL2, w * .28 + i * .4, H1 + .09, h * .3));                                        // roof AC units on the lower block
       g.add(box(.5, .34, .3, matFor('#3a3e2a', PANEL), w * .38, .17, -h * .05)); g.add(cyl(.04, .04, .5, TRACK, w * .52, .45, -h * .05, 'y')); g.userData.gen = { x: w * .52, y: .72, z: -h * .05 };   // generator + exhaust stack
       g.add(box(.6, .04, .16, matFor('#e8e8dc'), w * .12, .01, h * .49 + .6));                                                              // painted threshold
+    } else if (b.t === 'vbay') {
+      // vehicle assembly hall (b165 redesign): a steel portal-frame shed with a curved-vault roof and a clerestory strip, a wide roller
+      // door on the apron side (animated), a vehicle lift inside carrying a Humvee body that rises and drops between the mechanics,
+      // a gantry crane on rails under the roof, an inspection pit, tyre stacks, oil drums, a compressor, a fuel pump on the apron and
+      // painted parking bays — welding flashes and exhaust fans keep it alive
+      const STL2 = matFor('#6a7076', { metalness: .55, roughness: .4 }), FLR = matFor('#55554f', { map: TEX.floorHD, roughness: .8 }), YEL = matFor('#e2b32a', PANEL), DRUM = matFor('#8a3a2a', { map: TEX.panel, metalness: .4, roughness: .5 });
+      const HW = w * .48, HH = h * .34, HX = -w * .1, HZ = -h * .12, HT = ht * .78;                                                     // the hall
+      g.add(box(w * .96, .1, h * .96, FLR, 0, .05, 0));                                                                                    // slab
+      g.add(box(HW * 2, HT, .06, wall, HX, HT / 2, HZ - HH)); for (const sd of [-1, 1]) g.add(box(.06, HT, HH * 2, wall, HX + sd * HW, HT / 2, HZ));   // back + side walls
+      for (let i = 0; i < 6; i++) for (const sd of [-1, 1]) g.add(box(.08, HT + .1, .08, STL2, HX - HW + i * (HW * 2 / 5), (HT + .1) / 2, HZ + sd * HH));   // portal columns
+      const vault = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(HH * 1.08, HH * 1.08, HW * 2 + .1, 24, 1, false, 0, Math.PI), roof)); vault.rotation.z = HPI; vault.position.set(HX, HT - HH * .25, HZ); vault.scale.y = .45; g.add(vault);   // low curved roof
+      g.add(box(HW * 1.6, .18, .04, GLASS, HX, HT + .05, HZ - HH * .1)); g.add(box(HW * 2 + .1, .05, .12, trim, HX, HT + .02, HZ - HH));   // clerestory + eave
+      const door = box(HW * .9, HT * .8, .06, matFor('#c9a33d', { map: TEX.corrHD }), HX, HT * .4, HZ + HH + .03); g.add(door); g.userData.door = { m: door, y0: HT * .4, h: HT * .8 };   // roller door (animated)
+      for (const sd of [-1, 1]) g.add(box(.06, HT * .95, .08, STL2, HX + sd * HW * .47, HT * .48, HZ + HH + .05));                          // door rails
+      g.add(box(HW * 1.2, .05, .06, matFor('#1c2a34', { emissive: lin(ST.glow), emissiveIntensity: .9 }), HX, HT * .9, HZ + HH + .04));      // lit sign strip over the door
+      const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 }); g.userData.wins = win;
+      for (let i = 0; i < 4; i++) g.add(box(.26, .2, .04, win, HX - HW * .6 + i * HW * .4, HT * .55, HZ - HH - .02));
+      g.add(box(1.0, .02, .5, matFor('#2a2a28'), HX - HW * .35, .1, HZ)); g.add(box(1.0, .01, .05, YEL, HX - HW * .35, .12, HZ - .26)); g.add(box(1.0, .01, .05, YEL, HX - HW * .35, .12, HZ + .26));   // inspection pit
+      const lift = new THREE.Group(); lift.position.set(HX + HW * .3, .1, HZ); for (const sd of [-1, 1]) lift.add(box(.7, .04, .12, YEL, 0, 0, sd * .2)); for (const sd of [-1, 1]) lift.add(box(.06, .3, .06, STL2, sd * .3, -.15, 0));
+      const hv = mkVehicle('humvee', 1); hv.g.scale.setScalar(.34); hv.g.position.set(0, .04, 0); lift.add(hv.g); g.add(lift); g.userData.lift = lift;   // the body on the lift
+      const mech = (x, z, a) => { const M = new THREE.Group(); M.position.set(x, 0, z); M.rotation.y = a; M.add(box(.16, .3, .12, matFor('#3a4a5a', PANEL), 0, .27, 0)); M.add(sph(.07, matFor('#c9a684'), 0, .5, 0)); M.add(box(.06, .22, .06, matFor('#2a2a2a'), -.05, .11, 0)); M.add(box(.06, .22, .06, matFor('#2a2a2a'), .05, .11, 0)); return M; };
+      g.add(mech(HX + HW * .3 - .5, HZ + .3, .8)); g.add(mech(HX + HW * .3 + .5, HZ - .3, -2.4));                                          // two mechanics at the lift
+      for (let i = 0; i < 4; i++) g.add(cyl(.14, .14, .08, TIRE, HX - HW * .85, .04 + i * .08, HZ + HH * .6 - (i & 1) * .02, 'y'));          // tyre stack
+      for (let i = 0; i < 3; i++) g.add(cyl(.11, .11, .34, i === 1 ? matFor('#4a5a30', { map: TEX.panel }) : DRUM, HX - HW * .8 + i * .24, .27, HZ - HH * .6, 'y'));   // drums
+      g.add(box(.3, .24, .2, matFor('#3a3e2a', PANEL), HX + HW * .82, .22, HZ - HH * .6)); g.add(cyl(.09, .09, .3, STL2, HX + HW * .82, .25, HZ - HH * .6, 'x'));   // compressor
+      g.add(box(w * .95, .06, .08, STL2, HX, HT - .1, HZ + HH * .2)); g.add(box(w * .95, .06, .08, STL2, HX, HT - .1, HZ - HH * .2));       // crane rails
+      // the apron: painted bays and a fuel pump with a hose
+      const AX = w * .28, AZ = h * .3;
+      for (let i = 0; i < 3; i++) { g.add(box(.9, .01, .04, matFor('#e8e8dc'), AX, .11, AZ - .5 + i * .5)); }
+      g.add(box(.2, .5, .14, matFor('#c8402a', PANEL), w * .42, .3, -h * .3)); g.add(box(.14, .1, .02, matFor('#e8e8dc'), w * .42, .45, -h * .3 + .08)); g.add(cyl(.015, .015, .5, TRACK, w * .42 + .12, .35, -h * .3, 'y'));   // fuel pump
+      g.add(box(.6, .04, .16, matFor('#e8e8dc'), HX, .11, HZ + HH + .55));                                                                    // threshold
+      g.userData.vbay = { HX, HZ, HH, HT, HW };
     } else if (b.t === 'factory') {
       // scrap factory: a sawtooth-roofed hall with a glazed north face on each tooth, twin brick stacks, a conveyor feeding crates
       // through a side door, a loading dock and pallets of salvage — the conveyor runs and the stacks smoke while the plant works
@@ -15925,7 +16003,6 @@ function ctrlHudTick(dt) {
       g.add(box(.4, ht * .5, .05, matFor('#2a2e30', PANEL), 0, ht * .25, h * .48 + .03));                                  // door
       g.userData.wins = win;
       if (b.t === 'hq') { g.add(cyl(.02, .02, 2.0, TRACK, w * .35, ht + 1.0, -h * .3, 'y')); g.add(box(.3, .18, .02, matFor('#b23030'), w * .35 + .16, ht + 1.85, -h * .3)); g.add(box(w * .3, .3, h * .3, roof, -w * .2, ht + .25, h * .15)); const dish = shadowed(new THREE.Mesh(new THREE.SphereGeometry(.35, 12, 8, 0, TAU, 0, .8), matFor('#d8dce0', { side: THREE.DoubleSide }))); dish.position.set(w * .25, ht + .3, h * .25); dish.rotation.x = -.9; g.add(dish); for (let i = 0; i < 2; i++) g.add(box(.35, .25, .35, matFor('#7a8088', PANEL), -w * .3 + i * .5, ht + .24, -h * .3)); }
-      if (b.t === 'vbay') { g.add(box(w * .6, ht * .72, .06, matFor('#c9a33d', { map: TEX.roof }), 0, ht * .36, h * .48 + .04)); g.add(box(w * .9, .1, .12, matFor('#8a8f94', PANEL), 0, ht * .95, h * .48 + .1)); for (let i = 0; i < 3; i++) g.add(cyl(.12, .12, .34, matFor(i ? '#8a3a2a' : '#4a5a30', { map: TEX.panel }), -w * .45 - .2, .17, -h * .3 + i * .3, 'y')); }
       if (b.t === 'refinery') { for (let i = 0; i < 2; i++) g.add(cyl(.32, .32, ht * .8, matFor(i ? '#6a7250' : '#7a6a4a', PANEL), -w * .28 + i * w * .56, ht * .4, -h * .26, 'y')); g.add(cyl(.14, .16, ht * 1.6, matFor('#3a352c', CONC), w * .34, ht * .8, h * .26, 'y')); g.add(cyl(.17, .14, .18, matFor('#2a2620'), w * .34, ht * 1.6, h * .26, 'y')); g.add(box(w * .5, ht * .22, h * .3, matFor('#5a5040', PANEL), 0, ht * .5, h * .18)); for (let i = 0; i < 4; i++) g.add(cyl(.02, .02, .5, matFor('#8a8f94'), -w * .3 + i * .2, ht + .25, h * .1, 'x')); }
     }
     /* upgrade tiers: every structure has its own Mk2 / Mk3 dressing, all of it inside the real footprint */
@@ -15992,6 +16069,87 @@ function ctrlHudTick(dt) {
       } else if (!d.trap) {
         g.add(box(w * .8, .04, .06, ACC, 0, H * .6, hh * .96)); mast(-hw * .6, -hh * .6, 1.2);
       }
+    }
+    /* ================= b165: every structure gets its own animated fittings, and the Mk2 / Mk3 tiers their own cladding =================
+       anim callbacks run each frame from the building loop: fn(t, dt, b, wind)  — wind = { a: heading (sim angle), m: speed px/s } */
+    {
+      const T = tier0, H = Math.max(.4, ht), hw = w * .5, hh = h * .5, LEDM = matFor(ST.acc, { emissive: lin(ST.glow), emissiveIntensity: 1.2 }), STLM = matFor('#6a7076', { metalness: .55, roughness: .4 }), YEL0 = matFor('#e2b32a', PANEL);
+      const wp = (lx, ly, lz) => { const bs = g.userData.bs || 1; return [b.x + lx * bs / K, b.y + lz * bs / K, ly * bs / K]; };   // model-local → sim px (x, y, height)
+      const puff = (lx, ly, lz, col, sz, rate) => (t, dt) => { if (Math.random() < dt * (rate || 4) && G.parts.length < PMAX * .8 && b.done) { const P = wp(lx, ly, lz); part('smoke', P[0] + rnd(-2, 2), P[1] + rnd(-2, 2), G.wind.x * .3 + rnd(-4, 4), G.wind.y * .3 + rnd(-4, 4), rnd(1.6, 3), sz || 4, col || 'rgba(70,64,58,1)', { a: .55, z: P[2], vz: rnd(14, 30), g: -6, grow: (sz || 4) * 2.2, drag: .95, wind: 1 }); } };
+      const flare = (lx, ly, lz, sz) => (t, dt) => { if (Math.random() < dt * 30 && G.parts.length < PMAX * .85 && b.done) { const P = wp(lx, ly, lz); part('fire', P[0] + rnd(-2, 2), P[1] + rnd(-2, 2), rnd(-4, 4), rnd(-4, 4), rnd(.3, .6), sz || 5, Math.random() < .5 ? '#ffd060' : '#ff8a30', { glow: 1, z: P[2], vz: rnd(30, 70), g: -20, grow: 6, drag: .9 }); } };
+      const spin = (obj, rate, axis) => (t) => { obj.rotation[axis || 'y'] = t * rate; };
+      // a cloth flag on every structure that carried a painted one
+      if (g.userData.flag) { const f0 = g.userData.flag; f0.visible = false; const fl = mkFlag(T >= 3 ? '#ffd24a' : T === 2 ? '#c9cf8a' : (b.t === 'aircmd' ? '#3060b0' : '#b23030'), f0.position.x - .16, f0.position.y, f0.position.z, .34); g.add(fl.g); addAnim(g, animFlag(fl, b.id)); g.userData.flag = null; }
+      if (b.t === 'hq') {
+        cladding(g, ST, w * .96, h * .96, ht * .58, ['f', 'l', 'r']);
+        const bc = mkBeacon(w * .18, H + .62, -h * .3, '#ff3a2a'); g.add(bc); addAnim(g, animBeacon(bc, 3));                                // rotating warning beacon by the radar
+        const fan = mkFan(w * .28, ht * .58 + .2, h * .3, .12, TRACK, 'y'); g.add(fan); addAnim(g, spin(fan, 9));                             // roof AC fan
+        if (g.userData.gen) { const Gn = g.userData.gen; addAnim(g, puff(Gn.x, Gn.y, Gn.z, 'rgba(60,56,52,1)', 3, 5)); }                     // generator exhaust
+        const top = sph(.05, matFor('#ff4a3a', { emissive: lin('#ff2a1a'), emissiveIntensity: 2 }), -w * .4 + .28, H + .9 + .6 + .3, -h * .38); g.add(top); addAnim(g, animBlink(top, 1.6, b.id));   // mast obstruction light
+        if (T >= 3) { const bc2 = mkBeacon(-w * .3, H + .55, h * .05, '#ffb02e'); g.add(bc2); addAnim(g, animBeacon(bc2, 2.2)); }
+      } else if (b.t === 'barracks') {
+        const R = h * .46, fl = mkFlag(T >= 3 ? '#ffd24a' : '#3f8a4a', w * .44, R * 2 + .55, -.3, .3); g.add(cyl(.015, .015, .9, TRACK, w * .44, R * 2 + .3, -.3, 'y')); g.add(fl.g); addAnim(g, animFlag(fl, b.id * 1.3));
+        for (let i = 0; i < 2; i++) addAnim(g, puff(-w * .2 + i * w * .4, R + .5, -.15, 'rgba(90,84,76,1)', 2.5, 2.5));                       // stove pipes
+        const door = box(.03, .46, .3, matFor('#2a2e30', PANEL), w * .5, .25, 0); g.add(door); addAnim(g, (t) => { const k = Math.max(0, Math.sin(t * .5 + b.id)) ; door.position.z = k > .6 ? (k - .6) * .8 : 0; });   // end door slides open now and then
+        if (T >= 2) for (let i = 0; i < 3; i++) { const fan = mkFan(-hw * .5 + i * hw * .5, hh * .46 + .2, -hh * .1, .1, TRACK, 'y'); g.add(fan); addAnim(g, spin(fan, 7 + i)); }
+        cladding(g, ST, w * .96, .3, .3, ['f', 'b']);
+      } else if (b.t === 'armory') {
+        const BW = w * .52, BX = -w * .23;
+        cladding(g, ST, BW, h * .96, ht, ['b', 'l']); if (T >= 2) { /* (the lab front stays glazed) */ }
+        const fan = mkFan(BX + BW * .32, ht + .24, -h * .34, .1, TRACK, 'y'); g.add(fan); addAnim(g, spin(fan, 12));                        // HVAC exhaust fan
+        const bc = mkBeacon(BX - BW * .4, ht + .12, h * .38, '#ffb02e'); g.add(bc); addAnim(g, animBeacon(bc, 5));                           // amber lab beacon
+        const dish = shadowed(new THREE.Mesh(new THREE.SphereGeometry(.22, 12, 8, 0, TAU, 0, .8), matFor('#d8dce0', { side: THREE.DoubleSide }))); dish.position.set(BX + BW * .4, ht + .3, -h * .1); g.add(dish); addAnim(g, (t) => { dish.rotation.x = -.8 + Math.sin(t * .7) * .3; dish.rotation.y = Math.sin(t * .4) * .8; });   // tracking dish
+        if (T >= 3) { const ring = cyl(.34, .34, .02, LEDM, BX + BW * .18, ht + .66, h * .12, 'y'); g.add(ring); addAnim(g, (t) => { ring.material.emissiveIntensity = 1 + Math.sin(t * 4) * .8; ring.rotation.y = t; }); }
+      } else if (b.t === 'vbay') {
+        const V = g.userData.vbay; cladding(g, ST, V.HW * 2, V.HH * 2, V.HT, ['b']); if (ST.tier >= 2) { for (const sd of [-1, 1]) { const x = V.HX + sd * (V.HW + .035); for (let z = V.HZ - V.HH * .9; z < V.HZ + V.HH * .9 - .3; z += .48) g.add(box(.05, Math.min(V.HT * .42, .55), .44, matFor(ST.tier >= 3 ? '#2f353c' : '#6a7076', ST.tier >= 3 ? COMPM : PLATEM), x, Math.min(V.HT * .42, .55) * .5 + .08, z + .22)); } }
+        if (g.userData.door) { const D = g.userData.door; addAnim(g, (t) => { const ph = (t * .16 + b.id * .21) % 1, k = ph < .3 ? ph / .3 : ph < .6 ? 1 : ph < .9 ? 1 - (ph - .6) / .3 : 0; D.m.position.y = D.y0 + k * D.h * .9; }); }   // roller door cycles up and down
+        if (g.userData.lift) { const L = g.userData.lift; addAnim(g, (t) => { const ph = (t * .1 + b.id * .13) % 1, k = ph < .25 ? ph / .25 : ph < .6 ? 1 : ph < .85 ? 1 - (ph - .6) / .25 : 0; L.position.y = .1 + k * .42; L.children[2].scale.y = L.children[3].scale.y = .3 + k * 2.4; L.children[2].position.y = L.children[3].position.y = -(.3 + k * 2.4) * .15; }); }   // the lift raises the body for the mechanics, then lowers it
+        const fan = mkFan(V.HX - V.HW * .6, V.HT + .08, V.HZ - V.HH * .5, .12, TRACK, 'y'); g.add(fan); addAnim(g, spin(fan, 8)); const fan2 = mkFan(V.HX + V.HW * .6, V.HT + .08, V.HZ - V.HH * .5, .12, TRACK, 'y'); g.add(fan2); addAnim(g, spin(fan2, 6.5));   // roof exhaust fans
+        { const tr = new THREE.Group(); tr.position.set(V.HX, V.HT - .04, V.HZ); tr.add(box(.22, .1, V.HH * .5, YEL0, 0, 0, 0)); tr.add(box(.22, .1, .18, matFor('#e2b32a', PANEL), 0, 0, 0)); const cable = cyl(.008, .008, .6, TRACK, 0, -.3, 0, 'y'); tr.add(cable); tr.add(box(.08, .06, .04, TRACK, 0, -.62, 0)); g.add(tr); addAnim(g, (t) => { tr.position.x = V.HX + Math.sin(t * .35 + b.id) * V.HW * .75; const dip = .5 + .5 * Math.sin(t * .7 + b.id); cable.scale.y = .4 + dip * .9; cable.position.y = -.3 * cable.scale.y; tr.children[2].position.y = -.6 * cable.scale.y - .02; }); }   // gantry crane trolley + hook, riding the rails under the roof
+        addAnim(g, (t, dt) => { if (b.done && Math.random() < dt * 1.4 && G.parts.length < PMAX * .8) { const P = wp(V.HX + V.HW * .3 + rnd(-.5, .5), .3, V.HZ + rnd(-.3, .3)); for (let k = 0; k < 6; k++) part('spark', P[0], P[1], rnd(-40, 40), rnd(-40, 40), rnd(.2, .5), 1.4, '#9fe0ff', { glow: 1, z: P[2], vz: rnd(20, 80), g: 300 }); part('flash', P[0], P[1], 0, 0, .06, 6, '#cfe8ff', { glow: 1, z: P[2] }); } });   // welding flashes inside
+      } else if (b.t === 'refinery') {
+        cladding(g, ST, w * .96, h * .96, ht, ['f', 'b', 'l', 'r']);
+        addAnim(g, flare(w * .34, ht * 1.72, h * .26, 5)); addAnim(g, puff(w * .34, ht * 1.8, h * .26, 'rgba(30,26,24,1)', 3, 5));           // flare stack
+        const PJ = new THREE.Group(); PJ.position.set(w * .05, 0, h * .4); const beam = box(.7, .05, .06, STLM, 0, .5, 0); PJ.add(box(.06, .5, .06, STLM, .05, .25, .05)); PJ.add(box(.06, .5, .06, STLM, -.05, .25, -.05)); PJ.add(beam); PJ.add(box(.12, .16, .1, STLM, .38, .5, 0)); PJ.add(box(.24, .14, .18, TRACK, -.32, .1, 0)); g.add(PJ); addAnim(g, (t) => { beam.rotation.z = Math.sin(t * 1.4 + b.id) * .22; beam.children.length; });   // nodding pumpjack
+        const fan = mkFan(0, ht * .62, h * .18, .14, TRACK, 'y'); g.add(fan); addAnim(g, spin(fan, 10));                                      // cooler fan on the process block
+        if (T >= 3) addAnim(g, flare(-w * .28, ht * .82, -h * .26, 3));
+      } else if (b.t === 'factory') {
+        cladding(g, ST, w * .96, h * .96, ht * .7, ['f', 'b']);
+        for (const sx of [-.3, .05]) addAnim(g, puff(sx * w, ht * .7 + ht * 1.25, -h * .32, 'rgba(58,54,50,1)', 4, 4));                    // chimney smoke
+        const wheel = new THREE.Group(); wheel.position.set(-w * .49, ht * .35, -h * .1); wheel.add(cyl(.3, .3, .05, STLM, 0, 0, 0, 'x')); for (let i = 0; i < 4; i++) wheel.add(box(.02, .56, .04, TRACK, 0, 0, 0, i * Math.PI / 4, 0, 0)); g.add(wheel); addAnim(g, spin(wheel, 1.8, 'x'));   // flywheel on the side wall
+        addAnim(g, (t, dt) => { if (b.done && Math.random() < dt * .9 && G.parts.length < PMAX * .8) { const P = wp(w * .25, .4, h * .3); for (let k = 0; k < 5; k++) part('spark', P[0], P[1], rnd(-40, 40), rnd(-30, 30), rnd(.2, .5), 1.3, '#ffd080', { glow: 1, z: P[2], vz: rnd(20, 70), g: 300 }); } });   // grinding sparks at the door
+      } else if (b.t === 'warehouse') {
+        cladding(g, ST, w * .96, h * .96, ht * .85, ['b', 'l', 'r']);
+        const fan = mkFan(0, ht * .6, -h * .47 + .06, .14, TRACK, 'z'); g.add(fan); addAnim(g, spin(fan, 6, 'z'));                             // wall exhaust fan
+        const lamp = new THREE.Group(); lamp.position.set(0, ht * .86, 0); lamp.add(cyl(.006, .006, .3, TRACK, 0, -.15, 0, 'y')); lamp.add(cyl(.09, .04, .05, matFor('#fff0c8', { emissive: lin('#ffe0a0'), emissiveIntensity: 1.4 }), 0, -.32, 0, 'y')); g.add(lamp); addAnim(g, (t) => { lamp.rotation.z = Math.sin(t * 1.7 + b.id) * .12; lamp.rotation.x = Math.sin(t * 1.1) * .08; });   // swinging bay lamp
+      } else if (b.t === 'turret') {
+        const bc = sph(.04, matFor('#ff4a3a', { emissive: lin('#ff2a1a'), emissiveIntensity: 2 }), -.62, .3, -.62); g.add(cyl(.01, .01, .3, TRACK, -.62, .15, -.62, 'y')); g.add(bc); addAnim(g, animBlink(bc, 2.2, b.id));   // radio mast light
+        if (g.userData.gun) addAnim(g, (t) => { g.userData.gun.position.y = .42 + Math.sin(t * 2 + b.id) * .006; });                       // the gunner breathes
+      } else if (b.t === 'mortarpit') {
+        const bc = sph(.04, matFor('#ff4a3a', { emissive: lin('#ff2a1a'), emissiveIntensity: 2 }), -.95, .35, -.95); g.add(cyl(.01, .01, .35, TRACK, -.95, .17, -.95, 'y')); g.add(bc); addAnim(g, animBlink(bc, 2.6, b.id));
+      } else if (b.t === 'tower') {
+        const fl = mkFlag(T >= 3 ? '#ffd24a' : '#b23030', .45, ht + 1.3, .45, .3); g.add(cyl(.015, .015, .8, TRACK, .45, ht + 1.0, .45, 'y')); g.add(fl.g); addAnim(g, animFlag(fl, b.id * .7));
+        const SL = new THREE.Group(); SL.position.set(0, ht + .28, 0); const cone = new THREE.Mesh(new THREE.ConeGeometry(.55, 2.6, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff2d0, transparent: true, opacity: .16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); cone.rotation.x = HPI; cone.position.set(0, -.5, 1.3); cone.rotation.x = HPI + .35; SL.add(cone); g.add(SL); g.userData.search = SL;
+        addAnim(g, (t) => { SL.rotation.y = t * .5 + b.id; const dark = 1 - dayNow; cone.visible = dark > .25 && b.done; cone.material.opacity = .05 + dark * .16; });   // the searchlight sweeps the ground at night
+      } else if (b.t === 'airbase') {
+        const W = w, Hh = h; const ws = mkWindsock(W * .42, 1.0, -Hh * .44); g.add(ws); addAnim(g, animSock(ws));
+        const bc = mkBeacon(W * .36, ht * 2.36, -Hh * .3, '#ffffff'); g.add(bc); addAnim(g, animBeacon(bc, 3));                                // tower beacon
+        const lights = []; for (let i = 0; i < 9; i++) { const l = box(.05, .05, .05, matFor('#ffd070', { emissive: lin('#ffb040'), emissiveIntensity: 1 }), -W * .45 + i * W * .11, .07, Hh * .12); g.add(l); lights.push(l); }
+        addAnim(g, (t) => { for (let i = 0; i < lights.length; i++) lights[i].material.emissiveIntensity = ((t * 3 - i * .35) % 1 + 1) % 1 < .25 ? 2.8 : .4; });   // approach lights chase along the runway
+        const hd = box(.06, Hh * .28, Hh * .5, matFor('#3a3e44', PANEL), W * .05, Hh * .14, -Hh * .25); g.add(hd); addAnim(g, (t) => { const k = Math.max(0, Math.sin(t * .3 + b.id)); hd.position.z = -Hh * .25 - (k > .5 ? (k - .5) * Hh * .8 : 0); });   // hangar door slides
+      } else if (b.t === 'flood') {
+        if (g.userData.lamp) addAnim(g, (t) => { g.userData.lamp.material.emissiveIntensity = 2.2 + (Math.random() < .03 ? -1.4 : 0) + Math.sin(t * 40) * .08; });   // mains flicker
+      } else if (b.t === 'aircmd') {
+        cladding(g, ST, w * .8, h * .9, ht * .5, ['f', 'l']);
+        const TX = w * .36, TZ = h * .22, TH = ht * 1.5; const top = sph(.05, matFor('#ff4a3a', { emissive: lin('#ff2a1a'), emissiveIntensity: 2 }), TX, TH + 1.5, TZ); g.add(top); addAnim(g, animBlink(top, 1.2, b.id));
+        const bc = mkBeacon(-w * .2 + w * .12, ht * .8 + .5, -h * .1 + h * .12, '#ffffff'); g.add(bc); addAnim(g, animBeacon(bc, 2.5));
+      } else if (b.t === 'gate') {
+        const arm = new THREE.Group(); arm.position.set(-.45, ht * .55, .36); arm.add(box(.9, .05, .05, matFor('#e0e0d8'), .45, 0, 0)); for (let i = 0; i < 4; i++) arm.add(box(.1, .052, .052, RED, .12 + i * .24, 0, 0)); g.add(arm); g.add(cyl(.06, .06, .3, STLM, -.45, ht * .55, .36, 'y'));
+        addAnim(g, (t, dt) => { const nr = G.hUnits.near(b.x, b.y, 60, _q3); let open = false; for (let i = 0; i < nr.length; i++) { const u = nr[i]; if (!u.dead && !u.inside && !u.def.fly && plyOf(u).team === plyOf(b).team) { open = true; break; } } arm.userData.k = (arm.userData.k || 0) + ((open ? 1 : 0) - (arm.userData.k || 0)) * Math.min(1, dt * 3); arm.rotation.z = arm.userData.k * 1.35; });   // the barrier lifts for friendly traffic
+      } else if (!d.wall && !d.flat && !d.trap && b.t !== 'culvert') {
+        cladding(g, ST, w * .96, h * .96, ht, ['f', 'b', 'l', 'r']);
+      }
+      if (T >= 3 && !d.wall && !d.flat && !d.trap && b.t !== 'culvert' && b.t !== 'flood') { const strip = box(Math.max(.4, w * .6), .03, .04, LEDM, 0, Math.max(.3, H * .3), hh * .96 + .06); g.add(strip); addAnim(g, (t) => { strip.material.emissiveIntensity = 1 + Math.sin(t * 2.4 + b.id) * .5; }); }   // Mk3: pulsing amber LED strip
     }
     g.userData.bs = d.mw ? d.w / d.mw : 1;
     g.scale.setScalar(g.userData.bs);
@@ -16585,9 +16743,10 @@ function ctrlHudTick(dt) {
         }
         if (!b.done && !b.def.flat) buildScene(b, g, bs, buildK, partsAdd);   // rising layer-line + workers hammering the structure together
       } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6; if (g.userData.tube) { const ta = Math.PI - (b.ang !== undefined ? b.ang : -HPI); let dA = ta - g.userData.tube.rotation.y; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); g.userData.tube.rotation.y += dA * Math.min(1, (render._dt || .016) * 3); }   // the mortar tubes traverse smoothly onto the target
-        if (g.userData.dish) { g.userData.dish.rotation.y = G.t * .9; } if (g.userData.plane) { const P = g.userData.plane, a = G.t * .45; P.position.set(Math.cos(a) * P.userData.R, P.userData.H + Math.sin(G.t * .7) * .15, Math.sin(a) * P.userData.R); P.rotation.set(0, -a - HPI, 0); P.rotateX(-.28); if (P.userData.props) for (const pr of P.userData.props) pr.rotation.x = G.t * 60; }   // Airspace Command: the big dish sweeps, the transport orbits the tower banked into its turn
+        if (g.userData.dish) { g.userData.dish.rotation.y = G.t * .9; } if (g.userData.plane) { const P = g.userData.plane, a = G.t * .6; P.position.set(Math.cos(a) * P.userData.R, P.userData.H + Math.sin(G.t * .9) * .12, Math.sin(a) * P.userData.R); P.rotation.set(0, -a - HPI, 0); P.rotateX(-.18); P.rotateZ(-.12); if (P.userData.props) for (const pr of P.userData.props) pr.rotation.x = G.t * 60; if (P.userData.rotor) P.userData.rotor.rotation.z = G.t * 40; if (P.userData.disc) P.userData.disc.visible = true; if (P.userData.tails) for (const tr of P.userData.tails) tr.rotation.z = G.t * 70; }   // Airspace Command: the big dish sweeps, the transport orbits the tower banked into its turn
       if (b.done && g.userData.conveyor) { const cs = g.userData.conveyor.crates; for (let i = 0; i < cs.length; i++) cs[i].position.x = ((G.t * .35 + i / cs.length) % 1) * 1.0; }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
+      if (g.userData.anim) { const rdt = Math.max(1e-3, render._dt || .016); for (let ai = 0; ai < g.userData.anim.length; ai++) g.userData.anim[ai](G.t, rdt, b, WIND3); }
       if (g.userData.flag) g.userData.flag.rotation.y = Math.sin(G.t * 2.2 + b.id) * .25;
       if (b.done && g.userData.fork) {                                                          // forklift cycle: rack → dock loaded, lower, back empty, lift
         const F = g.userData.fork, ph = (G.t * .12 + b.id * .37) % 1, x0 = -F.w * .3, x1 = F.w * .36, zA = 0, zD = F.h * .48 + .1;
@@ -16998,11 +17157,13 @@ function ctrlHudTick(dt) {
     /* ---- particles from G.parts: wind / gravity / bounces already applied by the sim ---- */
     const smK = (G.smokeOp !== undefined ? G.smokeOp : 1);   // Combat-smoke opacity scale (1 = default), applied to firing/explosion smoke & dust
     const windSp = Math.hypot(G.wind.x, G.wind.y), windDx = windSp > .5 ? G.wind.x / windSp : 0, windDy = windSp > .5 ? G.wind.y / windSp : 0, flameLean = Math.min(1.6, windSp / 55) * 1.1;   // flames lean downwind, harder the more it blows
+    WIND3.a = Math.atan2(G.wind.y, G.wind.x); WIND3.m = windSp;
     for (const p of G.parts) {
       if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
       const x = p.x * K, z = p.y * K, gy = groundY(p.x, p.y), y = gy + (p.z || 0) * K + .05, a = p.a, k = p.kind;
       const c = rgbOf(p.col || '#ffffff'), r = p.r * K;
-      if (k === 'fire') { const fs = r * 2.0, ln = fs * flameLean; bbF(x, y - fs * .25, z, fs, c[0], c[1], c[2], a, p.seed === undefined ? (p.seed = Math.random()) : p.seed, windDx * ln, windDy * ln); bb(partsAdd, x, y + .1, z, r * 1.5, c[0] * .6, c[1] * .35, c[2] * .15, a * .3); }
+      if (k === 'fire') { if (p.fx === 2) bb(partsAdd, x, y + .1, z, r * 2.2, c[0], c[1], c[2], a * .9);   // blast fire: the soft glowing bloom it always had
+        else { const fs = r * 1.7, ln = fs * flameLean * .25; bbF(x, y - fs * .1, z, fs, c[0], c[1], c[2], a, p.seed === undefined ? (p.seed = Math.random()) : p.seed, windDx * ln, windDy * ln); bb(partsAdd, x, y + .1, z, r * 1.3, c[0] * .6, c[1] * .35, c[2] * .15, a * .3); } }   // open fire: a compact flickering flame that just nods with the wind
       else if (k === 'flash') bb(partsAdd, x, y + .1, z, r * 4, 1, .92, .7, a);
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
       else if (k === 'flare') {   // a magnesium flare: a big flickering orange halo, hot amber body, white-hot core — and it LIGHTS the ground beneath it
@@ -17105,13 +17266,13 @@ function ctrlHudTick(dt) {
     geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(new Float32Array(N), 1)); geo.setAttribute('iLean', new THREE.InstancedBufferAttribute(new Float32Array(N * 2), 2));
     for (const k of ['iPos', 'iCol', 'iSz', 'iSeed', 'iLean']) geo.attributes[k].setUsage(THREE.DynamicDrawUsage);
     const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { tN: { value: TEX.cloud }, uT: { value: 0 } },
-      vertexShader: 'attribute vec3 iPos; attribute vec4 iCol; attribute float iSz; attribute float iSeed; attribute vec2 iLean; varying vec4 vc; varying vec2 vu; varying float vs; void main(){ vc=iCol; vu=uv; vs=iSeed; float ty = uv.y; vec3 wp = iPos + vec3(iLean.x, 0.0, iLean.y) * ty * ty; vec4 mv = modelViewMatrix * vec4(wp, 1.0); mv.xy += vec2(position.x * iSz, (position.y + 0.5) * iSz * 1.9); gl_Position = projectionMatrix * mv; }',
+      vertexShader: 'attribute vec3 iPos; attribute vec4 iCol; attribute float iSz; attribute float iSeed; attribute vec2 iLean; varying vec4 vc; varying vec2 vu; varying float vs; void main(){ vc=iCol; vu=uv; vs=iSeed; float ty = uv.y; vec3 wp = iPos + vec3(iLean.x, 0.0, iLean.y) * ty * ty; vec4 mv = modelViewMatrix * vec4(wp, 1.0); mv.xy += vec2(position.x * iSz, (position.y + 0.5) * iSz * 1.25); gl_Position = projectionMatrix * mv; }',
       fragmentShader: ['varying vec4 vc; varying vec2 vu; varying float vs; uniform sampler2D tN; uniform float uT;',
         'void main(){ vec2 q = vu; float t = uT * (1.3 + vs * .7) + vs * 9.0;',
-        ' float n1 = texture2D(tN, vec2(q.x * 1.1 + vs * 3.0, q.y * .8 - t * .32)).r; float n2 = texture2D(tN, vec2(q.x * 2.4 - vs * 5.0, q.y * 1.6 - t * .55)).r; float n = n1 * .62 + n2 * .38;',
-        ' float cx = q.x - .5; float width = .5 * (1.0 - q.y * q.y * .88) * (.75 + n * .5);',
-        ' float edge = 1.0 - smoothstep(width * .3, width, abs(cx)); float base = smoothstep(0.0, .1, q.y) * (1.0 - smoothstep(.5, 1.0, q.y * (1.15 - n * .45)));',
-        ' float i = edge * base * (.35 + n * 1.25); i = clamp(i - q.y * .22, 0.0, 1.6); if (i < .03) discard;',
+        ' float n1 = texture2D(tN, vec2(q.x * 1.3 + vs * 3.0, q.y * 1.1 - t * .22)).r; float n2 = texture2D(tN, vec2(q.x * 2.6 - vs * 5.0, q.y * 2.2 - t * .4)).r; float n = n1 * .6 + n2 * .4;',
+        ' float cx = q.x - .5; float width = .5 * (1.0 - q.y * q.y * .6) * (.8 + n * .45);',
+        ' float edge = 1.0 - smoothstep(width * .35, width, abs(cx)); float base = smoothstep(0.0, .14, q.y) * (1.0 - smoothstep(.45, 1.0, q.y * (1.2 - n * .5)));',
+        ' float i = edge * base * (.45 + n * 1.2); i = clamp(i - q.y * .18, 0.0, 1.6); if (i < .03) discard;',
         ' vec3 col = mix(vec3(1.0, .16, .02), vec3(1.0, .52, .07), clamp(i * 1.25, 0.0, 1.0)); col = mix(col, vec3(1.0, .94, .72), smoothstep(.72, 1.35, i * (1.0 - q.y * .45)));',
         ' col *= mix(vec3(1.0), vc.rgb * 1.2, .3);',
         ' gl_FragColor = vec4(col * min(i, 1.25), vc.a * min(i, 1.0)); }'].join('\n') });
@@ -17893,7 +18054,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b164';
+const BUILD_TAG = 'b165';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
