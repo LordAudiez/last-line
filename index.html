@@ -902,7 +902,6 @@ html.gunctl #hud > *:not(#miniwrap){display:none!important}
 html.gunctl #miniwrap{opacity:.85}
 /* the "digital" video: the WebGL frame itself is filtered — white-hot FLIR by default, black-hot, NVG green or plain colour */
 html.gunctl #gl{filter:grayscale(1) contrast(1.42) brightness(1.04)}
-html.gunctl.ghbh #gl{filter:grayscale(1) invert(1) contrast(1.4) brightness(.96)}
 html.gunctl.ghnvg #gl{filter:grayscale(1) sepia(1) hue-rotate(62deg) saturate(3.2) contrast(1.22) brightness(.92)}
 html.gunctl.ghcol #gl{filter:contrast(1.08) saturate(.85)}
 html.gunctl #tilt{display:none}
@@ -922,6 +921,7 @@ html.gunctl #tilt{display:none}
 .gh-btn{pointer-events:auto;cursor:pointer;font:inherit;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#d6ffe4;background:rgba(6,14,10,.72);border:1px solid rgba(160,255,200,.55);border-radius:3px;padding:6px 12px;text-shadow:none}
 .gh-btn:hover{background:rgba(60,140,90,.55);color:#fff}
 .gh-btn.x{border-color:rgba(255,120,100,.7);color:#ffd0c8}.gh-btn.x:hover{background:rgba(160,50,40,.6)}
+.gh-btn .key{display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid currentColor;border-radius:3px;font-size:10px;font-weight:800;opacity:.9}
 .gh-tools{position:absolute;right:18px;top:56px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;pointer-events:none}
 .gh-guns{position:absolute;left:22px;top:56px;width:236px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .gh-guns .lab{font-size:10.5px;letter-spacing:.2em;color:rgba(214,255,228,.7);margin-bottom:2px}
@@ -3208,7 +3208,7 @@ const UDEF = {
     wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 5 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },   // 105mm: biggest blast in the game — the old five-tile Abrams area
     weps: [
       { dmg: 60, rng: 540, cd: .5, spread: .02, spd: 1600, kind: 'shell', splash: TS, sfx: 'chain40', off: 20, slew: .006 },
-      { dmg: 12, rng: 520, cd: .045, spread: .05, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, off: 20, slew: .008 }
+      { dmg: 12, rng: 520, cd: .045, spread: .05, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, off: 20, slew: .008, splash: 18 }   // 25 mm: every round bursts on the deck — a kick of dust and a bite on anything within a body and a half
     ],
     desc: 'Orbits a point raining down a 105mm Howitzer (five-tile blast, one-shot kill on anything), a 30mm chain gun (one-tile blast) and a minigun — three separate targets at once. Fires continuously while it circles.'
   },
@@ -8981,7 +8981,8 @@ function fire(src, tgt, wep, muz) {
       x: m.x, y: m.y, px: m.x, py: m.y, ox: m.x, oy: m.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       dmg: inc ? dmg * .85 : dmg, inc: inc ? 1 : 0, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx, small: wep.kind === 'bullet' && !wep.pierce && (wep.dmg || 0) <= 16, pistol: !!wep.sidearm,
       ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0, pn: wep.pierceN || 0,
-      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0, shock: wep.shock ? 1 : 0
+      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0, shock: wep.shock ? 1 : 0,
+      gnd: (Math.abs(z0 - tz) > 3 && tz < z0 && src.def && (src.def.fly || src.def.veh)) ? 1 : 0   // plunging fire from a vehicle or aircraft: the round ends where it meets the ground
     });
   }
   fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), srcZ, tier);
@@ -9687,6 +9688,16 @@ function ignite(e, b) {
   e.burn = Math.max(e.burn || 0, e.def && e.def.elephant ? 1.6 : 2.5);
   if (!e._incT || G.t - e._incT > .25) { e._incT = G.t; fxExplosion(b.x, b.y, 14, '#ffc45a', '#ff6a22'); G.lights.push({ x: b.x, y: b.y, r: 70, c: [255, 170, 80], i: .6 }); }
 }
+/* a small-calibre cannon round bursting on the ground: a puff of dust thrown up and out, a few sparks and a brief flash */
+function fxRoundBurst(x, y, ang, gnd) {
+  const n = G.parts.length < PMAX * .9 ? 7 : 3;
+  for (let k = 0; k < n; k++) { const a = rnd(TAU), sp = rnd(20, 90); part('dust', x + rnd(-3, 3), y + rnd(-3, 3), Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .7 + G.wind.y * .3, rnd(.35, .8), rnd(3, 5.5), k & 1 ? 'rgba(186,174,150,1)' : 'rgba(150,138,116,1)', { z: rnd(0, 4), vz: rnd(20, 70), g: 90, grow: 14, drag: .9, wind: 1, a: .55 }); }
+  part('flash', x, y, 0, 0, .07, 7, '#ffe6b0', { glow: 1, z: 4 });
+  fxSpark(x, y, ang + Math.PI, 3, '#ffc27a');
+  if (Math.random() < .35) part('smoke', x, y, rnd(-8, 8), rnd(-8, 8), rnd(.5, .9), 3, 'rgba(90,84,76,1)', { z: 4, vz: 20, grow: 9, drag: .93, wind: 1, a: .4 });
+  G.lights.push({ x, y, r: 50, c: [255, 200, 130], i: .5 });
+  terrainHit(x, y, ang);
+}
 function updateBullets(dt) {
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
@@ -9717,7 +9728,9 @@ function updateBullets(dt) {
     b.px = b.x; b.py = b.y;
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     // ride the true firing line: descend (or climb) from the muzzle's height toward the target's height along the shot
-    if (b.drop) { const dd = Math.hypot(b.x - b.ox, b.y - b.oy); b.z = b.z0 + b.zSlope * dd; if (b.zSlope < 0 && b.z < b.zg) b.z = b.zg; else if (b.zSlope > 0 && b.z > b.zg) b.z = b.zg; }
+    if (b.drop) { const dd = Math.hypot(b.x - b.ox, b.y - b.oy); b.z = b.z0 + b.zSlope * dd;
+      if (b.zSlope < 0 && b.z <= b.zg) { b.z = b.zg; if (b.gnd) { b.life = 0; b.gndHit = 1; } }   // a round fired DOWN at the ground (aircraft / vehicle gun) strikes where its line meets the deck — it never skips on along the ground past the target
+      else if (b.zSlope > 0 && b.z > b.zg) b.z = b.zg; }
     else if (b.fly) b.z = b.zg + (b.z0 - b.zg) * clamp(b.life / b.life0, 0, 1);
     if (b.smoke && Math.random() < dt * 60) fxSmoke(b.x, b.y, rnd(-14, 14), rnd(-14, 14), rnd(2.5, 5), rnd(.5, 1.1), 'rgba(180,176,168,1)');
     if (b.kind === 'rocket') G.lights.push({ x: b.x, y: b.y, r: 90, c: [255, 170, 90], i: .7 });
@@ -9775,7 +9788,8 @@ function updateBullets(dt) {
     if (hit || b.life <= 0) {
       if (b.splash) {
         if (b.shock) shockRim(b.x, b.y, b.splash);                                            // 30mm: whatever stands at the rim of the burst is thrown and torn
-        if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .49); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, b.sfx === 'tank'); }   // the 120mm kills every enemy in its burst outright
+        if (b.team === 1 && b.splash <= 24) { fxRoundBurst(b.x, b.y, b.ang, b.gndHit); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }   // 25 mm: a tight burst — dust, sparks, a small flash — that still bites everything within a body and a half
+        else if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .49); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, b.sfx === 'tank'); }   // the 120mm kills every enemy in its burst outright
         else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false); }
       } else if (hit) {
         const arrowFoot = b.kind === 'arrow' && hit.kind === 'unit' && !hit.def.veh && !hit.def.fly;
@@ -9790,7 +9804,7 @@ function updateBullets(dt) {
         terrainHit(b.x, b.y, b.ang);      // splash on water, chips on rock, dirt puff, etc.
         // every round fired down from an aircraft (helicopter minigun etc.)
         // kicks a puff of dust off the ground where it lands
-        if (b.fly) {
+        if (b.fly || b.gndHit) {
           part('dust', b.x, b.y, G.wind.x * .4 + rnd(-12, 12), G.wind.y * .4 + rnd(-12, 12), rnd(.3, .7), rnd(2.6, 4.6), 'rgba(186,174,150,1)',
             { z: 0, vz: rnd(10, 26), grow: 11, drag: .92, wind: 1, a: .42 });
           if (Math.random() < .5) fxSpark(b.x, b.y, b.ang + Math.PI, 2, '#d9c48a');
@@ -13602,7 +13616,7 @@ const CTRL_GUNS = {
   stryker: [{ i: 0, n: '25MM M242 CHAIN GUN' }]
 };
 const CTRL_FOV = { ac130: 34, apache: 44, abrams: 42, stryker: 44 };
-const CTRL_FILT = ['FLIR', 'BLACK-HOT', 'NVG', 'COLOUR'], CTRL_FILT_CLS = ['', 'ghbh', 'ghnvg', 'ghcol'];
+const CTRL_FILT = ['THERMAL', 'INFRARED', 'COLOUR'], CTRL_FILT_CLS = ['', 'ghnvg', 'ghcol'];   // N cycles the video: white-hot thermal → infrared → real colour
 
 function ctrlCanTake(u) { return !!(u && !u.dead && !u.remote && u.kind === 'unit' && u.def && CTRL_GUNS[u.t] && (u.owner || 0) === (G.me || 0) && !u.inside && !(u.def.fly && u.landed)); }
 
@@ -13680,7 +13694,7 @@ function ctrlApplyFilter() {
   const C = UI.ctrl; if (!C) return;
   const h = document.documentElement; for (const c of CTRL_FILT_CLS) if (c) h.classList.remove(c);
   if (CTRL_FILT_CLS[C.filt]) h.classList.add(CTRL_FILT_CLS[C.filt]);
-  const b = document.getElementById('ghFilt'); if (b) b.textContent = 'VIDEO · ' + CTRL_FILT[C.filt];
+  const b = document.getElementById('ghFilt'); if (b) b.innerHTML = 'VIDEO · ' + CTRL_FILT[C.filt] + ' <span class="key">N</span>';
   const m = document.getElementById('ghMode'); if (m) m.textContent = 'GUN CAM · ' + CTRL_FILT[C.filt];
 }
 function ctrlKey(e) {
@@ -13688,7 +13702,8 @@ function ctrlKey(e) {
   const k = e.key.toLowerCase();
   if (/^[1-4]$/.test(k) && !e.ctrlKey) { const sel = C.list.filter(g => !g.auto); const g = sel[+k - 1]; if (g) ctrlSelectGun(g.i); e.preventDefault(); return true; }
   if (k === 'escape') { if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (x) { } } else ctrlExit(); e.preventDefault(); return true; }
-  if (k === 'v') { C.filt = (C.filt + 1) % CTRL_FILT.length; ctrlApplyFilter(); e.preventDefault(); return true; }
+  if (k === 'n' || k === 'v') { C.filt = (C.filt + 1) % CTRL_FILT.length; ctrlApplyFilter(); e.preventDefault(); return true; }
+  if (k === 'e') { ctrlExit(); e.preventDefault(); return true; }
   if (k === '+' || k === '=' || k === ']') { C.fov = clamp(C.fov - 4, 12, 64); e.preventDefault(); return true; }
   if (k === '-' || k === '_' || k === '[') { C.fov = clamp(C.fov + 4, 12, 64); e.preventDefault(); return true; }
   if (k === 'w' || k === 'a' || k === 's' || k === 'd' || k.startsWith('arrow')) { e.preventDefault(); return true; }   // driving (read from IN.keys by driveManual)
@@ -13729,7 +13744,7 @@ function ctrlBuildHud() {
     '<div class="gh-scan"></div><div class="gh-noise"></div><div class="gh-vig"></div><div class="gh-flash" id="ghFlash"></div>',
     '<div class="gh-corner tl"></div><div class="gh-corner tr"></div><div class="gh-corner bl"></div><div class="gh-corner br"></div>',
     '<div class="gh-top"><span class="rec"><i></i>REC</span><b id="ghName"></b><span id="ghMode"></span><span class="sp"></span><span id="ghClock"></span></div>',
-    '<div class="gh-tools"><button class="gh-btn x" id="ghClose">✕ CLOSE HUD</button><button class="gh-btn" id="ghFilt">VIDEO · FLIR</button><button class="gh-btn" id="ghZoomIn">ZOOM +</button><button class="gh-btn" id="ghZoomOut">ZOOM −</button></div>',
+    '<div class="gh-tools"><button class="gh-btn x" id="ghClose">✕ CLOSE HUD <span class="key">E</span></button><button class="gh-btn" id="ghFilt">VIDEO · THERMAL <span class="key">N</span></button><button class="gh-btn" id="ghZoomIn">ZOOM +</button><button class="gh-btn" id="ghZoomOut">ZOOM −</button></div>',
     '<div class="gh-guns" id="ghGuns"></div>',
     '<div class="gh-ret" id="ghRet"><svg viewBox="-130 -130 260 260"><circle class="ring" r="34"/><circle class="ring" r="98" style="opacity:.45"/>',
     '<line class="tick" x1="-60" y1="0" x2="-40" y2="0"/><line class="tick" x1="40" y1="0" x2="60" y2="0"/><line class="tick" x1="0" y1="-60" x2="0" y2="-40"/><line class="tick" x1="0" y1="40" x2="0" y2="60"/>',
@@ -13792,7 +13807,7 @@ function ctrlRenderGuns(rebuild) {
     box.innerHTML = html;
     for (const el of box.querySelectorAll('.gh-gun')) { el.addEventListener('mousedown', e => { e.stopPropagation(); }); el.addEventListener('click', e => { e.stopPropagation(); ctrlSelectGun(+el.dataset.i); }); el.addEventListener('touchstart', e => { e.stopPropagation(); ctrlSelectGun(+el.dataset.i); }, { passive: true }); }
     const nm = document.getElementById('ghName'); if (nm) nm.textContent = u.def.name.toUpperCase();
-    const hint = document.getElementById('ghHint'); if (hint) hint.textContent = (u.def.fly ? 'MOUSE AIM · HOLD LMB FIRE · 1-3 GUN · WHEEL ZOOM · V VIDEO · ESC EXIT' : 'WASD DRIVE · MOUSE AIM · HOLD LMB FIRE · 1-3 WEAPON · WHEEL ZOOM · V VIDEO · ESC EXIT');
+    const hint = document.getElementById('ghHint'); if (hint) hint.textContent = (u.def.fly ? 'MOUSE AIM · HOLD LMB FIRE · 1-3 GUN · WHEEL ZOOM · N VIDEO · E CLOSE' : 'WASD DRIVE · MOUSE AIM · HOLD LMB FIRE · 1-3 WEAPON · WHEEL ZOOM · N VIDEO · E CLOSE');
   }
   const els = box.querySelectorAll('.gh-gun');
   for (let k = 0; k < C.list.length; k++) {
@@ -17650,7 +17665,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b160';
+const BUILD_TAG = 'b161';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
