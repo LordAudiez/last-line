@@ -3209,7 +3209,7 @@ const UDEF = {
   sniper: {
     name: 'Sniper', key: 'N', g: '🔭', hp: 90, spd: 48, r: 10, sight: 32 * 32, armor: 0, pop: 2, nightSight: true,
     cost: { s: 250, c: 190 }, time: 24, spr: 'sniper',
-    wep: { dmg: 120, rng: 32 * 32, cd: 1.6, spread: .008, spd: 2600, kind: 'bullet', sfx: 'sniper', casings: 1, pierce: 1, pierceN: 2, mag: 10, reload: 4.0 },
+    wep: { dmg: 120, rng: 32 * 32, cd: 4.0, spread: .008, spd: 2600, kind: 'bullet', sfx: 'sniper', casings: 1, pierce: 1, pierceN: 2, mag: 10, reload: 4.0 },   // fire rate cut to 40%: one round every 4 s
     desc: 'M82 Barrett anti-materiel rifle. Abrams-range .50 BMG rounds that punch through two bodies in a line. Slow to cycle, but devastating. Sees in day and night without penalty.'
   },
   littlebird1: {
@@ -4813,7 +4813,7 @@ function blastStructs(x, y, r) {
 }
 
 /* ============================ STATE & ENTITIES ============================ */
-const CAM = { x: 0, y: 0, zoom: 1.20, vw: 0, vh: 0, tx: 0, ty: 0, sx: 0, sy: 0, rot: 0 };   // rot: camera yaw (radians, 0 = the classic north-up view)
+const CAM = { x: 0, y: 0, zoom: 1.20, vw: 0, vh: 0, tx: 0, ty: 0, sx: 0, sy: 0, rot: 0, pitch: 0 };   // rot: camera yaw, pitch: tilt offset (radians, 0 = the classic north-up view)
 
 const G = {
   units: [], zeds: [], builds: [], bullets: [], parts: [], crates: [], pickups: [], corpses: [],
@@ -6042,6 +6042,14 @@ function relocateBuilding(b, tx, ty) {
 
 
 /* ---------------- terrain-specific impact effects ---------------- */
+/* a small-arms round striking soft ground: a squirt of dust kicked up along the line of the shot and a spray of dirt chips
+   thrown forward — the little puff that shows where a burst is landing. Cheap enough to run on every miss. */
+function fxGroundSpray(x, y, ang, dustCol, chipA, chipB) {
+  if (G.parts.length > PMAX * .82) return;
+  const back = ang === undefined ? rnd(TAU) : ang + Math.PI;
+  for (let i = 0; i < 4; i++) { const a = back + rnd(-.9, .9), sp = rnd(10, 45); part('dust', x, y, Math.cos(a) * sp + G.wind.x * .2, Math.sin(a) * sp * .7 + G.wind.y * .2, rnd(.35, .7), rnd(2.5, 4.5), dustCol || 'rgba(160,140,108,1)', { z: rnd(1, 4), vz: rnd(30, 90), g: 60, grow: 12, drag: .9, wind: 1, a: .6 }); }
+  for (let i = 0; i < 4; i++) { const a = back + rnd(-1.0, 1.0), sp = rnd(40, 130); part('debris', x, y, Math.cos(a) * sp, Math.sin(a) * sp, rnd(.3, .6), rnd(.7, 1.4), i & 1 ? (chipA || '#7a6242') : (chipB || '#5a4630'), { z: 2, vz: rnd(60, 160), g: 520, bounce: 1, drag: .96 }); }
+}
 function terrainHit(x, y, ang) {
   const t = terrainAt(x, y);
   const back = (ang === undefined ? rnd(TAU) : ang + Math.PI);
@@ -6069,18 +6077,18 @@ function terrainHit(x, y, ang) {
     return;
   }
   if (t === T_SAND) {
-    part('dust', x, y, rnd(-8, 8), rnd(-8, 8), .45, 4, 'rgba(210,192,140,1)', { grow: 20 });
+    part('dust', x, y, rnd(-8, 8), rnd(-8, 8), .45, 4, 'rgba(210,192,140,1)', { grow: 20 }); fxGroundSpray(x, y, ang, 'rgba(214,198,150,1)', '#c8b47e', '#a8946a');
     for (let i = 0; i < 3; i++) { const a = back + rnd(-.9, .9), sp = rnd(40, 120); part('chunk', x, y, Math.cos(a) * sp, Math.sin(a) * sp, rnd(.3, .6), rnd(1, 2), '#c8b47e', { z: 3, vz: rnd(50, 120), g: 560, drag: .96 }); }
     return;
   }
   if (t === T_GRASS || t === T_FOREST || t === T_SWAMP) {
-    part('dust', x, y, 0, 0, .35, 3.5, 'rgba(120,100,70,1)', { grow: 12 });   // torn earth
+    part('dust', x, y, 0, 0, .35, 3.5, 'rgba(120,100,70,1)', { grow: 12 }); fxGroundSpray(x, y, ang, 'rgba(140,122,88,1)', '#6a5a3a', '#4d6b34');   // torn earth + a squirt of dust and dirt
     for (let i = 0; i < 4; i++) { const a = back + rnd(-1.1, 1.1), sp = rnd(50, 150); part('leaf', x, y, Math.cos(a) * sp, Math.sin(a) * sp, rnd(.5, 1), rnd(1.2, 2.4), Math.random() < .5 ? '#4d6b34' : '#6d5a2c', { z: 4, vz: rnd(50, 130), vr: rnd(-10, 10), g: 240, drag: .96 }); }
     return;
   }
   // dirt / default
   fxSpark(x, y, back, 2, '#c8b088');
-  part('dust', x, y, rnd(-8, 8), rnd(-8, 8), .4, 4, 'rgba(150,124,86,1)', { grow: 16 });
+  part('dust', x, y, rnd(-8, 8), rnd(-8, 8), .4, 4, 'rgba(150,124,86,1)', { grow: 16 }); fxGroundSpray(x, y, ang);
   for (let i = 0; i < 2; i++) { const a = back + rnd(-.8, .8), sp = rnd(40, 110); part('debris', x, y, Math.cos(a) * sp, Math.sin(a) * sp, rnd(.4, .8), rnd(1, 2), '#6e5a3c', { z: 3, vz: rnd(50, 120), g: 560, bounce: 1, drag: .96 }); }
 }
 
@@ -9002,6 +9010,11 @@ function muzzlePos(u) {
   const a = u.def.veh ? u.aimT : u.ang;
   const vm = u.def.veh && VMUZ[u.def.spr];
   if (vm) { const s = u.r / .9 * vm[2]; return { x: u.x + Math.cos(a) * vm[0] * s, y: u.y + Math.sin(a) * vm[0] * s, a, z: vm[1] * s }; }
+  const mz = u._muz;                                                                  // infantry: the renderer noted where the muzzle of the drawn weapon actually is (standing, crouched or prone) — fire from there
+  if (mz && !u.def.veh && !u.def.fly && Math.abs(mz.x - u.x) < 60 && Math.abs(mz.y - u.y) < 60) {
+    let da = a - mz.ua; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
+    if (G.frame - mz.t < 24 || (Math.abs(mz.ux - u.x) < 2 && Math.abs(mz.uy - u.y) < 2 && Math.abs(da) < .12)) return { x: mz.x, y: mz.y, a, z: mz.z, exact: 1 };   // still where it was drawn (a cached pose replays in place)
+  }
   const off = u.def.veh ? (u.def.heavy ? 40 : u.r + 12) : u.r + 11;
   return { x: u.x + Math.cos(a) * off, y: u.y + Math.sin(a) * off, a };
 }
@@ -9072,7 +9085,13 @@ function fire(src, tgt, wep, muz) {
       gnd: (Math.abs(z0 - tz) > 3 && tz < z0 && src.def && (src.def.fly || src.def.veh)) ? 1 : 0   // plunging fire from a vehicle or aircraft: the round ends where it meets the ground
     });
   }
-  fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), srcZ, tier);
+  fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), m.exact ? srcZ - 8 : srcZ, tier);   // an exact muzzle height (from the drawn model) replaces the +8 standing guess inside fxMuzzle
+  if (m.exact && src.pose === 'prone' && !src.def.veh && G.parts.length < PMAX * .85) {
+    // firing from the prone: the muzzle blast slaps the ground — a ring of dust puffs out around the shooter's body with every shot (a heavy burst kicks up more)
+    const mg = wep.sfx === 'rktmg' || wep.sfx === 'm2' || wep.sfx === 'auto' || wep.sfx === 'm4' || (wep.cd || 1) < .15, nD = mg ? 6 : 3;
+    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(14, 34) + G.wind.x * .2, Math.sin(a2) * rnd(10, 26) + G.wind.y * .2, rnd(.35, .7), rnd(2.4, 4), 'rgba(168,150,118,1)', { z: rnd(0, 2), vz: rnd(10, 30), g: 20, grow: 11, drag: .88, wind: 1, a: .5 }); }
+    for (let k = 0; k < 2; k++) part('dust', m.x + Math.cos(base) * rnd(2, 10), m.y + Math.sin(base) * rnd(2, 8), Math.cos(base) * rnd(30, 70), Math.sin(base) * rnd(20, 50), rnd(.3, .6), rnd(3, 5), 'rgba(180,164,132,1)', { z: 0, vz: rnd(10, 40), g: 30, grow: 14, drag: .88, wind: 1, a: .55 });   // and a squirt forward off the bore
+  }
   if (wep.rpg) {   // RPG-7 launch: a big fireball off the muzzle, and the BACKBLAST — a cone of flame, smoke and dust blasted out the rear of the tube behind the shooter
     const bz = (srcZ || 0) + 10, bk = base + Math.PI;
     for (let k = 0; k < 6; k++) part('fire', m.x + Math.cos(base) * rnd(0, 14), m.y + Math.sin(base) * rnd(0, 14), Math.cos(base) * rnd(60, 160) + rnd(-30, 30), Math.sin(base) * rnd(60, 160) * .7 + rnd(-20, 20), rnd(.08, .2), rnd(5, 10), k & 1 ? '#ffb45a' : '#fff0c0', { glow: 1, z: bz, drag: .8, grow: 20 });
@@ -9866,6 +9885,8 @@ function updateBullets(dt) {
         } else {
           b.life = 0; fxSpark(b.x, b.y, b.ang + Math.PI, 2, '#8a6a40');
           part('leaf', b.x, b.y, rnd(-22, 22), rnd(-22, 22), rnd(.4, .8), rnd(1.2, 2), '#4a7030', { z: 8, vz: 30, g: 200, drag: .95, wind: 1 });
+          if (typeof fxGroundSpray === 'function') fxGroundSpray(b.x, b.y, b.ang, 'rgba(120,96,64,1)', '#6a4a26', '#4a3418');   // bark chips and a puff of dust off the trunk
+          b._treeHit = 1;
         }
         break;
       }
@@ -9887,7 +9908,7 @@ function updateBullets(dt) {
         else if (b.kind === 'bullet' && (hit.kind === 'zed' || (hit.kind === 'unit' && !hit.def.veh && !hit.def.fly))) netFlesh(b.x, b.y, b.pierce > 0);   // a round striking a body: the flesh impact (heard by everyone in co-op)
         if (hit.kind === 'zed' || (hit.kind === 'unit' && !hit.def.veh && !hit.def.fly)) fxBlood(b.x, b.y, b.ang, 7, '#b32020');   // a round into a body: a blood splat
         else fxSpark(b.x, b.y, b.ang + Math.PI, 4, hit.kind === 'build' ? '#c9a86a' : b.inc ? '#ffb03a' : '#ff9a6a');
-      } else {
+      } else if (!b._treeHit) {
         terrainHit(b.x, b.y, b.ang);      // splash on water, chips on rock, dirt puff, etc.
         // every round fired down from an aircraft (helicopter minigun etc.)
         // kicks a puff of dust off the ground where it lands
@@ -9919,12 +9940,11 @@ function updateItems(dt) {
     } else c.bob += dt * 3;
     if (c.flare) {
       // the flare is what makes a distant pallet findable
-      G.lights.push({ x: c.x, y: c.y, r: 300, c: [255, 120, 90], i: .85 + Math.sin(G.t * 9 + c.bob) * .15 });
-      if (Math.random() < dt * 12) {
-        part('fire', c.x + rnd(-4, 4), c.y + rnd(-4, 4), rnd(-10, 10), rnd(-10, 10), rnd(.3, .6), rnd(3, 6), '#ff5a3c',
-          { glow: 1, grow: 8, z: rnd(2, 10), vz: rnd(40, 90), g: -40 });
-        fxSmoke(c.x, c.y, rnd(-14, 14), rnd(-14, 14), rnd(5, 9), rnd(1.4, 2.6), 'rgba(190,70,50,1)');
-      }
+      // a red signal flare burns on the pallet: a hot red-white core with a wide red halo, sputtering sparks, and a thick red smoke plume
+      G.lights.push({ x: c.x, y: c.y, r: 300, c: [255, 90, 70], i: .85 + Math.sin(G.t * 9 + c.bob) * .15 });
+      if (Math.random() < dt * 40) part('flare', c.x + rnd(-1, 1), c.y + rnd(-1, 1), 0, 0, .14, 1.6, '#ff3a2c', { glow: 1, z: (c.big ? 10 : 6), red: 1, a: .75 + Math.sin(G.t * 31 + c.bob) * .25 });
+      if (Math.random() < dt * 26) part('spark', c.x + rnd(-2, 2), c.y + rnd(-2, 2), rnd(-30, 30), rnd(-30, 30), rnd(.3, .8), rnd(.5, 1.0), Math.random() < .5 ? '#ffb090' : '#ff5040', { glow: 1, z: (c.big ? 10 : 6), vz: rnd(40, 120), g: 160, drag: .96 });
+      if (Math.random() < dt * 14) part('smoke', c.x + rnd(-3, 3), c.y + rnd(-3, 3), rnd(-6, 6) + G.wind.x * .4, rnd(-6, 6) + G.wind.y * .4, rnd(2.4, 4), rnd(3, 5), 'rgba(200,50,40,1)', { a: .8, z: (c.big ? 10 : 6) + 2, vz: rnd(30, 60), g: -10, grow: 18, drag: .95, wind: 1 });
     }
   }
   for (let i = G.pickups.length - 1; i >= 0; i--) {
@@ -10350,17 +10370,19 @@ function addFirePool(x, y, r, dur) { (G.firePools || (G.firePools = [])).push({ 
 function updateFirePools(dt) {
   const F = G.firePools; if (!F || !F.length) return;
   const camx = CAM.x + CAM.vw / 2, camy = CAM.y + CAM.vh / 2;
-  for (let i = F.length - 1; i >= 0; i--) {
-    const f = F[i]; f.t += dt; if (f.t >= f.dur) { F.splice(i, 1); continue; }
+  const nF = F.length, off = G.frame % nF; let died = false;
+  for (let j = 0; j < nF; j++) {                                                          // start from a different pool each frame: when the particle cap bites (right after a stick lands) no pool is starved for long
+    const f = F[(j + off) % nF]; f.t += dt; if (f.t >= f.dur) { f._dead = true; died = true; continue; }
     const k = f.t < .4 ? f.t / .4 : Math.max(.15, 1 - (f.t - .4) / (f.dur - .4)), near = dist2(f.x, f.y, camx, camy) < 2600 * 2600;
+    const share = 1 / Math.max(1, F.length * .6);                                            // a whole stick of canisters splits the particle budget so EVERY pool keeps burning
     // the wind drives the fire: the pool creeps downwind over its life and the flames stream that way, more the harder it blows
     const ws = Math.hypot(G.wind.x, G.wind.y), wk = Math.min(1, ws / 120), wdx = ws > 1 ? G.wind.x / ws : 0, wdy = ws > 1 ? G.wind.y / ws : 0;
     const cx = f.x + wdx * wk * f.t * 9, cy = f.y + wdy * wk * f.t * 9, rr0 = f.r * (1 + wk * .35);   // centre drifts and the pool stretches downwind
     f.ig -= dt;
     if (f.ig <= 0) { f.ig = .25; const r2 = (rr0 + 6) * (rr0 + 6); const nl = G.hZeds.near(cx, cy, rr0 + 10, _q); for (const z of nl) { if (z.dead || z.def.struct || z.remote) continue; if (dist2(z.x, z.y, cx, cy) < r2) { z.burn = Math.max(z.burn || 0, 5); } } }
-    if (near && G.parts.length < PMAX * .9) {
+    if (near && G.parts.length < PMAX * .97) {
       // the burning pool is a carpet of SMALL flames — the same size and life as a burning barrel's — sitting right on the ground, dense enough to cover the pool
-      f._acc = (f._acc || 0) + dt * 640 * k * (f.r / 40); const n = f._acc | 0; f._acc -= n;
+      f._acc = (f._acc || 0) + dt * 640 * k * share * (f.r / 40); const n = f._acc | 0; f._acc -= n; f._sp = (f._sp || 0) + n;
       for (let q = 0; q < n; q++) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0, ex = cx + Math.cos(a) * rr * (1 + wdx * wk * .5), ey = cy + Math.sin(a) * rr * .8 * (1 + wdy * wk * .5); part('fire', ex, ey, rnd(-6, 6) + G.wind.x * .2, rnd(-6, 6) + G.wind.y * .2, rnd(.22, .5), rnd(4, 7.5) * (.7 + .3 * k), Math.random() < .35 ? '#ffd060' : Math.random() < .5 ? '#ffa030' : '#ff6a22', { glow: 1, z: rnd(0, 2), vz: rnd(30, 80), g: -40 }); }
       // and sprites of fire spat out of it: glowing fragments that arc up and drift off downwind, a few tumbling flame flakes among them
       if (Math.random() < dt * 60 * k) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0, sp = rnd(10, 40); part('ember', cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * .8, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp + G.wind.y * .5, rnd(.6, 1.6), rnd(.8, 1.6), Math.random() < .5 ? '#ffc050' : '#ff7a26', { glow: 1, z: rnd(1, 6), vz: rnd(40, 120), g: 50, drag: .97, wind: 1 }); }
@@ -10370,6 +10392,7 @@ function updateFirePools(dt) {
     }
     G.lights.push({ x: cx, y: cy, r: rr0 * 3.2, c: [255, 150, 70], i: 1.5 * k + Math.sin(G.t * 23 + f.x) * .15 });
   }
+  if (died) G.firePools = F.filter(f => !f._dead);
 }
 /* ---- an artillery shell in the air: a whistle, then a big ground burst with a dust column straight up ---- */
 function artyImpact(x, y) {
@@ -13557,7 +13580,7 @@ function clampCam() {
 }
 function updateCamera(dt) {
   if (UI.ctrl && typeof ctrlCamTick === 'function') { ctrlCamTick(dt); return; }   // direct control: the RTS camera is parked on the gun's aim point
-  easeZoom(dt); easeRot(dt);
+  easeZoom(dt); easeRot(dt); easePitch(dt);
   let sx = 0, sy = 0;
   const k = IN.keys;
   // WASD (and the arrows) always pan the camera; command cards are driven by the digit keys instead
@@ -13586,7 +13609,17 @@ function easeRot(dt) {
   if (CAM.rot > Math.PI) CAM.rot -= TAU; else if (CAM.rot < -Math.PI) CAM.rot += TAU;
   if (Math.abs(CAM.rot) < 1e-4 && CAM.rotT === undefined) CAM.rot = 0;
 }
-function resetCamera() { CAM.rotT = 0; CAM.zoomAnchor = null; if (typeof AU !== 'undefined' && AU.ui) AU.ui('click'); }
+function resetCamera() { CAM.rotT = 0; CAM.pitchT = 0; CAM.zoomAnchor = null; if (typeof AU !== 'undefined' && AU.ui) AU.ui('click'); }
+const CAM_PITCH_MIN = -.34, CAM_PITCH_MAX = .48;   // how far the view may dip toward the horizon / rise toward top-down from the classic tilt
+function camOrbit(dyaw, dpitch) {
+  const cur = CAM.rotT !== undefined ? CAM.rotT : (CAM.rot || 0); CAM.rotT = cur + dyaw;
+  const cp = CAM.pitchT !== undefined ? CAM.pitchT : (CAM.pitch || 0); CAM.pitchT = clamp(cp + dpitch, CAM_PITCH_MIN, CAM_PITCH_MAX);   // mouse forward = look down more, back = look out toward the horizon
+}
+function easePitch(dt) {
+  if (CAM.pitchT === undefined) return;
+  const d = CAM.pitchT - (CAM.pitch || 0);
+  if (Math.abs(d) < .001) { CAM.pitch = CAM.pitchT; CAM.pitchT = undefined; } else CAM.pitch = (CAM.pitch || 0) + d * Math.min(1, dt * 10);
+}
 
 /* ---------------- input wiring ---------------- */
 function evPos(e) { const r = cv.getBoundingClientRect(), k = cv.width / (r.width || 1); return [(e.clientX - r.left) * k, (e.clientY - r.top) * k]; }
@@ -13621,11 +13654,12 @@ cv.addEventListener('mousedown', e => {
     const dbl = (now - (IN.lastRC || 0) < 350) && Math.hypot(x - (IN.lastRCx || 0), y - (IN.lastRCy || 0)) < 30;
     IN.lastRC = now; IN.lastRCx = x; IN.lastRCy = y;
     issueOrder(s2wx(x, y), s2wy(y, x), e.shiftKey, dbl);
-  } else if (e.button === 1) { IN.pan = true; IN.panx = x; IN.pany = y; e.preventDefault(); }
+  } else if (e.button === 1) { if (e.shiftKey) { IN.orbit = true; IN.orbx = x; IN.orby = y; } else { IN.pan = true; IN.panx = x; IN.pany = y; } e.preventDefault(); }   // Shift + held wheel button: orbit the camera (left/right turns, forward/back tilts)
 });
 window.addEventListener('mousemove', e => {
   const [x, y] = evPos(e);
   if (IN.pan) { const [dx, dy] = camPan((x - IN.panx) / (CAM.zoom * PIX), (y - IN.pany) / (CAM.zoom * PIX)); CAM.x -= dx; CAM.y -= dy; IN.panx = x; IN.pany = y; clampCam(); }
+  if (IN.orbit) { const dx = x - IN.orbx, dy = y - IN.orby; IN.orbx = x; IN.orby = y; camOrbit(dx * .0055, dy * .0045); }
   IN.mx = x; IN.my = y;
   if (x > 2 && y > 2 && x < cv.width - 2 && y < cv.height - 2) IN.hasMouse = true;
   if (IN.dragging) IN.dragDist = Math.hypot(x - IN.dx0, y - IN.dy0);
@@ -13637,7 +13671,7 @@ window.addEventListener('mousemove', e => {
 window.addEventListener('mouseup', e => {
   const [x, y] = evPos(e);
   UI.wallAnchor = null; UI.wallLast = null;                       // a wall drag ends here; the next drag starts a fresh straight row
-  if (e.button === 1) IN.pan = false;
+  if (e.button === 1) { IN.pan = false; IN.orbit = false; }
   if (e.button === 0 && UI.artyDrag) { artyDragMove(s2wx(x, y), s2wy(y, x)); artyDragEnd(); IN.down = false; return; }
   if (e.button === 0) {
     if (IN.dragging && IN.dragDist > 6) {
@@ -14869,7 +14903,7 @@ function ctrlHudTick(dt) {
     const sub = new Float32Array(w * h);
     for (let y = 0; y < h; y++) { const o = (y0 + y) * T.w + x0; sub.set(T.d.subarray(o, o + w), y * w); }
     renderer.state.bindTexture(gl3.TEXTURE_2D, glTex);
-    gl3.pixelStorei(gl3.UNPACK_ALIGNMENT, 4);
+    gl3.pixelStorei(gl3.UNPACK_ALIGNMENT, 4); gl3.pixelStorei(gl3.UNPACK_FLIP_Y_WEBGL, false); gl3.pixelStorei(gl3.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);   // the last texture three uploaded may have left FLIP_Y on — that mirrored the stamped rows and put the flattened patches in the wrong place when many units were running
     gl3.texSubImage2D(gl3.TEXTURE_2D, 0, x0, y0, w, h, gl3.RED, gl3.FLOAT, sub);
     renderer.state.unbindTexture();
   }
@@ -14950,17 +14984,25 @@ function ctrlHudTick(dt) {
      over the crown shells so the canopy silhouette is ragged and leafy instead of a smooth sphere. Alpha-tested, two-sided,
      and shadow-cast through a depth material that honours the cut-out, so the dappled shade under a tree is leaf-shaped too. */
   TEX.leafCard = mkTex(128, () => [0, 0, 0, 0], (g, S) => {
-    let sd = 7; const rn = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
-    for (let i = 0; i < 9; i++) {
-      const an = i / 9 * TAU + rn() * .5, len = S * (.30 + rn() * .13), wid = len * (.40 + rn() * .16), cx = S / 2 + Math.cos(an) * len * .48, cy = S / 2 + Math.sin(an) * len * .48;
-      const v = .46 + rn() * .3, rgb = (k, a) => 'rgba(' + ((v * .62 * k * 255) | 0) + ',' + (Math.min(255, v * 1.15 * k * 255) | 0) + ',' + ((v * .42 * k * 255) | 0) + ',' + a + ')';   // the same spread of greens the crown texture is painted in
-      g.save(); g.translate(cx, cy); g.rotate(an);
-      g.fillStyle = rgb(1, 1); g.beginPath(); g.moveTo(-len * .5, 0); g.quadraticCurveTo(-len * .1, -wid * .55, len * .5, 0); g.quadraticCurveTo(-len * .1, wid * .55, -len * .5, 0); g.fill();   // pointed leaf
-      g.strokeStyle = 'rgba(200,230,150,.5)'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(-len * .46, 0); g.lineTo(len * .44, 0); g.stroke();            // midrib
-      for (let k = 1; k < 5; k++) { const px = -len * .4 + k * len * .17; g.lineWidth = .8; g.beginPath(); g.moveTo(px, 0); g.lineTo(px + len * .1, -wid * .3); g.moveTo(px, 0); g.lineTo(px + len * .1, wid * .3); g.stroke(); }   // side veins
-      g.fillStyle = rgb(.8, .35); g.beginPath(); g.moveTo(-len * .5, 0); g.quadraticCurveTo(-len * .1, wid * .55, len * .5, 0); g.lineTo(-len * .5, 0); g.fill();   // the lower half a shade darker
+    /* a leafy SPRIG, not a star: three thin twigs fan up from the bottom of the card and each carries a run of small rounded
+       oval leaves set alternately along it (broadleaf / mango-like), overlapping into a loose clump — nothing radial */
+    let sd = 11; const rn = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    const leaf = (x, y, an, len, wid, v) => {
+      const rgb = (k, a) => 'rgba(' + ((v * .62 * k * 255) | 0) + ',' + (Math.min(255, v * 1.15 * k * 255) | 0) + ',' + ((v * .42 * k * 255) | 0) + ',' + a + ')';
+      g.save(); g.translate(x, y); g.rotate(an);
+      g.fillStyle = rgb(1, 1); g.beginPath(); g.ellipse(len * .45, 0, len * .5, wid * .5, 0, 0, TAU); g.fill();                       // rounded oval blade
+      g.fillStyle = rgb(.78, .4); g.beginPath(); g.ellipse(len * .45, wid * .12, len * .5, wid * .36, 0, 0, Math.PI); g.fill();       // the lower half a shade darker
+      g.strokeStyle = 'rgba(210,235,160,.55)'; g.lineWidth = 1.1; g.beginPath(); g.moveTo(len * .02, 0); g.lineTo(len * .9, 0); g.stroke();   // pale midrib
       g.restore();
-    }
+    };
+    const twig = (x0, y0, an, L, n) => {
+      g.strokeStyle = 'rgba(70,50,30,.9)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(an) * L, y0 + Math.sin(an) * L); g.stroke();
+      for (let k = 0; k < n; k++) { const f = (k + 1) / (n + .5), px = x0 + Math.cos(an) * L * f, py = y0 + Math.sin(an) * L * f, side = k & 1 ? 1 : -1;
+        leaf(px, py, an + side * (.75 + rn() * .35), S * (.17 + rn() * .07) * (1 - f * .25), S * (.09 + rn() * .04), .42 + rn() * .3); }
+      leaf(x0 + Math.cos(an) * L, y0 + Math.sin(an) * L, an, S * .16, S * .085, .55 + rn() * .2);                                    // a tip leaf
+    };
+    twig(S * .5, S * .96, -HPI - .55, S * .62, 5); twig(S * .5, S * .96, -HPI + .5, S * .6, 5); twig(S * .5, S * .96, -HPI - .05, S * .78, 6);
+    for (let i = 0; i < 4; i++) leaf(S * (.25 + rn() * .5), S * (.25 + rn() * .45), rn() * TAU, S * .15, S * .08, .45 + rn() * .3);   // a few loose leaves filling the clump
   }, { clamp: 1 });
   const leafCardM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.leafCard, alphaTest: .5, side: THREE.DoubleSide, roughness: .85, metalness: 0, envMapIntensity: .3 });
   /* cards are lit as foliage, not as flat plates: the shading normal is mostly world-up (the way a leafy canopy takes light from
@@ -15164,8 +15206,16 @@ function ctrlHudTick(dt) {
       put(P.head, X(hf + headR * .4, 0), hy, Z(hf + headR * .4, 0), 0, ya, 0, headR, headR * 1.05, headR * .95, skin);                                   // head raised behind the sights
       put(P.helm, X(hf + headR * .35, 0), hy + headR * .16, Z(hf + headR * .35, 0), 0, ya, -.1, headR * 1.2, headR * 1.02, headR * 1.2, col3(S.helm || '#6f8757'));
       for (const s2 of [-1, 1]) { const bit = s2 < 0 ? L_LA : L_RA; if (lm & bit) { const reach = -s2 * cr * armL * .35, wide = pivot * armW * .8; put(bodyCap, X(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), base + armW * .6 + lift * .5, Z(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), 0, ya - s2 * (.5 + pivot * .25), 0, armL * .8, armW, armW, sleeve); put(P.head, X(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), base + armW * .9 + lift * .5, Z(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), 0, ya, 0, armW * .5, armW * .45, armW * .5, skin); } }   // elbows out; hand-over-hand when crawling, braced wide when pivoting
-      const Wp = S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }, wlp = Wp.len * sc, wwp = Math.max(1.4 * sc, Wp.wid * sc * .6), wc2 = col3(Wp.col || '#2b2e32');
-      put(P.box, X(hf + wlp * .35, torsoW * .12), base + armW * 1.1, Z(hf + wlp * .35, torsoW * .12), 0, ya, 0, wlp, wwp * .9, wwp * .8, wc2); put(P.box, X(hf + wlp * .05, torsoW * .12), base + armW * .7, Z(hf + wlp * .05, torsoW * .12), 0, ya, 0, wwp * 1.2, armW * .9, wwp * .7, col3('#1a1c1e'));   // rifle on its magazine, muzzle forward
+      // the weapon laid forward on its magazine / bipod: the machine gun when it is out (the rocketeer prone behind his M249), else the kit's own gun
+      const Wp = o.mg ? MG_WEP : (S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }), tube = !o.mg && Wp.wid >= 6 && !Wp.muzzle, wlp = Wp.len * sc, wwp = tube ? 2.2 * sc : Math.max(1.4 * sc, Wp.wid * sc * .6), wc2 = col3(Wp.col || '#2b2e32');
+      const gR = torsoW * .12, gY = base + armW * 1.1;
+      if (tube) { put(P.cyl, X(hf + wlp * .3, gR), gY + 1.2 * sc, Z(hf + wlp * .3, gR), 0, ya, HPI, 1.3 * sc, wlp, 1.3 * sc, col3('#2f3328')); put(P.head, X(hf + wlp * .82, gR), gY + 1.2 * sc, Z(hf + wlp * .82, gR), 0, ya, HPI, 2.4 * sc, 3.6 * sc, 2.4 * sc, RPG_BODY); }   // the RPG tube with its warhead, resting forward
+      else {
+        put(P.box, X(hf + wlp * .35, gR), gY, Z(hf + wlp * .35, gR), 0, ya, 0, wlp, wwp * .9, wwp * .8, wc2); put(P.box, X(hf + wlp * .05, gR), base + armW * .7, Z(hf + wlp * .05, gR), 0, ya, 0, wwp * 1.2, armW * .9, wwp * .7, col3('#1a1c1e'));   // rifle on its magazine, muzzle forward
+        put(P.cyl, X(hf + wlp * .78, gR), gY + wwp * .1, Z(hf + wlp * .78, gR), 0, ya, HPI, wwp * .22, wlp * .5, wwp * .22, col3k(Wp.col || '#2b2e32', .8));   // barrel out front
+        if (o.mg) { put(P.box, X(hf + wlp * .2, gR - wwp * .9), gY - .6 * sc, Z(hf + wlp * .2, gR - wwp * .9), 0, ya, 0, 4.6 * sc, 3.2 * sc, wwp * 1.4, col3('#3a4a30')); for (const s3 of [-1, 1]) put(P.box, X(hf + wlp * .7, gR + s3 * wwp * .6), gY - 1.6 * sc, Z(hf + wlp * .7, gR + s3 * wwp * .6), 0, ya, 0, .5 * sc, 3.2 * sc, .4 * sc, col3('#1a1c1e')); }   // belt box + bipod legs down
+      }
+      if (o.ck && o.ck.kind === 'unit') o.ck._muz = { x: X(hf + wlp * (tube ? .95 : 1.02), gR) / K, y: Z(hf + wlp * (tube ? .95 : 1.02), gR) / K, z: (gY - y) / K, t: G.frame, ux: o.ck.x, uy: o.ck.y, ua: ang };   // the sim fires its muzzle smoke from HERE
       return;
     }
     if (o.dead) {                                                               // lying on the ground, limbs splayed, head forward
@@ -15379,6 +15429,7 @@ function ctrlHudTick(dt) {
         const gr = aR * .9, bf = shoF - 4 * sc, by = shoY + 2.4 * sc, cd = Math.cos(dip), sd = Math.sin(dip), TUBE = col3('#2f3328'), DK = col3('#1c1e1a'), OLV = col3('#5c6b3a');
         const at = t => [bf + cd * t, by + sd * t];
         const cy = (t, L, r, col, dy) => { const q = at(t); put(P.cyl, X(q[0], gr), q[1] + (dy || 0), Z(q[0], gr), 0, ry, HPI + dip, r, L, r, col); };
+        if (o.ck && o.ck.kind === 'unit') { const qm = at(37 * sc); o.ck._muz = { x: X(qm[0], gr) / K, y: Z(qm[0], gr) / K, z: (qm[1] - y) / K, t: G.frame, ux: o.ck.x, uy: o.ck.y, ua: ang }; }   // the rocket leaves from the tube's mouth
         const bx = (t, dy, L, h, w, col) => { const q = at(t); put(P.box, X(q[0], gr), q[1] + dy, Z(q[0], gr), 0, ry, dip, L, h, w, col); };
         cy(11 * sc, 24 * sc, 1.35 * sc, TUBE);                                    // the tube
         cy(-2.5 * sc, 5 * sc, 2.3 * sc, DK); cy(-4.5 * sc, 1.2 * sc, 2.8 * sc, DK);   // rear venturi flare
@@ -15420,6 +15471,7 @@ function ctrlHudTick(dt) {
         if (kit.optic === 'scope') { cy(wl * .42, ww * 1.25, 6.5 * u, ww * .42, SCOPE); bx(wl * .42, ww * .8, 1.2 * u, ww * .5, ww * .3, RAIL); cy(wl * .58, ww * 1.25, .5 * u, ww * .47, LENS); }
         if (kit.optic === 'bigscope') { cy(wl * .4, ww * 1.35, 9 * u, ww * .55, SCOPE); bx(wl * .36, ww * .85, 1.4 * u, ww * .6, ww * .3, RAIL); bx(wl * .5, ww * .85, 1.4 * u, ww * .6, ww * .3, RAIL); cy(wl * .62, ww * 1.35, .5 * u, ww * .62, LENS); }
         if (kit.supp) cy(wl * 1.02, ww * .12, 6.5 * u, ww * .42, GUNDK); else if (kit.brake) cy(wl * 1.02, ww * .12, 2.2 * u, ww * .3, GUNDK);   // suppressor / muzzle brake
+        if (o.ck && o.ck.kind === 'unit') { const qm = at(wl * (kit.supp ? 1.12 : 1.05)); o.ck._muz = { x: X(qm[0], gr) / K, y: Z(qm[0], gr) / K, z: (qm[1] + ww * .12 - y) / K, t: G.frame, ux: o.ck.x, uy: o.ck.y, ua: ang }; }   // the muzzle's true position for the sim's smoke and flash
         if (kit.bipod) for (const sd2 of [-1, 1]) { const q = at(wl * .9); put(P.box, X(q[0], gr + sd2 * ww * .5), q[1] - 1.6 * u, Z(q[0], gr + sd2 * ww * .5), 0, ry, dip, .5 * u, 3.4 * u, .4 * u, GUNDK); }   // folded bipod
         if (kit.pump) { bx(wl * .6, -ww * .55, wl * .2, ww * .55, ww * .8, kit.furn); cy(wl * .72, -ww * .45, wl * .5, ww * .22, GUNDK); }   // pump + tube magazine
         if (kit.laser) { bx(wl * .62, ww * .95, 1.4 * u, ww * .5, ww * .4, GUNDK); }                                  // PEQ box (the green beam is drawn by the flashlight code)
@@ -15430,6 +15482,7 @@ function ctrlHudTick(dt) {
         let q = at(wl * .33); put(P.box, X(q[0], gr), q[1], Z(q[0], gr), 0, ry, dip, wl * .5, ww, ww * .8, wc);                                   // receiver
         q = at(wl * .74); put(P.cyl, X(q[0], gr), q[1] + ww * .1, Z(q[0], gr), 0, ry, HPI + dip, ww * .22, wl * .5, ww * .22, col3k(W.col || '#2b2e32', .8)); // barrel
         if (W.muzzle && W.len >= 24) { q = at(wl * .97); put(P.cyl, X(q[0], gr), q[1] + ww * .1, Z(q[0], gr), 0, ry, HPI + dip, ww * .32, 3 * sc, ww * .32, col3('#1a1c20')); }
+        if (o.ck && o.ck.kind === 'unit') { const qm = at(wl * 1.0); o.ck._muz = { x: X(qm[0], gr) / K, y: Z(qm[0], gr) / K, z: (qm[1] + ww * .1 - y) / K, t: G.frame, ux: o.ck.x, uy: o.ck.y, ua: ang }; }
         if (W.mag && relK < .35) { q = at(wl * .3); put(P.box, X(q[0], gr), q[1] - ww * .5 - W.mag * sc * .5, Z(q[0], gr), 0, ry, dip - .2, ww * .9, W.mag * sc * 1.3, ww * .6, col3('#1e2124')); }
         if (W.drum) { q = at(wl * .28); put(P.head, X(q[0], gr - ww * .3), q[1] - ww * .6, Z(q[0], gr - ww * .3), 0, ry, 0, W.drum * sc, W.drum * sc, W.drum * sc * .6, col3('#1e2124')); }
         if (W.stock) { q = at(-W.stockLen * sc * .45); put(P.box, X(q[0], gr), q[1] - .3 * sc, Z(q[0], gr), 0, ry, dip, W.stockLen * sc, ww * .95, ww * .7, col3(W.stock)); }
@@ -16308,8 +16361,18 @@ function ctrlHudTick(dt) {
         const bc = sph(.04, matFor('#ff4a3a', { emissive: lin('#ff2a1a'), emissiveIntensity: 2 }), -.95, .35, -.95); g.add(cyl(.01, .01, .35, TRACK, -.95, .17, -.95, 'y')); g.add(bc); addAnim(g, animBlink(bc, 2.6, b.id));
       } else if (b.t === 'tower') {
         const fl = mkFlag(T >= 3 ? '#ffd24a' : '#b23030', .45, ht + 1.3, .45, .3); g.add(cyl(.015, .015, .8, TRACK, .45, ht + 1.0, .45, 'y')); g.add(fl.g); addAnim(g, animFlag(fl, b.id * .7));
-        const SL = new THREE.Group(); SL.position.set(0, ht + .28, 0); const cone = new THREE.Mesh(new THREE.ConeGeometry(.55, 2.6, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff2d0, transparent: true, opacity: .16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })); cone.rotation.x = HPI; cone.position.set(0, -.5, 1.3); cone.rotation.x = HPI + .35; SL.add(cone); g.add(SL); g.userData.search = SL;
-        addAnim(g, (t) => { SL.rotation.y = t * .5 + b.id; const dark = 1 - dayNow; cone.visible = dark > .25 && b.done; cone.material.opacity = .05 + dark * .16; });   // the searchlight sweeps the ground at night
+        /* the searchlight: the beam is a long translucent cone from the lamp housing down to the ground, and it points EXACTLY where the sim's
+           beam is aimed (b.beam / b.lx, b.ly — the same spot the warm light pool is drawn at), so the cone and its pool always agree */
+        const SL = new THREE.Group(); SL.position.set(0, ht + .28, 0);
+        const cg = new THREE.ConeGeometry(1, 1, 18, 1, true); cg.translate(0, -.5, 0);                                                    // apex at the lamp, base 1 unit down
+        const cone = new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ color: 0xfff2d0, transparent: true, opacity: .16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+        const cp = new THREE.Group(); cp.add(cone); SL.add(cp); g.add(SL);
+        g.add(cyl(.09, .11, .16, matFor('#1a1c1e', { metalness: .5, roughness: .4 }), 0, ht + .28, 0, 'y'));
+        addAnim(g, (t, dt, bb) => {
+          const bs = g.userData.bs || 1, dark = 1 - dayNow; cone.visible = dark > .25 && bb.done; cone.material.opacity = .02 + dark * .05;
+          const beam = bb.beam === undefined ? t * .5 : bb.beam, D = ((bb.def.vision || 520) * .5) * K / bs, H = ht + .28, L = Math.sqrt(D * D + H * H), dep = Math.atan2(H, D);
+          SL.rotation.y = HPI - beam; cp.rotation.x = -(HPI - dep); cone.scale.set(D * .3, L, D * .3);   // yaw to the aim, dip to hit the ground at the pool, a tight beam that opens into the pool
+        });
       } else if (b.t === 'airbase') {
         const W = w, Hh = h; const ws = mkWindsock(W * .42, 1.0, -Hh * .44); g.add(ws); addAnim(g, animSock(ws));
         const bc = mkBeacon(W * .36, ht * 2.36, -Hh * .3, '#ffffff'); g.add(bc); addAnim(g, animBeacon(bc, 3));                                // tower beacon
@@ -16789,7 +16852,7 @@ function ctrlHudTick(dt) {
     if (ctlCam || !sun.castShadow) { sc.left = -dist * .9; sc.right = dist * .9; sc.top = dist * .9; sc.bottom = -dist * .9; sc.near = 1; sc.far = 220; sc.updateProjectionMatrix(); return; }
     _lm.lookAt(sun.position, sun.target.position, sc.up); _lm.setPosition(sun.position); _lv.copy(_lm).invert();
     const rot = CAM.rot || 0, rc = Math.cos(rot), rs = Math.sin(rot), ccx = (CAM.x + CAM.vw / 2) * K, ccz = (CAM.y + CAM.vh / 2) * K;
-    const ex0 = -CAM.vw * .56 * K, ex1 = CAM.vw * .56 * K, ez0 = -CAM.vh * .66 * K, ez1 = CAM.vh * .58 * K;   // the view rectangle about its centre (a little more toward the far edge)
+    const lowS = 1 + Math.max(0, TILT - (TILT + (CAM.pitch || 0))) * 2.2, ex0 = -CAM.vw * .56 * K * lowS, ex1 = CAM.vw * .56 * K * lowS, ez0 = -CAM.vh * .66 * K * lowS * lowS, ez1 = CAM.vh * .58 * K;   // the view rectangle about its centre (a little more toward the far edge; much more when the camera is tilted low)
     let l = 1e9, r = -1e9, b = 1e9, t = -1e9, zn = 1e9, zf = -1e9;
     for (let i = 0; i < 8; i++) {
       const lx = i & 1 ? ex1 : ex0, lz = i & 4 ? ez1 : ez0;                                                   // turned with the camera yaw
@@ -16811,7 +16874,8 @@ function ctrlHudTick(dt) {
     const dist = (CAM.vw * K) / (2 * Math.tan(cam3.fov * Math.PI / 360) * cam3.aspect);
     const tx = cxw * K + SHX * K * .5, tz = cyw * K + SHY * K * .5, ty = groundY(cxw, cyw);
     const rot = CAM.rot || 0, rsn = Math.sin(rot), rcs = Math.cos(rot);                                 // camera yaw: the eye swings round the view centre (Shift + wheel)
-    cam3.position.set(tx + rsn * Math.cos(TILT) * dist, ty + Math.sin(TILT) * dist, tz + rcs * Math.cos(TILT) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
+    const tilt = Math.max(.32, Math.min(1.45, TILT + (CAM.pitch || 0)));                                 // camera pitch (Shift + wheel button, mouse forward/back)
+    cam3.position.set(tx + rsn * Math.cos(tilt) * dist, ty + Math.sin(tilt) * dist, tz + rcs * Math.cos(tilt) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
     /* direct-control gun camera: the 3D camera rides the controlled vehicle's gun sight (see 095_control.js) — the RTS camera (CAM)
        is parked on the aim point by ctrlCamTick so the culling window below still covers everything the gun sees */
     const ctlCam = (typeof UI !== 'undefined' && UI.ctrl && typeof ctrlCamPose === 'function') ? ctrlCamPose(cam3, { K, ALTK, groundY, unitMeshes }) : false;
@@ -16823,8 +16887,9 @@ function ctrlHudTick(dt) {
     const apron = ctlCam ? 1.0 : .3, mgx = CAM.vw * apron, mgy = CAM.vh * apron;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling); the gun camera looks across a much wider patch
     /* the culling window: the view rectangle turned by the camera yaw, boxed, plus the apron and the 300-unit strip of far ground the
        tilted camera sees past the top of the screen (that strip lies in whichever world direction is 'away from the camera') */
-    const ars = Math.abs(rsn), arc = Math.abs(rcs), hwv = CAM.vw / 2, hhv = CAM.vh / 2, HW = hwv * arc + hhv * ars, HH = hwv * ars + hhv * arc, fdx = -rsn * 150, fdy = -rcs * 150;
-    const vx0 = cxw - HW - mgx + fdx - 150 * ars, vx1 = cxw + HW + mgx + fdx + 150 * ars, vy0 = cyw - HH - Math.max(150, mgy) + fdy - 150 * arc, vy1 = cyw + HH + mgy + fdy + 150 * arc;
+    const lowK = Math.max(0, TILT - tilt), fm = 150 + lowK * 1600, wk = 1 + lowK * 1.2;                     // a lower camera sees much further toward the horizon: push the window out that way and widen it
+    const ars = Math.abs(rsn), arc = Math.abs(rcs), hwv = CAM.vw / 2 * wk, hhv = CAM.vh / 2 * wk, HW = hwv * arc + hhv * ars, HH = hwv * ars + hhv * arc, fdx = -rsn * fm, fdy = -rcs * fm;
+    const vx0 = cxw - HW - mgx + fdx - fm * ars, vx1 = cxw + HW + mgx + fdx + fm * ars, vy0 = cyw - HH - Math.max(150, mgy) + fdy - fm * arc, vy1 = cyw + HH + mgy + fdy + fm * arc;
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
     if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
 
@@ -16936,8 +17001,8 @@ function ctrlHudTick(dt) {
       // so this keeps in-view detail identical while cutting the heaviest render work back for a smoother frame
       // cover the FULL tilted view: the far edge of the screen sees ground up to ~300 world units above the camera target
       // (same extent the terrain/entity cull uses), so the grass carpet must reach that far or the top strip renders bare.
-      const gmx = CAM.vw * .16, gvx0 = cxw - HW - gmx + fdx - 150 * ars, gvx1 = cxw + HW + gmx + fdx + 150 * ars;
-      const gvy0 = cyw - HH - Math.max(150, CAM.vh * .3) + fdy - 150 * arc, gvy1 = cyw + HH + CAM.vh * .16 + fdy + 150 * arc;
+      const gmx = CAM.vw * .16, gvx0 = cxw - HW - gmx + fdx - fm * ars, gvx1 = cxw + HW + gmx + fdx + fm * ars;
+      const gvy0 = cyw - HH - Math.max(150, CAM.vh * .3) + fdy - fm * arc, gvy1 = cyw + HH + CAM.vh * .16 + fdy + fm * arc;
       const gtx0 = Math.max(0, (gvx0 / TS) | 0), gtx1 = Math.min(MW - 1, (gvx1 / TS) | 0), gty0 = Math.max(0, (gvy0 / TS) | 0), gty1 = Math.min(MH - 1, (gvy1 / TS) | 0);
       const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 3600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
       const per = dense ? QUAL.gd : QUAL.gs;
@@ -17437,11 +17502,12 @@ function ctrlHudTick(dt) {
       else if (k === 'flash') bb(partsAdd, x, y + .1, z, r * 4, 1, .92, .7, a);
       else if (k === 'spark' || k === 'mote' || k === 'ember') bb(partsAdd, x, y, z, Math.max(.05, r * 1.6), c[0], c[1], c[2], a);
       else if (k === 'flare') {   // a magnesium flare: a big flickering orange halo, hot amber body, white-hot core — and it LIGHTS the ground beneath it
-        const fl = .78 + .22 * Math.sin(G.t * 40 + p.x), br = 1.9;
-        bb(partsAdd, x, y, z, r * 13 * fl, 1, .5, .18, Math.min(1, a * .7 * br)); bb(partsAdd, x, y, z, r * 6 * fl, 1, .72, .32, Math.min(1, a * .95 * br)); bb(partsAdd, x, y, z, r * 3 * fl, 1, .9, .6, Math.min(1, a * br)); bb(partsAdd, x, y, z, r * 1.6, 1, 1, 1, 1);
+        const fl = .78 + .22 * Math.sin(G.t * 40 + p.x), br = 1.9, rd = !!p.red;   // red: a signal flare (the airdrop pallet) — the same burn in deep red
+        if (rd) { bb(partsAdd, x, y, z, r * 13 * fl, 1, .16, .1, Math.min(1, a * .7 * br)); bb(partsAdd, x, y, z, r * 6 * fl, 1, .3, .18, Math.min(1, a * .95 * br)); bb(partsAdd, x, y, z, r * 3 * fl, 1, .55, .4, Math.min(1, a * br)); bb(partsAdd, x, y, z, r * 1.6, 1, .9, .85, 1); }
+        else { bb(partsAdd, x, y, z, r * 13 * fl, 1, .5, .18, Math.min(1, a * .7 * br)); bb(partsAdd, x, y, z, r * 6 * fl, 1, .72, .32, Math.min(1, a * .95 * br)); bb(partsAdd, x, y, z, r * 3 * fl, 1, .9, .6, Math.min(1, a * br)); bb(partsAdd, x, y, z, r * 1.6, 1, 1, 1, 1); }
         const hz = (p.z || 0) * K, R = r * 9 + hz * .9, dk = .45 + (1 - dayNow) * .55;   // the pool spreads with height and reads strongest at night
-        FLAREC.setRGB(1 * a * dk, .58 * a * dk, .22 * a * dk); put(P.pool, x, gy + .07, z, -HPI, 0, 0, R * 2.2, R * 2.2, 1, FLAREC);
-        FLAREC.setRGB(1 * a * dk, .78 * a * dk, .42 * a * dk); put(P.pool, x, gy + .08, z, -HPI, 0, 0, R * 1.1, R * 1.1, 1, FLAREC);
+        FLAREC.setRGB(1 * a * dk, (rd ? .2 : .58) * a * dk, (rd ? .12 : .22) * a * dk); put(P.pool, x, gy + .07, z, -HPI, 0, 0, R * 2.2, R * 2.2, 1, FLAREC);
+        FLAREC.setRGB(1 * a * dk, (rd ? .4 : .78) * a * dk, (rd ? .3 : .42) * a * dk); put(P.pool, x, gy + .08, z, -HPI, 0, 0, R * 1.1, R * 1.1, 1, FLAREC);
       }
       else if (k === 'ring') put(P.ring, x, gy + .06, z, -HPI, 0, 0, r, r, 1);
       else if (k === 'smoke') { let sa = a * .15 * (p.am || 1); if (p.fx === 1) { if (G.fxFire === false) continue; sa *= smK; } else if (p.fx === 2) { if (G.fxExpl === false) continue; sa *= smK; } bb(partsNoise, x, y + .08, z, r * 2.3, c[0], c[1], c[2], sa, p._sd === undefined ? (p._sd = Math.random()) : p._sd); }
@@ -17779,7 +17845,7 @@ function setupShowcase() {
   for (const [t, dx, dy] of line) { const u = spawnUnit(t, cx + dx + rnd(-12, 12), cy + dy + rnd(-12, 12), true); u.ang = 0; u.tang = 0; u.home = { x: u.x, y: u.y }; }
   spawnUnit('apache', cx + 30, cy - 50, true);   // gunship circling overhead
   showcaseHorde(22);
-  CAM.rot = 0; CAM.rotT = undefined; CAM.zoom = (innerHeight > innerWidth ? .72 : .92) * ((typeof DPR !== 'undefined') ? DPR : 1);   // portrait phones start zoomed out a touch
+  CAM.rot = 0; CAM.rotT = undefined; CAM.pitch = 0; CAM.pitchT = undefined; CAM.zoom = (innerHeight > innerWidth ? .72 : .92) * ((typeof DPR !== 'undefined') ? DPR : 1);   // portrait phones start zoomed out a touch
   CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
   centerOn(cx - CAM.vw * .10, cy);
 }
@@ -18326,7 +18392,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b169';
+const BUILD_TAG = 'b170';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
