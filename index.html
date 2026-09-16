@@ -5741,6 +5741,7 @@ function damage(e, amt, srcAng, opts) {
   // god-mode cheat: your units and structures take no damage at all
   if (G.cheat.god && (e.kind === 'unit' || e.kind === 'build')) return;
   opts = opts || {};
+  if (opts.blast && (e.kind === 'build' || (e.kind === 'zed' && e.def && e.def.struct)) && srcAng !== undefined) brickBlast(e, amt, srcAng);   // a blast: the struck side sheds bricks
   // co-op: ally units/buildings are ghosts — the owner is authoritative, so never damage them locally.
   // Enemies ARE fought locally: I damage the shared horde on my own screen, and whoever finishes a
   // zombie gets its scrap directly and tells the host to remove it (so kills — and scrap — are per-player).
@@ -5931,7 +5932,7 @@ function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
       const f = 1 - Math.sqrt(dist2(u.x, u.y, x, y)) / r;
       damage(u, dmg * (.4 + f * .5), 0);
     }
-    if (!noBuild) for (const b of G.builds) if (!b.dead && dist2(b.x, b.y, x, y) < r2 * 1.2 && (hitPlayer || plyOf(b).team !== team)) damage(b, dmg * .5, 0);
+    if (!noBuild) for (const b of G.builds) if (!b.dead && dist2(b.x, b.y, x, y) < r2 * 1.2 && (hitPlayer || plyOf(b).team !== team)) damage(b, dmg * .5, angTo(x, y, b.x, b.y), { blast: 1 });
   }
 }
 
@@ -6049,6 +6050,23 @@ function fxGroundSpray(x, y, ang, dustCol, chipA, chipB) {
   const back = ang === undefined ? rnd(TAU) : ang + Math.PI;
   for (let i = 0; i < 4; i++) { const a = back + rnd(-.9, .9), sp = rnd(10, 45); part('dust', x, y, Math.cos(a) * sp + G.wind.x * .2, Math.sin(a) * sp * .7 + G.wind.y * .2, rnd(.35, .7), rnd(2.5, 4.5), dustCol || 'rgba(160,140,108,1)', { z: rnd(1, 4), vz: rnd(30, 90), g: 60, grow: 12, drag: .9, wind: 1, a: .6 }); }
   for (let i = 0; i < 4; i++) { const a = back + rnd(-1.0, 1.0), sp = rnd(40, 130); part('debris', x, y, Math.cos(a) * sp, Math.sin(a) * sp, rnd(.3, .6), rnd(.7, 1.4), i & 1 ? (chipA || '#7a6242') : (chipB || '#5a4630'), { z: 2, vz: rnd(60, 160), g: 520, bounce: 1, drag: .96 }); }
+}
+/* a blast against a structure: bricks fly off the face that took it — how many follows the share of its health the hit
+   costs (a big shell strips a wall, a grenade chips a few) — thrown away from the blast and tumbling. The model itself
+   loses the matching bricks on that side (see applyBricks in the renderer), and gets them back as it is repaired. */
+function brickBlast(e, amt, srcAng) {
+  e.hitDir = srcAng; e.hitT = G.t;
+  if (G.parts.length > PMAX * .85) return;
+  const mh = e.maxHp || 1, frac = Math.min(1, amt / mh), n = Math.min(22, Math.max(2, Math.round(frac * 48)));
+  const w = ((e.def && e.def.w) || 2) * TS * .5, h = ((e.def && e.def.h) || 2) * TS * .5, col = (e.def && e.def.col) ? (Array.isArray(e.def.col) ? e.def.col[0] : e.def.col) : '#7a7068';
+  const fx = e.x - Math.cos(srcAng) * w * .9, fy = e.y - Math.sin(srcAng) * h * .9;                      // the face toward the blast
+  const px = -Math.sin(srcAng), py = Math.cos(srcAng);                                                  // along that face
+  for (let i = 0; i < n; i++) {
+    const t = rnd(-1, 1), sp = rnd(40, 160) * (.6 + frac), a = srcAng + rnd(-.7, .7);
+    part('chunk', fx + px * t * Math.max(w, h) * .9, fy + py * t * Math.max(w, h) * .9, Math.cos(a) * sp, Math.sin(a) * sp * .75, rnd(.9, 1.8), rnd(1.6, 3.2), i % 3 === 0 ? col : (i % 3 === 1 ? '#8a8078' : '#5a524a'),
+      { z: rnd(4, 26), vz: rnd(60, 220), g: 520, bounce: .35, drag: .97, rot: rnd(TAU), vr: rnd(-12, 12) });
+  }
+  for (let i = 0; i < 3; i++) part('dust', fx + px * rnd(-w, w) * .8, fy + py * rnd(-h, h) * .8, Math.cos(srcAng) * rnd(20, 60) + G.wind.x * .2, Math.sin(srcAng) * rnd(20, 60) + G.wind.y * .2, rnd(.8, 1.4), rnd(6, 10), 'rgba(170,160,145,1)', { z: rnd(2, 18), vz: rnd(20, 60), g: 20, grow: 22, drag: .92, wind: 1, a: .6 });
 }
 function terrainHit(x, y, ang) {
   const t = terrainAt(x, y);
@@ -9088,8 +9106,8 @@ function fire(src, tgt, wep, muz) {
   fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), m.exact ? srcZ - 8 : srcZ, tier);   // an exact muzzle height (from the drawn model) replaces the +8 standing guess inside fxMuzzle
   if (m.exact && src.pose === 'prone' && !src.def.veh && G.parts.length < PMAX * .85) {
     // firing from the prone: the muzzle blast slaps the ground — a ring of dust puffs out around the shooter's body with every shot (a heavy burst kicks up more)
-    const mg = wep.sfx === 'rktmg' || wep.sfx === 'm2' || wep.sfx === 'auto' || wep.sfx === 'm4' || (wep.cd || 1) < .15, nD = mg ? 6 : 3;
-    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(14, 34) + G.wind.x * .2, Math.sin(a2) * rnd(10, 26) + G.wind.y * .2, rnd(.35, .7), rnd(2.4, 4), 'rgba(168,150,118,1)', { z: rnd(0, 2), vz: rnd(10, 30), g: 20, grow: 11, drag: .88, wind: 1, a: .5 }); }
+    const mg = wep.sfx === 'rktmg' || wep.sfx === 'm2' || wep.sfx === 'auto' || wep.sfx === 'm4' || (wep.cd || 1) < .15, nD = mg ? 8 : 3;   // the rocketeer's M249 from the prone: a full ring of dust round him every shot
+    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, mg ? 16 : 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(14, 34) + G.wind.x * .2, Math.sin(a2) * rnd(10, 26) + G.wind.y * .2, rnd(.35, .7), rnd(2.4, 4), 'rgba(168,150,118,1)', { z: rnd(0, 2), vz: rnd(10, 30), g: 20, grow: 11, drag: .88, wind: 1, a: .5 }); }
     for (let k = 0; k < 2; k++) part('dust', m.x + Math.cos(base) * rnd(2, 10), m.y + Math.sin(base) * rnd(2, 8), Math.cos(base) * rnd(30, 70), Math.sin(base) * rnd(20, 50), rnd(.3, .6), rnd(3, 5), 'rgba(180,164,132,1)', { z: 0, vz: rnd(10, 40), g: 30, grow: 14, drag: .88, wind: 1, a: .55 });   // and a squirt forward off the bore
   }
   if (wep.rpg) {   // RPG-7 launch: a big fireball off the muzzle, and the BACKBLAST — a cone of flame, smoke and dust blasted out the rear of the tube behind the shooter
@@ -10262,7 +10280,29 @@ function updateCamps(dt) {
    blast, then spring back (the renderer reads G.shocks). Every fxExplosion
    raises one, scaled to its size.
    ================================================================== */
-function addShock(x, y, r, amp, dur) { (G.shocks || (G.shocks = [])).push({ x, y, r, amp: amp || 1, t: 0, dur: dur || .9 }); if (G.shocks.length > 24) G.shocks.shift(); }
+function addShock(x, y, r, amp, dur) { (G.shocks || (G.shocks = [])).push({ x, y, r, amp: amp || 1, t: 0, dur: dur || .9 }); if (G.shocks.length > 24) G.shocks.shift(); shedLeaves(x, y, r, amp || 1); }
+/* the blast wave through the trees: every crown inside the pressure ring throws off a shower of leaves, blown outward from
+   the burst and then carried on the wind as they flutter down (the nearer the tree, the more it loses) */
+function shedLeaves(x, y, r, amp) {
+  if (G.parts.length > PMAX * .8) return;
+  let budget = Math.round(60 + amp * 70);
+  const c0 = ((x - r) / CH) | 0, c1 = ((x + r) / CH) | 0, d0 = ((y - r) / CH) | 0, d1 = ((y + r) / CH) | 0, r2 = r * r;
+  for (let cy = d0; cy <= d1 && budget > 0; cy++) for (let cx = c0; cx <= c1 && budget > 0; cx++) {
+    if (cx < 0 || cy < 0 || cx * CH >= WW || cy * CH >= WH) continue;
+    const ps = chunkProps(cx, cy);
+    for (let i = 0; i < ps.length && budget > 0; i++) {
+      const q = ps[i]; if ((q.s !== 'tree' && q.s !== 'bush') || G.deadProps.has(q.id)) continue;
+      const dd = dist2(q.x, q.y, x, y); if (dd > r2) continue;
+      const d = Math.sqrt(dd), k = 1 - d / r, n = Math.min(budget, Math.round((q.s === 'bush' ? 3 : 7 + q.sc * 5) * (.3 + k * .7) * Math.min(2, amp))), a0 = angTo(x, y, q.x, q.y), H = q.s === 'bush' ? 8 : (26 + q.sc * 22);
+      for (let l = 0; l < n; l++) {
+        const a = a0 + rnd(-.9, .9), sp = rnd(60, 190) * (.4 + k * .6) * Math.min(1.6, amp), sh = hash2(q.id, l + 40);
+        part('leaf', q.x + rnd(-8, 8) * q.sc, q.y + rnd(-6, 6) * q.sc, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .8 + G.wind.y * .5, rnd(1.2, 2.6), rnd(1.3, 2.4), sh < .35 ? '#3f7a2e' : sh < .7 ? '#5c7d40' : sh < .85 ? '#6b8a3a' : '#8a7a3a',
+          { z: H * rnd(.5, 1.1), vz: rnd(20, 90), vr: rnd(-14, 14), g: 110, drag: .95, wind: 1 });
+      }
+      budget -= n;
+    }
+  }
+}
 function updateShocks(dt) { const S = G.shocks; if (!S) return; for (let i = S.length - 1; i >= 0; i--) { S[i].t += dt; if (S[i].t >= S[i].dur) S.splice(i, 1); } }
 /* the blast's knock-back: every enemy inside r is thrown away from it and takes pct of its full health (more the closer it stood) */
 /* the rim of a heavy burst: every enemy standing in the outer band (90%–150% of the radius) is knocked flying away from it and loses limbs */
@@ -13709,7 +13749,7 @@ cv.addEventListener('wheel', e => {
   // zoom on the on-screen scale (CAM.zoom*PIX) so the range feels the same in HD or perf mode
   const dpr = (typeof DPR !== 'undefined') ? DPR : 1;
   const cur = CAM.zoomT !== undefined ? CAM.zoomT : CAM.zoom;
-  const disp = clamp(cur * PIX / dpr * (e.deltaY > 0 ? .86 : 1.16), .55, 2.6);   // clamp in CSS-pixel scale
+  const disp = clamp(cur * PIX / dpr * (e.deltaY > 0 ? .86 : 1.16), .55, 7.5);   // clamp in CSS-pixel scale — the top end goes right down to a soldier's face and chest
   CAM.zoomT = disp * dpr / PIX;
   CAM.zoomAnchor = { wx: s2wx(IN.mx, IN.my), wy: s2wy(IN.my, IN.mx), mx: IN.mx, my: IN.my };
 }, { passive: false });
@@ -16407,6 +16447,36 @@ function ctrlHudTick(dt) {
      bright. The shade is written as a vertex colour on a per-mesh clone of the geometry and material, so shared
      materials elsewhere are untouched. This is what makes the models read as solid, weighted objects rather than
      stacked boxes — a rendering trick baked once, free at run time. */
+  /* ---- brick-by-brick damage ----
+     Every part of a model is a 'brick' except its single biggest block (the structural core, which only goes when the building
+     does). As a structure loses health a matching share of its bricks disappears — and the bricks on the side that faced the
+     last blast go first (each brick is scored by how far it sits toward the blast, plus a little hash jitter so the edge is
+     ragged, not a clean cut). Repairs refill the bricks in reverse order. Shared by player buildings and the horde's camps. */
+  const _bkV = new THREE.Vector3();
+  function collectBricks(g) {
+    const list = []; g.updateMatrixWorld(true);
+    g.traverse(o => { if (!o.isMesh || !o.geometry || (o.material && o.material.transparent)) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox, sz = bb.getSize(_bkV);
+      let vol = Math.abs(sz.x * sz.y * sz.z * o.scale.x * o.scale.y * o.scale.z); if (!isFinite(vol)) vol = 0;
+      o.getWorldPosition(_bkV); g.worldToLocal(_bkV);
+      list.push({ o, vol, px: _bkV.x, pz: _bkV.z, h: hash2((list.length + 1) * 7, 3) }); });
+    if (list.length > 1) { let core = list[0]; for (const q of list) if (q.vol > core.vol) core = q; core.core = true; }
+    g.userData.bricks = list; g.userData.bkLvl = -1; g.userData.bkDir = null;
+    return list;
+  }
+  function applyBricks(g, hp, maxHp, hitDir, rotY) {
+    const L = g.userData.bricks || collectBricks(g); if (!L.length) return;
+    const frac = Math.max(0, Math.min(1, 1 - hp / Math.max(1, maxHp))), lvl = Math.round(frac * 40), hd = hitDir === undefined ? null : hitDir;
+    if (g.userData.bkLvl === lvl && g.userData.bkDir === hd) return;
+    if (g.userData.bkDir !== hd) {                                                                 // a new impact direction: re-rank the bricks toward it
+      const a = hd === null ? null : hd + Math.PI - (rotY || 0), cx = a === null ? 0 : Math.cos(a), cz = a === null ? 0 : Math.sin(a);   // toward the blast, in the model's frame (world y = model z)
+      for (const q of L) q.sc = (a === null ? 0 : (q.px * cx + q.pz * cz)) + q.h * .9;
+      g.userData.bkOrder = L.filter(q => !q.core).sort((p, q) => q.sc - p.sc);
+      g.userData.bkDir = hd;
+    }
+    const ord = g.userData.bkOrder || L.filter(q => !q.core), nHide = Math.min(ord.length, Math.floor(frac * ord.length * 1.02));
+    for (let i = 0; i < ord.length; i++) ord[i].o.visible = i >= nHide;
+    g.userData.bkLvl = lvl;
+  }
   const _aoM = new THREE.Matrix4(), _aoV = new THREE.Vector3(), _aoN = new THREE.Vector3(), _aoC = new THREE.Vector3(), _aoNM = new THREE.Matrix3();
   function bakeAO(g) {
     if (g.userData.aoBaked) return; g.userData.aoBaked = true;
@@ -16618,8 +16688,8 @@ function ctrlHudTick(dt) {
     if (zz.wdir !== undefined) g.rotation.y = zz.wdir ? HPI : 0; else if (zz.def.hq || zz.t === 'mShrine') g.rotation.y = 0;
     g.userData.body.position.x = zz.hurt > 0 ? rnd(-.02, .02) * zz.hurt * 5 : 0;
     // pieces knocked off: the body loses parts progressively as HP drops, and they come back only if it is rebuilt
-    const body = g.userData.body, dmg = 1 - zz.hp / (zz.maxHp || 1), lvl = Math.round(dmg * 10);
-    if (body.userData.lvl !== lvl) { body.userData.lvl = lvl; body.children.forEach((c, i) => { c.visible = hash2(i * 3 + zz.id, 1) > dmg * .65; }); }
+    const body = g.userData.body;
+    if (zz.done) applyBricks(body, zz.hp, zz.maxHp || 1, zz.hitDir, g.rotation.y);
     drawDamageState(zz, x, gy, z, zz.def.w * .8, zz.def.h * .8, 1.4);
   }
   /* ======================= screen → world: raycast against the heightfield ======================= */
@@ -17081,6 +17151,7 @@ function ctrlHudTick(dt) {
         if (g.userData.dish) { g.userData.dish.rotation.y = G.t * .9; } if (g.userData.plane) { const P = g.userData.plane, a = G.t * .6; P.position.set(Math.cos(a) * P.userData.R, P.userData.H + Math.sin(G.t * .9) * .12, Math.sin(a) * P.userData.R); P.rotation.set(0, -a - HPI, 0); P.rotateX(-.18); P.rotateZ(-.12); if (P.userData.props) for (const pr of P.userData.props) pr.rotation.x = G.t * 60; if (P.userData.rotor) P.userData.rotor.rotation.z = G.t * 40; if (P.userData.disc) P.userData.disc.visible = true; if (P.userData.tails) for (const tr of P.userData.tails) tr.rotation.z = G.t * 70; }   // Airspace Command: the big dish sweeps, the transport orbits the tower banked into its turn
       if (b.done && g.userData.conveyor) { const cs = g.userData.conveyor.crates; for (let i = 0; i < cs.length; i++) cs[i].position.x = ((G.t * .35 + i / cs.length) % 1) * 1.0; }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
+      if (b.done && !b.def.flat) applyBricks(g, b.hp, b.maxHp, b.hitDir, g.rotation.y);                    // blast damage knocks the bricks off the struck side; repairs put them back
       if (g.userData.anim) { const rdt = Math.max(1e-3, render._dt || .016); for (let ai = 0; ai < g.userData.anim.length; ai++) g.userData.anim[ai](G.t, rdt, b, WIND3); }
       if (g.userData.flag) g.userData.flag.rotation.y = Math.sin(G.t * 2.2 + b.id) * .25;
       if (b.done && g.userData.fork) {                                                          // forklift cycle: rack → dock loaded, lower, back empty, lift
@@ -18392,7 +18463,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b170';
+const BUILD_TAG = 'b171';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
