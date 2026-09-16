@@ -177,6 +177,7 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 #selall .lab{font-size:9px;letter-spacing:.12em;color:#6f8f83;margin-right:2px}
 #selall button{flex:1;font:600 9.5px/1 inherit;letter-spacing:.06em;padding:5px 3px;border:1px solid #2f4a41;border-radius:4px;background:#0f1a17;color:#9fd6c0;cursor:pointer;font-family:inherit}
 #mzoom{float:right;display:flex;gap:3px;margin:-2px 0 0 0;pointer-events:auto}
+#mzoom button#camReset{width:auto;padding:0 6px;font-size:10px;letter-spacing:.02em}
 #mzoom button{width:20px;height:18px;font:700 12px/1 inherit;border:1px solid #2f4a41;border-radius:4px;background:#0f1a17;color:#9fd6c0;cursor:pointer;padding:0;font-family:inherit}
 #mzoom button:hover{background:#17302a;color:#dfffee;border-color:#4f8a72}
 #selall button:hover{background:#17302a;color:#dfffee;border-color:#4f8a72}
@@ -1067,7 +1068,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     <button class="cbtn go" id="qok">CONFIRM ⏎</button>
     <button class="cbtn no" id="qno">CANCEL ESC</button>
   </div>
-  <div id="miniwrap" class="pan"><div class="phead" id="miniHead">MAP<span id="mzoom"><button data-mz="up" title="Zoom the minimap in (scroll / pinch on the map too)">＋</button><button data-mz="dn" title="Zoom the minimap out">－</button></span><span class="cv">⌄</span></div><div id="selall"><span class="lab">SELECT ALL</span><button data-f="all" title="Select every unit you own (Ctrl+A)">ALL</button><button data-f="inf" title="Select all infantry">INFANTRY</button><button data-f="veh" title="Select all ground vehicles">VEHICLE</button><button data-f="air" title="Select all aircraft">AIR</button><button data-f="eng" title="Select all engineers">ENG</button></div><canvas id="mini" width="680" height="208"></canvas></div>
+  <div id="miniwrap" class="pan"><div class="phead" id="miniHead">MAP<span id="mzoom"><button data-mz="up" title="Zoom the minimap in (scroll / pinch on the map too)">＋</button><button data-mz="dn" title="Zoom the minimap out">－</button><button id="camReset" title="Reset the camera angle (Shift + scroll turns the camera)">Reset camera</button></span><span class="cv">⌄</span></div><div id="selall"><span class="lab">SELECT ALL</span><button data-f="all" title="Select every unit you own (Ctrl+A)">ALL</button><button data-f="inf" title="Select all infantry">INFANTRY</button><button data-f="veh" title="Select all ground vehicles">VEHICLE</button><button data-f="air" title="Select all aircraft">AIR</button><button data-f="eng" title="Select all engineers">ENG</button></div><canvas id="mini" width="680" height="208"></canvas></div>
   <div id="sel" class="pan"></div>
   <div id="cmd" class="pan"></div>
   <div id="placebar"><button id="pbConfirm" class="go" hidden>✓ Confirm</button><button id="pbCancel">✕ Cancel</button></div>
@@ -4812,7 +4813,7 @@ function blastStructs(x, y, r) {
 }
 
 /* ============================ STATE & ENTITIES ============================ */
-const CAM = { x: 0, y: 0, zoom: 1.20, vw: 0, vh: 0, tx: 0, ty: 0, sx: 0, sy: 0 };
+const CAM = { x: 0, y: 0, zoom: 1.20, vw: 0, vh: 0, tx: 0, ty: 0, sx: 0, sy: 0, rot: 0 };   // rot: camera yaw (radians, 0 = the classic north-up view)
 
 const G = {
   units: [], zeds: [], builds: [], bullets: [], parts: [], crates: [], pickups: [], corpses: [],
@@ -5351,9 +5352,10 @@ function grassStamp(x, y, r) {
     const n = 1 + (Math.random() * 2 | 0);
     for (let i = 0; i < n; i++) {
       const a = rnd(TAU), sp = rnd(24, 74);
+      const bc = Math.random(), col = bc < .4 ? '#6a8c3c' : bc < .7 ? '#42602a' : bc < .85 ? '#a8b86a' : '#e6e8d2';   // green blades, some straw-pale, a few bleached white
       part('leaf', x + rnd(-r, r), y + rnd(-r * .6, r * .6), Math.cos(a) * sp + G.wind.x * .4, Math.sin(a) * sp * .6 + G.wind.y * .4,
-        rnd(.5, 1.1), rnd(1.2, 2.2), Math.random() < .5 ? '#6a8c3c' : '#42602a',
-        { z: rnd(2, 8), vz: rnd(24, 74), vr: rnd(-10, 10), g: 200, drag: .95, wind: 1 });
+        rnd(.5, 1.1), rnd(1.2, 2.2), col,
+        { z: rnd(2, 8), vz: rnd(24, 74), vr: rnd(-10, 10), g: 200, drag: .95, wind: 1, blade: 1 });
     }
   }
 }
@@ -5367,6 +5369,7 @@ function fxGrassBurn(x, y, r) {
     const tt = MAP.t[tileIdx(tx, ty)];
     if (tt !== T_GRASS && tt !== T_FOREST && tt !== T_SWAMP) continue;
     grassStamp(bx, by, 6);                              // it scorches down too
+    if (Math.random() < .5) part('leaf', bx, by, rnd(-20, 20) + G.wind.x * .4, rnd(-20, 20) + G.wind.y * .4, rnd(.5, 1.1), rnd(1.2, 2), Math.random() < .5 ? '#c8b26a' : '#5a4a2a', { z: rnd(2, 6), vz: rnd(30, 80), vr: rnd(-10, 10), g: 160, drag: .95, wind: 1, blade: 1 });   // a singed blade flicks up
     part('fire', bx, by, rnd(-8, 8), rnd(-8, 8), rnd(1.2, 2.8), rnd(2, 3.6), '#ff9a3c', { z: rnd(1, 5), vz: rnd(8, 20), g: -6, glow: 1 });
     if (Math.random() < .6) part('smoke', bx, by, rnd(-6, 6), rnd(-6, 6) - 8, rnd(1.5, 3), rnd(2, 4), 'rgba(58,52,46,1)', { z: rnd(3, 10), vz: rnd(20, 50), g: -8, grow: 12, a: .5, wind: 1 });
     G.lights.push({ x: bx, y: by, r: 42, c: [255, 150, 70], i: .5 });
@@ -10356,8 +10359,12 @@ function updateFirePools(dt) {
     f.ig -= dt;
     if (f.ig <= 0) { f.ig = .25; const r2 = (rr0 + 6) * (rr0 + 6); const nl = G.hZeds.near(cx, cy, rr0 + 10, _q); for (const z of nl) { if (z.dead || z.def.struct || z.remote) continue; if (dist2(z.x, z.y, cx, cy) < r2) { z.burn = Math.max(z.burn || 0, 5); } } }
     if (near && G.parts.length < PMAX * .9) {
-      f._acc = (f._acc || 0) + dt * 150 * k * (f.r / 40); const n = f._acc | 0; f._acc -= n;
-      for (let q = 0; q < n; q++) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0, ex = cx + Math.cos(a) * rr * (1 + wdx * wk * .5), ey = cy + Math.sin(a) * rr * .8 * (1 + wdy * wk * .5); part('fire', ex, ey, rnd(-10, 10) + G.wind.x * .28, rnd(-10, 10) + G.wind.y * .28, rnd(.4, .9), rnd(8, 16) * (.6 + .4 * k), Math.random() < .4 ? '#ffd060' : Math.random() < .5 ? '#ffb040' : '#ff6a22', { glow: 1, grow: 18, z: rnd(0, 8), vz: rnd(60, 150), g: -50, drag: .9 }); }
+      // the burning pool is a carpet of SMALL flames — the same size and life as a burning barrel's — sitting right on the ground, dense enough to cover the pool
+      f._acc = (f._acc || 0) + dt * 640 * k * (f.r / 40); const n = f._acc | 0; f._acc -= n;
+      for (let q = 0; q < n; q++) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0, ex = cx + Math.cos(a) * rr * (1 + wdx * wk * .5), ey = cy + Math.sin(a) * rr * .8 * (1 + wdy * wk * .5); part('fire', ex, ey, rnd(-6, 6) + G.wind.x * .2, rnd(-6, 6) + G.wind.y * .2, rnd(.22, .5), rnd(4, 7.5) * (.7 + .3 * k), Math.random() < .35 ? '#ffd060' : Math.random() < .5 ? '#ffa030' : '#ff6a22', { glow: 1, z: rnd(0, 2), vz: rnd(30, 80), g: -40 }); }
+      // and sprites of fire spat out of it: glowing fragments that arc up and drift off downwind, a few tumbling flame flakes among them
+      if (Math.random() < dt * 60 * k) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0, sp = rnd(10, 40); part('ember', cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * .8, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp + G.wind.y * .5, rnd(.6, 1.6), rnd(.8, 1.6), Math.random() < .5 ? '#ffc050' : '#ff7a26', { glow: 1, z: rnd(1, 6), vz: rnd(40, 120), g: 50, drag: .97, wind: 1 }); }
+      if (Math.random() < dt * 14 * k) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0; part('fire', cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * .8, rnd(-14, 14) + G.wind.x * .45, rnd(-14, 14) + G.wind.y * .45, rnd(.35, .7), rnd(1.6, 2.8), '#ffb040', { glow: 1, z: rnd(2, 8), vz: rnd(50, 110), g: 20, drag: .96, wind: 1 }); }
       if (Math.random() < dt * 34 * k) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * rr0; part('smoke', cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * .8, rnd(-8, 8) + G.wind.x * .5, rnd(-8, 8) + G.wind.y * .5, rnd(2.6, 4.6), rnd(9, 15), 'rgba(30,26,24,1)', { a: .85, z: rnd(6, 24), vz: rnd(30, 70), g: -12, grow: 26, drag: .95, wind: 1 }); }
       if (Math.random() < dt * 6 * k) fxGrassBurn(cx + wdx * rr0 * .6, cy + wdy * rr0 * .6, rr0 * .5);   // and the grass downwind keeps catching
     }
@@ -12264,7 +12271,8 @@ function drawMinimap() {
   if (G.villages) for (const vg of G.villages) { const p = px(vg.x, vg.y); const col = (vg.owner && vg.owner.length === 1) ? (TEAM_COL[vg.owner] || '#c9b45a') : vg.owner === 'invader' ? '#d24545' : '#c9b45a'; mctx.save(); mctx.translate(p[0], p[1]); mctx.rotate(Math.PI / 4); mctx.fillStyle = 'rgba(0,0,0,.6)'; mctx.fillRect(-3.4, -3.4, 6.8, 6.8); mctx.fillStyle = col; mctx.fillRect(-2.4, -2.4, 4.8, 4.8); mctx.restore(); }
   const v = px(CAM.x, CAM.y);
   mctx.strokeStyle = 'rgba(255,255,255,.85)'; mctx.lineWidth = 1.5;
-  mctx.strokeRect(v[0] + .5, v[1] + .5, CAM.vw * sc, CAM.vh * sc);
+  if (CAM.rot) { const c = px(CAM.x + CAM.vw / 2, CAM.y + CAM.vh / 2); mctx.save(); mctx.translate(c[0], c[1]); mctx.rotate(-CAM.rot); mctx.strokeRect(-CAM.vw * sc / 2 + .5, -CAM.vh * sc / 2 + .5, CAM.vw * sc, CAM.vh * sc); mctx.restore(); }   // the view turns with the camera
+  else mctx.strokeRect(v[0] + .5, v[1] + .5, CAM.vw * sc, CAM.vh * sc);
   mctx.restore();
   if ((MINI.zoom || 1) > 1) { mctx.fillStyle = 'rgba(255,255,255,.7)'; mctx.font = '9px system-ui'; mctx.textAlign = 'right'; mctx.fillText((MINI.zoom).toFixed(1) + '×', mw - 4, 11); mctx.textAlign = 'left'; }
   if (G.hq && !G.hq.dead && G.zeds.some(z => !z.dead && z.x < G.hq.x + 420)) {
@@ -13549,7 +13557,7 @@ function clampCam() {
 }
 function updateCamera(dt) {
   if (UI.ctrl && typeof ctrlCamTick === 'function') { ctrlCamTick(dt); return; }   // direct control: the RTS camera is parked on the gun's aim point
-  easeZoom(dt);
+  easeZoom(dt); easeRot(dt);
   let sx = 0, sy = 0;
   const k = IN.keys;
   // WASD (and the arrows) always pan the camera; command cards are driven by the digit keys instead
@@ -13565,9 +13573,20 @@ function updateCamera(dt) {
     if (IN.my < edge) sy -= 1; else if (IN.my > cv.height - edge) sy += 1;
   }
   const sp = 900 / CAM.zoom * dt;
-  CAM.x += sx * sp; CAM.y += sy * sp;
+  { const [dx, dy] = camPan(sx * sp, sy * sp); CAM.x += dx; CAM.y += dy; }   // screen-relative: 'up' is always away from the camera, however it is turned
   clampCam();
 }
+/* ---- camera turning: Shift + wheel (or Shift + trackpad scroll) yaws the 3D camera around the point in the middle of the
+   view; it glides toward the target angle each frame. camPan() maps a screen-space pan onto the turned world axes. ---- */
+function camPan(px, py) { const r = CAM.rot || 0; if (!r) return [px, py]; const c = Math.cos(r), s = Math.sin(r); return [px * c + py * s, -px * s + py * c]; }
+function easeRot(dt) {
+  if (CAM.rotT === undefined) return;
+  let d = CAM.rotT - CAM.rot; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU;
+  if (Math.abs(d) < .0015) { CAM.rot = CAM.rotT; CAM.rotT = undefined; } else CAM.rot += d * Math.min(1, dt * 10);
+  if (CAM.rot > Math.PI) CAM.rot -= TAU; else if (CAM.rot < -Math.PI) CAM.rot += TAU;
+  if (Math.abs(CAM.rot) < 1e-4 && CAM.rotT === undefined) CAM.rot = 0;
+}
+function resetCamera() { CAM.rotT = 0; CAM.zoomAnchor = null; if (typeof AU !== 'undefined' && AU.ui) AU.ui('click'); }
 
 /* ---------------- input wiring ---------------- */
 function evPos(e) { const r = cv.getBoundingClientRect(), k = cv.width / (r.width || 1); return [(e.clientX - r.left) * k, (e.clientY - r.top) * k]; }
@@ -13606,7 +13625,7 @@ cv.addEventListener('mousedown', e => {
 });
 window.addEventListener('mousemove', e => {
   const [x, y] = evPos(e);
-  if (IN.pan) { CAM.x -= (x - IN.panx) / (CAM.zoom * PIX); CAM.y -= (y - IN.pany) / (CAM.zoom * PIX); IN.panx = x; IN.pany = y; clampCam(); }
+  if (IN.pan) { const [dx, dy] = camPan((x - IN.panx) / (CAM.zoom * PIX), (y - IN.pany) / (CAM.zoom * PIX)); CAM.x -= dx; CAM.y -= dy; IN.panx = x; IN.pany = y; clampCam(); }
   IN.mx = x; IN.my = y;
   if (x > 2 && y > 2 && x < cv.width - 2 && y < cv.height - 2) IN.hasMouse = true;
   if (IN.dragging) IN.dragDist = Math.hypot(x - IN.dx0, y - IN.dy0);
@@ -13645,6 +13664,12 @@ window.addEventListener('mouseup', e => {
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
+  if (e.shiftKey) {   // Shift + wheel: turn the camera (some browsers report a shifted wheel as horizontal scroll, so take either axis)
+    const d = e.deltaY || e.deltaX || 0; if (!d) return;
+    const cur = CAM.rotT !== undefined ? CAM.rotT : (CAM.rot || 0);
+    CAM.rotT = cur + (d > 0 ? 1 : -1) * Math.min(.35, Math.abs(d) * .0035 + .06);
+    return;
+  }
   // the wheel only sets a TARGET; the camera glides toward it every frame (see updateCamera), keeping the world point
   // under the cursor pinned — so zooming is a smooth dolly, not a stair-step.
   // zoom on the on-screen scale (CAM.zoom*PIX) so the range feels the same in HD or perf mode
@@ -14944,14 +14969,18 @@ function ctrlHudTick(dt) {
   P.leafCard = pool(new THREE.PlaneGeometry(1, 1), leafCardM, 14000, true);
   P.leafCard.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: TEX.leafCard, alphaTest: .5 });
   P.frond.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaMap: TEX.frondA, alphaTest: .5 });   // palm fronds now throw pinnate shadows too
+  /* a torn grass blade: a slender tapered strip with a slight bow (base at the origin, unit length) for the fragments that flick
+     away when tufts are trampled or burn — they tumble as blades, not as dots */
+  const BLADEG = (() => { const n = 5, pos = [], idx = []; for (let i = 0; i <= n; i++) { const t = i / n, w = .11 * (1 - t * .85) + .01, bow = Math.sin(t * Math.PI) * .06; pos.push(-w, t, bow, w, t, bow); if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g; })();
+  P.blade = pool(BLADEG, new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: .9, metalness: 0 }), 4000, false);
   P.birch = pool(new THREE.CylinderGeometry(.06, .1, .6, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.birch, roughness: .85 }), 1200, true);
   P.branch = pool(new THREE.CylinderGeometry(.012, .03, 1, 5), new THREE.MeshStandardMaterial({ color: lin('#4a3826'), map: TEX.wood, roughness: 1 }), 2500, true);
   const FLOWERC = [lin('#ffd84a'), lin('#ff7a7a'), lin('#e8e6ff'), lin('#ff9fd0'), lin('#7ab8ff')], REEDC = [lin('#6a7a3a'), lin('#4f5f2c'), lin('#8a8a4a')], LITC = [lin('#b8862e'), lin('#8a5a24'), lin('#c9a04a'), lin('#6a4a24')];
   const CATTAIL = lin('#4a2e1a');
   const CAPG = (() => { const pts = []; for (let i = 0; i <= 14; i++) { const y = -.5 + i / 14, a = Math.abs(y); const f = a > .32 ? Math.sqrt(Math.max(0, 1 - ((a - .32) / .18) ** 2)) : 1; pts.push(new THREE.Vector2(Math.max(.02, .5 * f), y)); } return new THREE.LatheGeometry(pts, 8); })();
-  P.camCap = pool(CAPG, P.cam.material, 12000, true); P.clothCap = pool(CAPG, P.cloth.material, 8000, true);
+  P.camCap = pool(CAPG, P.cam.material, 12000, true); P.clothCap = pool(CAPG, P.cloth.material, 8000, true); P.capW = pool(CAPG, white, 6000, true);   // rounded bodies: camo, cloth, plain matte (carriers)
   const CAP_OF = new Map([[P.cam, P.camCap], [P.cloth, P.clothCap]]);
-  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond, P.trunk, P.leafCard, P.camCap, P.clothCap].concat(P.splat);   // trunks are per-frame now: they BEND with the wind so the crowns stay on them
+  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond, P.trunk, P.leafCard, P.camCap, P.clothCap, P.capW, P.blade].concat(P.splat);   // trunks are per-frame now: they BEND with the wind so the crowns stay on them
   const PROPS = [P.birch, P.rock, P.barrel, P.wreck], foliage = [];
   /* pools grow on demand: when a frame asks for more instances than a pool holds (900-zombie hordes, forests of casings),
      the pool is rebuilt 60% larger after the frame — otherwise the overflow simply vanishes, which reads as figures
@@ -15115,7 +15144,7 @@ function ctrlHudTick(dt) {
     const legL = (S.legLen || 10) * sc, legW = (S.legW || 4.5) * sc, armL = (S.armLen || 11) * sc, armW = (S.armW || 4) * sc, torsoW = (S.wid || 15) * sc * .95, torsoD = (S.len || 18) * sc * .42, torsoH = 13 * sc * Math.sqrt((S.len || 18) / 18), headR = (S.head || 3.8) * sc * 1.05;
     const uni = col3(S.uni || '#4a6344'), sleeve = col3(S.sleeve || S.uni || '#4a6344'), trou = col3(S.trouser || S.uni || '#3a3a3a'), gear = col3(S.gear || '#33482f'), skin = zed ? col3(S.helm || '#9a9184') : SKIN, blood = col3(S.blood || '#6f1414');
     const STUMP = zed ? (() => 0) : put;                                    // zombies show a bare missing limb — no blob at the joint (was the 'green ball')
-    const bodyPool = zed || med ? P.cloth : P.cam;
+    const bodyPool = zed || med ? P.cloth : P.cam, bodyCap = CAP_OF.get(bodyPool) || bodyPool;   // every body part is a rounded capsule now — soldiers, villagers and the dead alike
     const X = (fw, rt) => x + cx * fw + px * rt, Z = (fw, rt) => z + cz * fw + pz * rt;
     const vid = o.id || 0, h1 = hash2(vid, 3), h2 = hash2(vid, 11);
     if (o.prone) {
@@ -15125,16 +15154,16 @@ function ctrlHudTick(dt) {
       const cr = o.crawl ? Math.sin(walk * 1.7) : 0, crA = Math.abs(cr), pivot = o.turn ? 1 : 0;
       const roll = cr * .09, lift = pivot * torsoD * .18 + crA * torsoD * .05;
       const base = y + 1.2 * sc, ya = ry, gz = base + torsoD * .5 + lift;
-      put(bodyPool, X(torsoH * .1, 0), gz, Z(torsoH * .1, 0), roll, ya, 0, torsoH, torsoD * .7, torsoW, uni);                                           // torso
-      put(P.box, X(torsoH * .1, 0), gz + torsoD * .35, Z(torsoH * .1, 0), 0, ya, 0, torsoH * .6, torsoD * .25, torsoW * .9, gear);                       // plate carrier on the back
+      put(bodyCap, X(torsoH * .1, 0), gz, Z(torsoH * .1, 0), roll, ya, 0, torsoH, torsoD * .7, torsoW, uni);                                           // torso
+      put(P.capW, X(torsoH * .1, 0), gz + torsoD * .35, Z(torsoH * .1, 0), 0, ya, 0, torsoH * .6, torsoD * .25, torsoW * .9, gear);                       // plate carrier on the back
       const kL = cr * legL * .3, kR = -cr * legL * .3;                                                                                                  // each leg draws up and kicks back in turn while crawling
-      if (lm & L_LL) put(bodyPool, X(-torsoH * .5 - legL * .45 + kL, -legW * .9 - crA * legW * .3), base + legW * .4 + crA * legW * .25, Z(-torsoH * .5 - legL * .45 + kL, -legW * .9 - crA * legW * .3), 0, ya + .12 + cr * .35, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, -legW), base + legW * .4, Z(-torsoH * .5, -legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
-      if (lm & L_RL) put(bodyPool, X(-torsoH * .5 - legL * .45 + kR, legW * .9 + crA * legW * .3), base + legW * .4 + crA * legW * .25, Z(-torsoH * .5 - legL * .45 + kR, legW * .9 + crA * legW * .3), 0, ya - .12 - cr * .35, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, legW), base + legW * .4, Z(-torsoH * .5, legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
+      if (lm & L_LL) put(bodyCap, X(-torsoH * .5 - legL * .45 + kL, -legW * .9 - crA * legW * .3), base + legW * .4 + crA * legW * .25, Z(-torsoH * .5 - legL * .45 + kL, -legW * .9 - crA * legW * .3), 0, ya + .12 + cr * .35, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, -legW), base + legW * .4, Z(-torsoH * .5, -legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
+      if (lm & L_RL) put(bodyCap, X(-torsoH * .5 - legL * .45 + kR, legW * .9 + crA * legW * .3), base + legW * .4 + crA * legW * .25, Z(-torsoH * .5 - legL * .45 + kR, legW * .9 + crA * legW * .3), 0, ya - .12 - cr * .35, 0, legL, legW * .8, legW, trou); else STUMP(P.gore, X(-torsoH * .5, legW), base + legW * .4, Z(-torsoH * .5, legW), 0, 0, 0, legW * .7, legW * .6, legW * .7, blood);
       for (const s2 of [-1, 1]) { const kk = s2 < 0 ? kL : kR; put(P.box, X(-torsoH * .5 - legL * .95 + kk, s2 * legW * .9), base + legW * .5, Z(-torsoH * .5 - legL * .95 + kk, s2 * legW * .9), 0, ya, 0, legW * .9, legW * .7, legW * 1.05, BOOT); }   // boots, toes down
       const hf = torsoH * .6, hy = gz + headR * .9;
       put(P.head, X(hf + headR * .4, 0), hy, Z(hf + headR * .4, 0), 0, ya, 0, headR, headR * 1.05, headR * .95, skin);                                   // head raised behind the sights
       put(P.helm, X(hf + headR * .35, 0), hy + headR * .16, Z(hf + headR * .35, 0), 0, ya, -.1, headR * 1.2, headR * 1.02, headR * 1.2, col3(S.helm || '#6f8757'));
-      for (const s2 of [-1, 1]) { const bit = s2 < 0 ? L_LA : L_RA; if (lm & bit) { const reach = -s2 * cr * armL * .35, wide = pivot * armW * .8; put(bodyPool, X(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), base + armW * .6 + lift * .5, Z(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), 0, ya - s2 * (.5 + pivot * .25), 0, armL * .8, armW, armW, sleeve); put(P.box, X(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), base + armW * .9 + lift * .5, Z(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), 0, ya, 0, armW * .9, armW * .9, armW * .9, skin); } }   // elbows out; hand-over-hand when crawling, braced wide when pivoting
+      for (const s2 of [-1, 1]) { const bit = s2 < 0 ? L_LA : L_RA; if (lm & bit) { const reach = -s2 * cr * armL * .35, wide = pivot * armW * .8; put(bodyCap, X(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), base + armW * .6 + lift * .5, Z(hf - armL * .1 + reach * .6, s2 * (torsoW * .5 + armW * .3 + wide)), 0, ya - s2 * (.5 + pivot * .25), 0, armL * .8, armW, armW, sleeve); put(P.head, X(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), base + armW * .9 + lift * .5, Z(hf + armL * .3 + reach, s2 * (torsoW * .25 + wide)), 0, ya, 0, armW * .5, armW * .45, armW * .5, skin); } }   // elbows out; hand-over-hand when crawling, braced wide when pivoting
       const Wp = S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }, wlp = Wp.len * sc, wwp = Math.max(1.4 * sc, Wp.wid * sc * .6), wc2 = col3(Wp.col || '#2b2e32');
       put(P.box, X(hf + wlp * .35, torsoW * .12), base + armW * 1.1, Z(hf + wlp * .35, torsoW * .12), 0, ya, 0, wlp, wwp * .9, wwp * .8, wc2); put(P.box, X(hf + wlp * .05, torsoW * .12), base + armW * .7, Z(hf + wlp * .05, torsoW * .12), 0, ya, 0, wwp * 1.2, armW * .9, wwp * .7, col3('#1a1c1e'));   // rifle on its magazine, muzzle forward
       return;
@@ -15142,15 +15171,15 @@ function ctrlHudTick(dt) {
     if (o.dead) {                                                               // lying on the ground, limbs splayed, head forward
       const tilt = o.tilt || 0, base = y + 1.5 * sc;
       const ya = ry + (h1 - .5) * .3;
-      put(bodyPool, X(torsoH * .5, 0), base + torsoD * .32, Z(torsoH * .5, 0), tilt, ya, 0, torsoH, torsoD * .65, torsoW, uni);
-      if (!zed) put(P.box, X(torsoH * .5, 0), base + torsoD * .5, Z(torsoH * .5, 0), tilt, ya, 0, torsoH * .6, torsoD * .4, torsoW * .9, gear);
+      put(bodyCap, X(torsoH * .5, 0), base + torsoD * .32, Z(torsoH * .5, 0), tilt, ya, 0, torsoH, torsoD * .65, torsoW, uni);
+      if (!zed) put(P.capW, X(torsoH * .5, 0), base + torsoD * .5, Z(torsoH * .5, 0), tilt, ya, 0, torsoH * .6, torsoD * .4, torsoW * .9, gear);
       put(P.head, X(torsoH + headR * .9, headR * .3), base + headR * .8, Z(torsoH + headR * .9, headR * .3), 0, 0, 0, headR, headR * .9, headR, skin);
       if (!zed) put(P.helm, X(torsoH + headR * 2.6, headR * 1.5), base + headR * .5, Z(torsoH + headR * 2.6, headR * 1.5), 1.2, ya + .8, .5, headR * 1.3, headR * 1.3, headR * 1.3, col3(S.helm || '#6f8757'));
       else put(P.helm, X(torsoH + headR * .8, headR * .3), base + headR * .95, Z(torsoH + headR * .8, headR * .3), .5, ya, 0, headR * 1.05, headR * .9, headR * 1.05, HAIRS[(h2 * 5) | 0]);
-      if (lm & L_LL) put(bodyPool, X(-legL * .45, -legW * 1.2), base + legW * .5, Z(-legL * .45, -legW * 1.2), 0, ya + .35, 0, legL, legW, legW, trou); else STUMP(P.gore, X(-torsoD * .2, -legW), base + legW * .4, Z(-torsoD * .2, -legW), 0, 0, 0, legW * .7, legW * .5, legW * .7, blood);
-      if (lm & L_RL) put(bodyPool, X(-legL * .45, legW * 1.2), base + legW * .5, Z(-legL * .45, legW * 1.2), 0, ya - .25, 0, legL, legW, legW, trou); else STUMP(P.gore, X(-torsoD * .2, legW), base + legW * .4, Z(-torsoD * .2, legW), 0, 0, 0, legW * .7, legW * .5, legW * .7, blood);
-      if (lm & L_LA) put(bodyPool, X(torsoH * .7, -torsoW * .5 - armL * .3), base + armW * .5, Z(torsoH * .7, -torsoW * .5 - armL * .3), 0, ya + 1.1, 0, armL, armW, armW, sleeve); else STUMP(P.gore, X(torsoH * .8, -torsoW * .55), base + armW * .5, Z(torsoH * .8, -torsoW * .55), 0, 0, 0, armW * .7, armW * .5, armW * .7, blood);
-      if (lm & L_RA) put(bodyPool, X(torsoH * .6, torsoW * .5 + armL * .3), base + armW * .5, Z(torsoH * .6, torsoW * .5 + armL * .3), 0, ya - 1.3, 0, armL, armW, armW, sleeve); else STUMP(P.gore, X(torsoH * .8, torsoW * .55), base + armW * .5, Z(torsoH * .8, torsoW * .55), 0, 0, 0, armW * .7, armW * .5, armW * .7, blood);
+      if (lm & L_LL) put(bodyCap, X(-legL * .45, -legW * 1.2), base + legW * .5, Z(-legL * .45, -legW * 1.2), 0, ya + .35, 0, legL, legW, legW, trou); else STUMP(P.gore, X(-torsoD * .2, -legW), base + legW * .4, Z(-torsoD * .2, -legW), 0, 0, 0, legW * .7, legW * .5, legW * .7, blood);
+      if (lm & L_RL) put(bodyCap, X(-legL * .45, legW * 1.2), base + legW * .5, Z(-legL * .45, legW * 1.2), 0, ya - .25, 0, legL, legW, legW, trou); else STUMP(P.gore, X(-torsoD * .2, legW), base + legW * .4, Z(-torsoD * .2, legW), 0, 0, 0, legW * .7, legW * .5, legW * .7, blood);
+      if (lm & L_LA) put(bodyCap, X(torsoH * .7, -torsoW * .5 - armL * .3), base + armW * .5, Z(torsoH * .7, -torsoW * .5 - armL * .3), 0, ya + 1.1, 0, armL, armW, armW, sleeve); else STUMP(P.gore, X(torsoH * .8, -torsoW * .55), base + armW * .5, Z(torsoH * .8, -torsoW * .55), 0, 0, 0, armW * .7, armW * .5, armW * .7, blood);
+      if (lm & L_RA) put(bodyCap, X(torsoH * .6, torsoW * .5 + armL * .3), base + armW * .5, Z(torsoH * .6, torsoW * .5 + armL * .3), 0, ya - 1.3, 0, armL, armW, armW, sleeve); else STUMP(P.gore, X(torsoH * .8, torsoW * .55), base + armW * .5, Z(torsoH * .8, torsoW * .55), 0, 0, 0, armW * .7, armW * .5, armW * .7, blood);
       return;
     }
     const mv = o.mv === undefined ? 1 : o.mv;                                   // 0 = standing still (stride relaxes to neutral) … 1 = full stride
@@ -15184,18 +15213,18 @@ function ctrlHudTick(dt) {
       else STUMP(P.gore, X(0, s * spread), hipY - legW * .3, Z(0, s * spread), 0, ry, 0, legW * .75, legW * .6, legW * .75, blood);
     }
     // pelvis (body heading), then the upper body turns toward the AIM: the torso partway, the head a little further, the arms + weapon fully
-    put(bodyPool, X(0, hipSway * .5), hipY + legW * .12, Z(0, hipSway * .5), hipRoll, ry, 0, torsoD * .96, legW * 1.05, torsoW * .9, trou);
+    put(bodyCap, X(0, hipSway * .5), hipY + legW * .12, Z(0, hipSway * .5), hipRoll, ry, 0, torsoD * .96, legW * 1.05, torsoW * .9, trou);
     const aimD = o.aimD === undefined ? 0 : Math.max(-1.35, Math.min(1.35, o.aimD));
     const aTor = ang + aimD * .55, aHead = ang + Math.max(-1.1, Math.min(1.1, aimD * .85)), aArm = ang + aimD;
     setFrame(aTor);
     // torso (leaning, twisted toward the aim), belt, plate carrier / surcoat, shoulder pads, pack
     const tl = Math.sin(lean) * torsoH * .5, tcY = hipY + Math.cos(lean) * torsoH * .5;
-    put(bodyPool, X(tl, 0), tcY, Z(tl, 0), hipRoll * .6, ry, -lean, torsoD, torsoH, torsoW, uni);
+    put(bodyCap, X(tl, 0), tcY, Z(tl, 0), hipRoll * .6, ry, -lean, torsoD, torsoH, torsoW, uni);
     if (med) put(P.cloth, X(tl * .15, 0), hipY + torsoH * .1, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.1, 3.4 * sc, torsoW * 1.08, col3(S.sash || '#b8642a'));   // wide waist sash
     else put(P.box, X(tl * .15, 0), hipY + torsoH * .08, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.06, 1.6 * sc, torsoW * 1.04, gear);
     if (med) { if (!S.bare && o.mk !== 'archer') { put(P.box, X(tl * 1.1 + torsoD * .12, 0), tcY + torsoH * .14, Z(tl * 1.1 + torsoD * .12, 0), 0, ry, -lean, torsoD * 1.1, torsoH * .58, torsoW * .84, gear);   // leather breastplate
         put(P.box, X(tl * 1.1 + torsoD * .2, 0), tcY + torsoH * .38, Z(tl * 1.1 + torsoD * .2, 0), 0, ry, -lean, torsoD * 1.0, 1.0 * sc, torsoW * .6, GOLD); put(P.box, X(tl * 1.1 + torsoD * .22, 0), tcY + torsoH * .12, Z(tl * 1.1 + torsoD * .22, 0), 0, ry, -lean, torsoD * .9, torsoH * .2, 1.0 * sc, GOLD); } }   // gold neck trim + centre strap
-    else if (!zed) { put(P.box, X(tl * 1.1 + torsoD * .08, 0), tcY + torsoH * .05, Z(tl * 1.1 + torsoD * .08, 0), 0, ry, -lean, torsoD * 1.18, torsoH * .62, torsoW * .92, gear);
+    else if (!zed) { put(P.capW, X(tl * 1.1 + torsoD * .08, 0), tcY + torsoH * .05, Z(tl * 1.1 + torsoD * .08, 0), 0, ry, -lean, torsoD * 1.18, torsoH * .66, torsoW * .96, gear);
       // kit that every soldier wears: three magazine pouches across the front of the carrier, a canteen on the back hip, a rolled collar at the neck
       const PCH = col3k(S.gear || '#33482f', .78);
       for (let k = -1; k <= 1; k++) put(P.box, X(tl * 1.1 + torsoD * .7, k * torsoW * .27), tcY - torsoH * .02, Z(tl * 1.1 + torsoD * .7, k * torsoW * .27), 0, ry, -lean, torsoD * .3, torsoH * .24, torsoW * .2, PCH);
@@ -15274,7 +15303,7 @@ function ctrlHudTick(dt) {
       limb(bodyPool, X(shoF, rt), sY, Z(shoF, rt), cx, cz, ua, armW, ry, rz1, sleeve);
       put(P.head, X(eF, eR), eY, Z(eF, eR), 0, ry, 0, armW * .56, armW * .5, armW * .56, jointC);
       limb(bodyPool, X(eF, rH), eY, Z(eF, rH), cx, cz, fa, armW * .9, ry, rz2, sleeve);
-      put(P.box, X(hf2, rH), hy2, Z(hf2, rH), 0, ry, rz2, armW * .9, armW * .9, armW * .9, handCol);
+      put(P.head, X(hf2, rH), hy2, Z(hf2, rH), 0, ry, rz2, armW * .5, armW * .48, armW * .5, handCol);   // a rounded fist
       return { f: hf2, r: rH, y: hy2, rz: rz2 };
     };
     const W = o.mg ? MG_WEP : (S.wep || { len: 18, wid: 3.5, col: '#2b2e32' }), wl = W.len * sc, ww = Math.max(1.4 * sc, W.wid * sc * .6);
@@ -16759,10 +16788,12 @@ function ctrlHudTick(dt) {
     const sc = sun.shadow.camera;
     if (ctlCam || !sun.castShadow) { sc.left = -dist * .9; sc.right = dist * .9; sc.top = dist * .9; sc.bottom = -dist * .9; sc.near = 1; sc.far = 220; sc.updateProjectionMatrix(); return; }
     _lm.lookAt(sun.position, sun.target.position, sc.up); _lm.setPosition(sun.position); _lv.copy(_lm).invert();
-    const x0 = (CAM.x - CAM.vw * .06) * K, x1 = (CAM.x + CAM.vw * 1.06) * K, z0 = (CAM.y - CAM.vh * .16) * K, z1 = (CAM.y + CAM.vh * 1.08) * K;
+    const rot = CAM.rot || 0, rc = Math.cos(rot), rs = Math.sin(rot), ccx = (CAM.x + CAM.vw / 2) * K, ccz = (CAM.y + CAM.vh / 2) * K;
+    const ex0 = -CAM.vw * .56 * K, ex1 = CAM.vw * .56 * K, ez0 = -CAM.vh * .66 * K, ez1 = CAM.vh * .58 * K;   // the view rectangle about its centre (a little more toward the far edge)
     let l = 1e9, r = -1e9, b = 1e9, t = -1e9, zn = 1e9, zf = -1e9;
     for (let i = 0; i < 8; i++) {
-      _lp.set(i & 1 ? x1 : x0, i & 2 ? 6.5 : -1.5, i & 4 ? z1 : z0).applyMatrix4(_lv);
+      const lx = i & 1 ? ex1 : ex0, lz = i & 4 ? ez1 : ez0;                                                   // turned with the camera yaw
+      _lp.set(ccx + lx * rc + lz * rs, i & 2 ? 6.5 : -1.5, ccz - lx * rs + lz * rc).applyMatrix4(_lv);
       if (_lp.x < l) l = _lp.x; if (_lp.x > r) r = _lp.x; if (_lp.y < b) b = _lp.y; if (_lp.y > t) t = _lp.y; if (-_lp.z < zn) zn = -_lp.z; if (-_lp.z > zf) zf = -_lp.z;
     }
     const ms = sun.shadow.mapSize.x || 2048, W = Math.ceil(Math.max(r - l, 8) / 3) * 3, H = Math.ceil(Math.max(t - b, 8) / 3) * 3, tx = W / ms, ty = H / ms;   // quantised extents → stable texel size
@@ -16779,7 +16810,8 @@ function ctrlHudTick(dt) {
     const cxw = CAM.x + CAM.vw / 2, cyw = CAM.y + CAM.vh / 2;
     const dist = (CAM.vw * K) / (2 * Math.tan(cam3.fov * Math.PI / 360) * cam3.aspect);
     const tx = cxw * K + SHX * K * .5, tz = cyw * K + SHY * K * .5, ty = groundY(cxw, cyw);
-    cam3.position.set(tx, ty + Math.sin(TILT) * dist, tz + Math.cos(TILT) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
+    const rot = CAM.rot || 0, rsn = Math.sin(rot), rcs = Math.cos(rot);                                 // camera yaw: the eye swings round the view centre (Shift + wheel)
+    cam3.position.set(tx + rsn * Math.cos(TILT) * dist, ty + Math.sin(TILT) * dist, tz + rcs * Math.cos(TILT) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
     /* direct-control gun camera: the 3D camera rides the controlled vehicle's gun sight (see 095_control.js) — the RTS camera (CAM)
        is parked on the aim point by ctrlCamTick so the culling window below still covers everything the gun sees */
     const ctlCam = (typeof UI !== 'undefined' && UI.ctrl && typeof ctrlCamPose === 'function') ? ctrlCamPose(cam3, { K, ALTK, groundY, unitMeshes }) : false;
@@ -16789,7 +16821,10 @@ function ctrlHudTick(dt) {
     updateSky(day, cam3.position);
     TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
     const apron = ctlCam ? 1.0 : .3, mgx = CAM.vw * apron, mgy = CAM.vh * apron;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling); the gun camera looks across a much wider patch
-    const vx0 = CAM.x - mgx, vx1 = CAM.x + CAM.vw + mgx, vy0 = CAM.y - Math.max(300, mgy), vy1 = CAM.y + CAM.vh + mgy;
+    /* the culling window: the view rectangle turned by the camera yaw, boxed, plus the apron and the 300-unit strip of far ground the
+       tilted camera sees past the top of the screen (that strip lies in whichever world direction is 'away from the camera') */
+    const ars = Math.abs(rsn), arc = Math.abs(rcs), hwv = CAM.vw / 2, hhv = CAM.vh / 2, HW = hwv * arc + hhv * ars, HH = hwv * ars + hhv * arc, fdx = -rsn * 150, fdy = -rcs * 150;
+    const vx0 = cxw - HW - mgx + fdx - 150 * ars, vx1 = cxw + HW + mgx + fdx + 150 * ars, vy0 = cyw - HH - Math.max(150, mgy) + fdy - 150 * arc, vy1 = cyw + HH + mgy + fdy + 150 * arc;
     updateTerrain(Math.floor(vx0 * K / CT3) - 1, Math.floor(vy0 * K / CT3) - 1, Math.floor(vx1 * K / CT3) + 1, Math.floor(vy1 * K / CT3) + 1);
     if (terrMat.userData.sh) terrMat.userData.sh.uniforms.uWet.value = G.wet || 0;   // rain-soaked ground
 
@@ -16901,8 +16936,8 @@ function ctrlHudTick(dt) {
       // so this keeps in-view detail identical while cutting the heaviest render work back for a smoother frame
       // cover the FULL tilted view: the far edge of the screen sees ground up to ~300 world units above the camera target
       // (same extent the terrain/entity cull uses), so the grass carpet must reach that far or the top strip renders bare.
-      const gmx = CAM.vw * .16, gvx0 = CAM.x - gmx, gvx1 = CAM.x + CAM.vw + gmx;
-      const gvy0 = CAM.y - Math.max(300, CAM.vh * .3), gvy1 = CAM.y + CAM.vh + CAM.vh * .16;
+      const gmx = CAM.vw * .16, gvx0 = cxw - HW - gmx + fdx - 150 * ars, gvx1 = cxw + HW + gmx + fdx + 150 * ars;
+      const gvy0 = cyw - HH - Math.max(150, CAM.vh * .3) + fdy - 150 * arc, gvy1 = cyw + HH + CAM.vh * .16 + fdy + 150 * arc;
       const gtx0 = Math.max(0, (gvx0 / TS) | 0), gtx1 = Math.min(MW - 1, (gvx1 / TS) | 0), gty0 = Math.max(0, (gvy0 / TS) | 0), gty1 = Math.min(MH - 1, (gvy1 / TS) | 0);
       const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 3600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
       const per = dense ? QUAL.gd : QUAL.gs;
@@ -17417,6 +17452,7 @@ function ctrlHudTick(dt) {
       else if (k === 'casing') put(P.cyl, x, y, z, p.rot, p.rot * 2, HPI, r * .3, r * 1.1, r * .3, col3('#c9a33d'));
       else if (k === 'rain') put(P.cyl, x, y, z, .12, 0, 0, .012, .75, .012, col3('#a8c0d8'));   // falling streak
       else if (k === 'splash') put(P.ring, x, gy + .05, z, -HPI, 0, 0, r * .5, r * .5, 1);
+      else if (k === 'leaf' && p.blade) put(P.blade, x, y, z, p.rot * 1.4, p.rot * .7, p.rot * 2.1, r * 3.2, r * 3.2, r * 3.2, col3(p.col || '#6a8c3c'));   // a tumbling grass blade
       else if (k === 'debris' || k === 'leaf') put(P.box, x, y, z, p.rot * 1.4, p.rot, p.rot * .5, r * 1.3, r * .3, r * .9, col3(p.col || '#4a423a'));
       else bb(partsAlpha, x, y, z, Math.max(.05, r * 1.4), c[0], c[1], c[2], Math.min(1, a * 2));
     }
@@ -17743,7 +17779,7 @@ function setupShowcase() {
   for (const [t, dx, dy] of line) { const u = spawnUnit(t, cx + dx + rnd(-12, 12), cy + dy + rnd(-12, 12), true); u.ang = 0; u.tang = 0; u.home = { x: u.x, y: u.y }; }
   spawnUnit('apache', cx + 30, cy - 50, true);   // gunship circling overhead
   showcaseHorde(22);
-  CAM.zoom = (innerHeight > innerWidth ? .72 : .92) * ((typeof DPR !== 'undefined') ? DPR : 1);   // portrait phones start zoomed out a touch
+  CAM.rot = 0; CAM.rotT = undefined; CAM.zoom = (innerHeight > innerWidth ? .72 : .92) * ((typeof DPR !== 'undefined') ? DPR : 1);   // portrait phones start zoomed out a touch
   CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
   centerOn(cx - CAM.vw * .10, cy);
 }
@@ -18127,7 +18163,8 @@ function loadFromLocal() { try { const s = localStorage.getItem(SAVE_KEY); if (!
 /* ---- collapsible HUD panels: click the header/title to tuck a panel to the edge ---- */
 $('miniHead').addEventListener('click', () => $('miniwrap').classList.toggle('collapsed'));
 for (const b of document.querySelectorAll('#selall button')) { const h = e => { e.preventDefault(); e.stopPropagation(); selectAllOf(b.dataset.f); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
-for (const b of document.querySelectorAll('#mzoom button')) { const h = e => { e.preventDefault(); e.stopPropagation(); setMiniZoom((MINI.zoom || 1) * (b.dataset.mz === 'up' ? 1.4 : 1 / 1.4)); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
+for (const b of document.querySelectorAll('#mzoom button[data-mz]')) { const h = e => { e.preventDefault(); e.stopPropagation(); setMiniZoom((MINI.zoom || 1) * (b.dataset.mz === 'up' ? 1.4 : 1 / 1.4)); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
+{ const b = document.getElementById('camReset'); if (b) { const h = e => { e.preventDefault(); e.stopPropagation(); resetCamera(); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); } }
 $('cmd').addEventListener('click', e => { if (e.target.closest('#cmdtitle')) $('cmd').classList.toggle('collapsed'); });
 
 boot();
@@ -18289,7 +18326,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b168';
+const BUILD_TAG = 'b169';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -18569,7 +18606,7 @@ function attachFirebaseIfPresent() {
     if (e.touches.length !== 1) return;
     const [x, y] = posT(e.touches[0]); const dx = x - IN.mx, dy = y - IN.my; IN.mx = x; IN.my = y;
     if (Math.hypot(x - sx, y - sy) > 12 * DPRk()) { moved = true; clearTimeout(lp); }
-    if (mode === 'pan') { CAM.x -= dx / (CAM.zoom * PIX); CAM.y -= dy / (CAM.zoom * PIX); clampCam(); }
+    if (mode === 'pan') { const [px2, py2] = (typeof camPan === 'function') ? camPan(dx / (CAM.zoom * PIX), dy / (CAM.zoom * PIX)) : [dx / (CAM.zoom * PIX), dy / (CAM.zoom * PIX)]; CAM.x -= px2; CAM.y -= py2; clampCam(); }
     else if (mode === 'box') { IN.dragDist = Math.hypot(x - IN.dx0, y - IN.dy0); }
     else if (mode === 'clear' && UI.clearMode) clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2);
     else if (mode === 'place' && UI.place && BDEF[UI.place] && (BDEF[UI.place].wall || BDEF[UI.place].trap)) tryPlace(s2wx(x, y), s2wy(y, x));
