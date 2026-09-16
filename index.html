@@ -14270,7 +14270,7 @@ function ctrlHudTick(dt) {
     bright: fxMat('uniform sampler2D tex; uniform float thr; varying vec2 vUv; void main(){ vec3 c = texture2D(tex, vUv).rgb; float l = dot(c, vec3(.2126,.7152,.0722)); float k = smoothstep(thr, thr + .35, l); gl_FragColor = vec4(c * k, 1.0); }', { tex: { value: null }, thr: { value: .8 } }),
     blur: fxMat('uniform sampler2D tex; uniform vec2 dir; varying vec2 vUv; void main(){ vec3 s = texture2D(tex, vUv).rgb * .227; s += (texture2D(tex, vUv + dir * 1.385).rgb + texture2D(tex, vUv - dir * 1.385).rgb) * .316; s += (texture2D(tex, vUv + dir * 3.23).rgb + texture2D(tex, vUv - dir * 3.23).rgb) * .07; gl_FragColor = vec4(s, 1.0); }', { tex: { value: null }, dir: { value: new THREE.Vector2(0, 0) } }),
     rays: fxMat('uniform sampler2D tex; uniform vec2 sun; uniform float k; varying vec2 vUv; void main(){ vec2 d = (vUv - sun) / 40.0; vec2 p = vUv; float w = 1.0; vec3 s = vec3(0.0); for (int i = 0; i < 40; i++) { p -= d; s += texture2D(tex, p).rgb * w; w *= .955; } gl_FragColor = vec4(s * k / 40.0, 1.0); }', { tex: { value: null }, sun: { value: FX.sun }, k: { value: 1.0 } }),
-    comp: fxMat(['uniform sampler2D tex, bloom, rays; uniform float kb, kr, uT; varying vec2 vUv;',
+    comp: fxMat(['uniform sampler2D tex, bloom, rays; uniform float kb, kr, uT, uGrain; varying vec2 vUv;',
       'float hsh(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }',
       'void main(){ vec3 c = texture2D(tex, vUv).rgb; vec3 b = texture2D(bloom, vUv).rgb; vec3 r = texture2D(rays, vUv).rgb;',
       ' c += b * kb + r * kr * vec3(1.0, .93, .78);',
@@ -14279,9 +14279,9 @@ function ctrlHudTick(dt) {
       ' float l = dot(c, vec3(.2126, .7152, .0722)); c = mix(vec3(l), c, 1.12); c = (c - .5) * 1.06 + .5;',
       ' c += (l - .45) * vec3(.05, .015, -.05); c = max(c, 0.0);',
       ' float vg = smoothstep(.45, 1.25, length((vUv - .5) * vec2(1.25, 1.0)) * 1.55); c *= 1.0 - vg * .28;',
-      ' c += (hsh(vUv * 1731.0 + fract(uT) * 7.0) - .5) * .022;',
+      ' c += (hsh(vUv * 1731.0 + fract(uT) * 7.0) - .5) * uGrain;',
       ' gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }'].join('\n'),
-      { tex: { value: null }, bloom: { value: null }, rays: { value: null }, kb: { value: .85 }, kr: { value: .55 }, uT: { value: 0 } })
+      { tex: { value: null }, bloom: { value: null }, rays: { value: null }, kb: { value: .85 }, kr: { value: .55 }, uT: { value: 0 }, uGrain: { value: .022 } })
   };
   /* ======================= Super Resolution (DLSS-class spatial upscaling) =======================
      The scene is rendered into the SAME full-size offscreen target but only into a sub-rectangle (a reduced viewport +
@@ -14343,17 +14343,76 @@ function ctrlHudTick(dt) {
     G.srScale = SR.scale;
   }
   window.getSR = () => ({ mode: SR.mode, scale: SR.scale });
+  /* ======================= screen-space ambient occlusion =======================
+     The scene target keeps a depth texture; a half-resolution pass rebuilds view-space positions from it, takes the
+     surface normal from neighbouring depths and gathers 12 spiral samples (Alchemy-style: each sample's contribution is
+     how far it rises above the tangent plane, falling off with distance). Creases, the ground under vehicles and crowns,
+     wall/ground contacts, the gaps between soldiers all darken naturally. A depth-aware 4×4 blur removes the sample
+     noise, and the composite multiplies the result into the scene before bloom is added. */
+  FXM.ao = fxMat(['uniform sampler2D tDepth; uniform mat4 uPInv; uniform vec2 uScale, uTexel; uniform float uRad, uNear, uFar; varying vec2 vUv;',
+    'float hsh(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }',
+    'vec3 vpos(vec2 uv){ float d = texture2D(tDepth, uv * uScale).x; vec4 c = uPInv * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return c.xyz / c.w; }',
+    'void main(){',
+    ' float d0 = texture2D(tDepth, vUv * uScale).x; if (d0 >= .99999) { gl_FragColor = vec4(1.0); return; }',
+    ' vec3 P = vpos(vUv); vec2 tx = uTexel * 2.0;',
+    ' vec3 Px = vpos(vUv + vec2(tx.x, 0.0)) - P, Py = vpos(vUv + vec2(0.0, tx.y)) - P;',
+    ' vec3 Px2 = P - vpos(vUv - vec2(tx.x, 0.0)), Py2 = P - vpos(vUv - vec2(0.0, tx.y));',
+    ' if (dot(Px2, Px2) < dot(Px, Px)) Px = Px2; if (dot(Py2, Py2) < dot(Py, Py)) Py = Py2;',   // pick the flatter side so silhouettes keep their normal
+    ' vec3 N = normalize(cross(Px, Py)); if (N.z < 0.0) N = -N;',
+    ' float z = -P.z; float rp = clamp(uRad * 0.72 / z, 3.0 * uTexel.y, 0.12);',   // world radius → screen radius (0.72 ≈ 1/tan(fov/2) for the 40° camera), clamped
+    ' float ang = hsh(vUv * 917.0) * 6.2832, occ = 0.0; float r2 = uRad * uRad;',
+    ' for (int i = 0; i < 12; i++) { float f = (float(i) + 0.5) / 12.0; float a = ang + f * 6.2832 * 2.0; vec2 o = vec2(cos(a), sin(a)) * rp * sqrt(f);',
+    '   vec2 uv = clamp(vUv + o * vec2(uTexel.x / uTexel.y, 1.0), 0.0, 1.0);',   // a round kernel on screen (uTexel.x/uTexel.y = h/w)
+    '   vec3 V = vpos(uv) - P; float vv = dot(V, V);',
+    '   occ += max(0.0, dot(N, V) - 0.015 * z) / (vv + 0.02) * (1.0 - smoothstep(r2, r2 * 4.0, vv)); }',
+    ' float ao = clamp(1.0 - occ * (1.15 / 12.0) * uRad, 0.0, 1.0); ao = pow(ao, 1.3);',
+    ' gl_FragColor = vec4(vec3(ao), 1.0); }'].join('\n'),
+    { tDepth: { value: null }, uPInv: { value: new THREE.Matrix4() }, uScale: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1, 1) }, uRad: { value: 1.4 }, uNear: { value: .3 }, uFar: { value: 900 } });
+  FXM.aoBlur = fxMat(['uniform sampler2D tex; uniform vec2 uTexel; varying vec2 vUv;',
+    'void main(){ float s = 0.0; for (int y = -1; y <= 2; y++) for (int x = -1; x <= 2; x++) s += texture2D(tex, vUv + (vec2(float(x), float(y)) - 0.5) * uTexel).r; gl_FragColor = vec4(vec3(s / 16.0), 1.0); }'].join('\n'),
+    { tex: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) } });
+  FXM.comp.fragmentShader = FXM.comp.fragmentShader
+    .replace('uniform sampler2D tex, bloom, rays;', 'uniform sampler2D tex, bloom, rays, tAO; uniform float kao;')
+    .replace(' c += b * kb', ' c *= mix(1.0, texture2D(tAO, vUv).r, kao);\n c += b * kb');
+  FXM.comp.uniforms.tAO = { value: null }; FXM.comp.uniforms.kao = { value: 0 };
+  /* ======================= FXAA =======================
+     The composite now lands in a full-resolution 8-bit target and a fast-approximate anti-aliasing pass writes the screen:
+     the offscreen scene target has no multisampling, so every crown edge, roofline and gun barrel used to shimmer. */
+  FXM.fxaa = fxMat(['uniform sampler2D tex; uniform vec2 uTexel; uniform float uT; varying vec2 vUv;',
+    'float lum(vec3 c){ return dot(c, vec3(.299, .587, .114)); }',
+    'float hsh(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }',
+    'vec3 grain(vec3 c){ return c + (hsh(vUv * 1731.0 + fract(uT) * 7.0) - .5) * .014; }',   // the film grain goes on AFTER the anti-aliasing (else the AA reads the grain as edges and softens everything)
+    'void main(){',
+    ' vec3 rgbM = texture2D(tex, vUv).rgb; float lM = lum(rgbM);',
+    ' float lNW = lum(texture2D(tex, vUv + vec2(-1.0, -1.0) * uTexel).rgb), lNE = lum(texture2D(tex, vUv + vec2(1.0, -1.0) * uTexel).rgb);',
+    ' float lSW = lum(texture2D(tex, vUv + vec2(-1.0, 1.0) * uTexel).rgb), lSE = lum(texture2D(tex, vUv + vec2(1.0, 1.0) * uTexel).rgb);',
+    ' float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE))), lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));',
+    ' if (lMax - lMin < max(0.05, lMax * 0.16)) { gl_FragColor = vec4(grain(rgbM), 1.0); return; }',
+    ' vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));',
+    ' float dirReduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);',
+    ' float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);',
+    ' dir = clamp(dir * rcp, -8.0, 8.0) * uTexel;',
+    ' vec3 rgbA = 0.5 * (texture2D(tex, vUv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tex, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);',
+    ' vec3 rgbB = rgbA * 0.5 + 0.25 * (texture2D(tex, vUv + dir * -0.5).rgb + texture2D(tex, vUv + dir * 0.5).rgb);',
+    ' float lB = lum(rgbB);',
+    ' gl_FragColor = vec4(grain((lB < lMin || lB > lMax) ? rgbA : rgbB), 1.0); }'].join('\n'),
+    { tex: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) }, uT: { value: 0 } });
   FX.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), FXM.comp); FX.quad.frustumCulled = false;
   const FX_SCENE = new THREE.Scene(); FX_SCENE.add(FX.quad);
+  const FX_DEPTH_OK = !!(renderer.capabilities.isWebGL2 || renderer.extensions.get('WEBGL_depth_texture'));
   function fxResize() {
     const w = Math.max(1, Math.floor(renderer.domElement.width)), h = Math.max(1, Math.floor(renderer.domElement.height));
     if (FX.rt && FX.w === w && FX.h === h) return; FX.w = w; FX.h = h;
-    for (const k of ['rt', 'rtA', 'rtB', 'rtR']) if (FX[k]) FX[k].dispose();
+    for (const k of ['rt', 'rtA', 'rtB', 'rtR', 'rtO', 'rtO2', 'rtF']) if (FX[k]) { FX[k].dispose(); FX[k] = null; }
     const type = (renderer.capabilities.isWebGL2 || renderer.extensions.get('OES_texture_half_float')) ? THREE.HalfFloatType : THREE.UnsignedByteType;
     FX.rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: true, stencilBuffer: false });
     FX.rt.samples = 0;
+    if (FX_DEPTH_OK) { FX.rt.depthTexture = new THREE.DepthTexture(w, h); FX.rt.depthTexture.type = THREE.UnsignedIntType; FX.rt.depthTexture.minFilter = FX.rt.depthTexture.magFilter = THREE.NearestFilter; }
     const qw = Math.max(1, w >> 2), qh = Math.max(1, h >> 2), o = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: false, stencilBuffer: false };
     FX.rtA = new THREE.WebGLRenderTarget(qw, qh, o); FX.rtB = new THREE.WebGLRenderTarget(qw, qh, o); FX.rtR = new THREE.WebGLRenderTarget(qw, qh, o);
+    const hw = Math.max(1, w >> 1), hh = Math.max(1, h >> 1), o8 = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false };
+    FX.rtO = new THREE.WebGLRenderTarget(hw, hh, o8); FX.rtO2 = new THREE.WebGLRenderTarget(hw, hh, o8);      // ambient occlusion (half res) + its blur
+    FX.rtF = new THREE.WebGLRenderTarget(w, h, o8);                                                                // composite → FXAA
     if (SR.rtU) SR.rtU.dispose(); SR.rtU = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: false, stencilBuffer: false });
   }
   const fxPass = (mat, target) => { FX.quad.material = mat; renderer.setRenderTarget(target); renderer.render(FX_SCENE, FX.cam); };
@@ -14379,6 +14438,15 @@ function ctrlHudTick(dt) {
     }
     const rt = { texture: sceneTex }, qw = FX.rtA.width, qh = FX.rtA.height;
     FXM.comp.uniforms.uSharp.value = sharp; FXM.comp.uniforms.uTexelO.value.set(1 / FX.w, 1 / FX.h);
+    // ambient occlusion from the scene depth (half resolution, then a 4×4 blur)
+    const aoOn = FX_DEPTH_OK && FX.rt.depthTexture && FX.ao !== false && !(typeof UI !== 'undefined' && UI.ctrl && UI.ctrl.filt < 2);   // the thermal/IR video sees no shading
+    if (aoOn) {
+      const A = FXM.ao.uniforms; A.tDepth.value = FX.rt.depthTexture; A.uPInv.value.copy(cam3.projectionMatrixInverse);
+      A.uScale.value.set(sw / FX.w, sh / FX.h); A.uTexel.value.set(1 / FX.rtO.width, 1 / FX.rtO.height); A.uRad.value = FX.aoRad || 1.4;
+      fxPass(FXM.ao, FX.rtO);
+      FXM.aoBlur.uniforms.tex.value = FX.rtO.texture; FXM.aoBlur.uniforms.uTexel.value.set(1 / FX.rtO.width, 1 / FX.rtO.height); fxPass(FXM.aoBlur, FX.rtO2);
+      FXM.comp.uniforms.tAO.value = FX.rtO2.texture; FXM.comp.uniforms.kao.value = FX.aoK === undefined ? .8 : FX.aoK;
+    } else { FXM.comp.uniforms.kao.value = 0; FXM.comp.uniforms.tAO.value = FX.rtO2 ? FX.rtO2.texture : null; }
     FXM.bright.uniforms.tex.value = rt.texture; fxPass(FXM.bright, FX.rtA);
     for (let i = 0; i < 2; i++) {
       FXM.blur.uniforms.tex.value = FX.rtA.texture; FXM.blur.uniforms.dir.value.set(1 / qw, 0); fxPass(FXM.blur, FX.rtB);
@@ -14391,9 +14459,14 @@ function ctrlHudTick(dt) {
     FXM.rays.uniforms.tex.value = FX.rtA.texture; FXM.rays.uniforms.k.value = 1.0; fxPass(FXM.rays, FX.rtR);
     FXM.comp.uniforms.tex.value = rt.texture; FXM.comp.uniforms.bloom.value = FX.rtA.texture; FXM.comp.uniforms.rays.value = FX.rtR.texture;
     FXM.comp.uniforms.uT.value = G.t || 0; FXM.comp.uniforms.kb.value = .6 * FX.bloom; FXM.comp.uniforms.kr.value = (.12 + .32 * dayK) * FX.rays;
-    fxPass(FXM.comp, null);
+    if (FX.fxaa === false || !FX.rtF) { FXM.comp.uniforms.uGrain.value = .022; fxPass(FXM.comp, null); renderer.setRenderTarget(null); return; }
+    FXM.comp.uniforms.uGrain.value = 0; fxPass(FXM.comp, FX.rtF);                     // composite → 8-bit target → FXAA (+ grain) → screen
+    FXM.fxaa.uniforms.tex.value = FX.rtF.texture; FXM.fxaa.uniforms.uTexel.value.set(1 / FX.w, 1 / FX.h); FXM.fxaa.uniforms.uT.value = G.t || 0;
+    fxPass(FXM.fxaa, null);
     renderer.setRenderTarget(null);
   }
+  window.setAO = (k, rad) => { FX.ao = k !== 0; if (k !== undefined) FX.aoK = k; if (rad) FX.aoRad = rad; };
+  window.setFXAA = on => { FX.fxaa = !!on; };
   addEventListener('resize', size3); size3();
   /* graphics quality: mobile / low / medium / high — render scale, shadow map size, grass density, soft-shadow filtering.
      Chosen from Settings › Display, remembered in localStorage; phones default to 'mobile', everything else to 'high'. */
@@ -14402,7 +14475,7 @@ function ctrlHudTick(dt) {
     mobile: { pr: .6, shadow: 0, map: 512, soft: false, gd: 3, gs: 1, fx: 0 },
     low:    { pr: .75, shadow: 1, map: 1024, soft: false, gd: 5, gs: 2, fx: 0 },
     medium: { pr: 1, shadow: 1, map: 2048, soft: false, gd: 9, gs: 3, fx: 1 },
-    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 2048, soft: true, gd: 14, gs: 5, fx: 1 }   // tuft counts — each tuft is ~7 blades, so this reads as dense grass at a fraction of the objects
+    high:   { pr: Math.min(2, window.devicePixelRatio || 1), shadow: 1, map: 4096, soft: true, gd: 14, gs: 5, fx: 1 }   // tuft counts — each tuft is ~7 blades, so this reads as dense grass at a fraction of the objects
   };
   let GRASS_POOL = null;                                              // set once the grass pool exists (setQuality runs before the pools are built)
   function setQuality(level, save) {
@@ -14412,7 +14485,8 @@ function ctrlHudTick(dt) {
     sun.castShadow = !!q.shadow;
     if (GRASS_POOL) GRASS_POOL.castShadow = !!q.shadow && q.gs >= 5;
     FX.on = !!q.fx; if (FX.on) fxResize();
-    if (sun.shadow.mapSize.x !== q.map) { sun.shadow.mapSize.set(q.map, q.map); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+    const msz = Math.min(q.map, renderer.capabilities.maxTextureSize || 4096);
+    if (sun.shadow.mapSize.x !== msz) { sun.shadow.mapSize.set(msz, msz); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
     scene3.traverse(o => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });   // shadow define changes need a recompile
     if (save) { try { localStorage.setItem('zrts_qual', QUAL.level); } catch (e) {} }
     document.querySelectorAll('#gfxRow button').forEach(b => b.classList.toggle('on', b.dataset.q === QUAL.level));
@@ -14434,20 +14508,25 @@ function ctrlHudTick(dt) {
   const elevV = (vx, vy) => baseElev(vx, vy) + ((CRAT && vx >= 0 && vy >= 0 && vx < VW && vy < VH) ? CRAT[vIdx(vx, vy)] : 0);
   const elevAtW = (x, y) => { const fx = x * K * RES, fy = y * K * RES; const x0 = Math.floor(fx), y0 = Math.floor(fy), u = fx - x0, v = fy - y0; const a = elevV(x0, y0), b = elevV(x0 + 1, y0), c = elevV(x0, y0 + 1), d = elevV(x0 + 1, y0 + 1); return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v; };
   const groundY = (x, y) => Math.max(elevAtW(x, y), -.06);          // entities never sink below the water surface
-  const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .07, envMapIntensity: .65 });   // the ground takes only a little sky bounce, so the HD sheen stays on the models
+  const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .105, envMapIntensity: .65 });   // the ground takes only a little sky bounce, so the HD sheen stays on the models
   terrMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, { tGrass: { value: TEX.grass }, tSand: { value: TEX.sand }, tRock: { value: TEX.rock }, tRoad: { value: TEX.road }, tDirt: { value: TEX.dirt }, uWet: { value: 0 } });
     terrMat.userData.sh = sh;   // kept so the rain system can drive uWet every frame
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat; attribute vec2 ex; varying vec4 vSplat; varying vec2 vEx; varying float vWy; varying vec2 vWxz;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat; vEx = ex; vWy = (modelMatrix * vec4(transformed, 1.0)).y; vWxz = (modelMatrix * vec4(transformed, 1.0)).xz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; varying float vWy; varying vec2 vWxz; varying vec4 vSplat; varying vec2 vEx;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat; attribute vec2 ex; varying vec4 vSplat; varying vec2 vEx; varying float vWy; varying vec2 vWxz; varying vec3 vWn;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat; vEx = ex; vWy = (modelMatrix * vec4(transformed, 1.0)).y; vWxz = (modelMatrix * vec4(transformed, 1.0)).xz; vWn = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tGrass, tSand, tRock, tRoad, tDirt; uniform float uWet; varying float vWy; varying vec2 vWxz; varying vec4 vSplat; varying vec2 vEx; varying vec3 vWn;')
       .replace('#include <map_fragment>', [
         'vec4 w = vSplat; float dw = vEx.x;',
         // break the blend seams up with a noise so the material boundary looks organic rather than a straight fade
         '{ float nb = texture2D(tDirt, vUv * 3.7).g * 2.0 - 1.0; vec4 wn = w * 2.0 - 1.0 + nb * 0.9; w = clamp(wn * 0.5 + 0.5, 0.0, 1.0) * step(0.001, w); dw = clamp((dw * 2.0 - 1.0 + nb * 0.9) * 0.5 + 0.5, 0.0, 1.0) * step(0.001, dw); }',
         'float ws = w.x + w.y + w.z + w.w + dw; if (ws < 0.15) { w = vSplat; dw = vEx.x; ws = max(1e-3, w.x + w.y + w.z + w.w + dw); } w /= ws; dw /= ws;',
-        'vec3 tg = texture2D(tGrass, vUv).rgb, ts = texture2D(tSand, vUv * 1.5).rgb, tr = texture2D(tRock, vUv * .8).rgb, tp = texture2D(tRoad, vUv * 1.2).rgb, td = texture2D(tDirt, vUv * 1.4).rgb;',
+        // two-scale detail: the fine texture plus the same map read at ~1/5 the frequency, so the ground has coarse patches as well as grain and never reads as a tiled repeat
+        'vec3 tg = texture2D(tGrass, vUv).rgb * (texture2D(tGrass, vUv * .21 + .37).rgb * 1.3 + .35), ts = texture2D(tSand, vUv * 1.5).rgb, tr = texture2D(tRock, vUv * .8).rgb * (texture2D(tRock, vUv * .17 + .5).rgb * 1.2 + .4), tp = texture2D(tRoad, vUv * 1.2).rgb, td = texture2D(tDirt, vUv * 1.4).rgb * (texture2D(tDirt, vUv * .23 + .1).rgb * 1.2 + .4);',
         'vec3 t = tg * w.x + ts * w.y + tr * w.z + tp * w.w + td * dw;',
+        // steep ground shows bare rock through the grass (crater walls, hill flanks, ridges), with a broken edge from the noise
+        '{ float slope = 1.0 - clamp(vWn.y, 0.0, 1.0); float rk = smoothstep(0.10, 0.30, slope + (texture2D(tDirt, vUv * 2.3 + .6).g - .5) * .12) * (1.0 - w.w); t = mix(t, tr * .92, rk); }',
+        // macro variation over the whole map (world-space, so it never lines up with the chunk grid): lush and dry patches, damp hollows
+        '{ float mac = texture2D(tDirt, vWxz * .0115 + .3).r * .6 + texture2D(tGrass, vWxz * .0031 + .7).g * .4; t *= .80 + mac * .40; }',
         't = mix(t, td * .62, clamp(vEx.y, 0., 1.));',
         // shoreline: the ground darkens where the water laps it, and a wandering line of foam breaks along the waterline
         '{ float wet = 1.0 - smoothstep(-0.06, 0.05, vWy); t *= 1.0 - wet * 0.42;',
@@ -14842,11 +14921,37 @@ function ctrlHudTick(dt) {
   TEX.frondA = mkTex(256, (x, y, u, v) => { const d = Math.abs(v - .5); const reach = .5 * (1 - u * .7) * (u < .05 ? u / .05 : 1); if (d < .025) return [1, 1, 1, 1]; if (d > reach) return [1, 1, 1, 0]; const st = ((u * 46 - d * 2.2 + (v > .5 ? 0 : .5)) % 1 + 1) % 1; return [1, 1, 1, st < .72 ? 1 : 0]; }, null, { clamp: 1 });
   const FRONDG = (() => { const n = 12, pos = [], uv = [], idx = []; for (let i = 0; i <= n; i++) { const t = i / n, x = t, y = Math.sin(t * 1.4) * .3 - t * t * .78, w = .34 * (1 - t * .78) + .03; pos.push(x, y, -w * .5, x, y, w * .5); uv.push(t, 0, t, 1); if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g; })();
   P.frond = pool(FRONDG, new THREE.MeshStandardMaterial({ color: 0xffffff, alphaMap: TEX.frondA, alphaTest: .5, side: THREE.DoubleSide, roughness: .85, metalness: 0, envMapIntensity: .3 }), 9000, true);
+  /* leaf cards: a square cut-out of a leaf cluster (nine pointed leaves with pale midribs radiating from the centre), scattered
+     over the crown shells so the canopy silhouette is ragged and leafy instead of a smooth sphere. Alpha-tested, two-sided,
+     and shadow-cast through a depth material that honours the cut-out, so the dappled shade under a tree is leaf-shaped too. */
+  TEX.leafCard = mkTex(128, () => [0, 0, 0, 0], (g, S) => {
+    let sd = 7; const rn = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    for (let i = 0; i < 9; i++) {
+      const an = i / 9 * TAU + rn() * .5, len = S * (.30 + rn() * .13), wid = len * (.40 + rn() * .16), cx = S / 2 + Math.cos(an) * len * .48, cy = S / 2 + Math.sin(an) * len * .48;
+      const v = .46 + rn() * .3, rgb = (k, a) => 'rgba(' + ((v * .62 * k * 255) | 0) + ',' + (Math.min(255, v * 1.15 * k * 255) | 0) + ',' + ((v * .42 * k * 255) | 0) + ',' + a + ')';   // the same spread of greens the crown texture is painted in
+      g.save(); g.translate(cx, cy); g.rotate(an);
+      g.fillStyle = rgb(1, 1); g.beginPath(); g.moveTo(-len * .5, 0); g.quadraticCurveTo(-len * .1, -wid * .55, len * .5, 0); g.quadraticCurveTo(-len * .1, wid * .55, -len * .5, 0); g.fill();   // pointed leaf
+      g.strokeStyle = 'rgba(200,230,150,.5)'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(-len * .46, 0); g.lineTo(len * .44, 0); g.stroke();            // midrib
+      for (let k = 1; k < 5; k++) { const px = -len * .4 + k * len * .17; g.lineWidth = .8; g.beginPath(); g.moveTo(px, 0); g.lineTo(px + len * .1, -wid * .3); g.moveTo(px, 0); g.lineTo(px + len * .1, wid * .3); g.stroke(); }   // side veins
+      g.fillStyle = rgb(.8, .35); g.beginPath(); g.moveTo(-len * .5, 0); g.quadraticCurveTo(-len * .1, wid * .55, len * .5, 0); g.lineTo(-len * .5, 0); g.fill();   // the lower half a shade darker
+      g.restore();
+    }
+  }, { clamp: 1 });
+  const leafCardM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.leafCard, alphaTest: .5, side: THREE.DoubleSide, roughness: .85, metalness: 0, envMapIntensity: .3 });
+  /* cards are lit as foliage, not as flat plates: the shading normal is mostly world-up (the way a leafy canopy takes light from
+     the sky) with a third of the card's own facing mixed in, so no card ever goes black just because it happens to face away */
+  leafCardM.onBeforeCompile = sh => { cloudHook(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(mix(normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), normal, 0.32));'); };
+  P.leafCard = pool(new THREE.PlaneGeometry(1, 1), leafCardM, 14000, true);
+  P.leafCard.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: TEX.leafCard, alphaTest: .5 });
+  P.frond.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaMap: TEX.frondA, alphaTest: .5 });   // palm fronds now throw pinnate shadows too
   P.birch = pool(new THREE.CylinderGeometry(.06, .1, .6, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.birch, roughness: .85 }), 1200, true);
   P.branch = pool(new THREE.CylinderGeometry(.012, .03, 1, 5), new THREE.MeshStandardMaterial({ color: lin('#4a3826'), map: TEX.wood, roughness: 1 }), 2500, true);
   const FLOWERC = [lin('#ffd84a'), lin('#ff7a7a'), lin('#e8e6ff'), lin('#ff9fd0'), lin('#7ab8ff')], REEDC = [lin('#6a7a3a'), lin('#4f5f2c'), lin('#8a8a4a')], LITC = [lin('#b8862e'), lin('#8a5a24'), lin('#c9a04a'), lin('#6a4a24')];
   const CATTAIL = lin('#4a2e1a');
-  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond, P.trunk].concat(P.splat);   // trunks are per-frame now: they BEND with the wind so the crowns stay on them
+  const CAPG = (() => { const pts = []; for (let i = 0; i <= 14; i++) { const y = -.5 + i / 14, a = Math.abs(y); const f = a > .32 ? Math.sqrt(Math.max(0, 1 - ((a - .32) / .18) ** 2)) : 1; pts.push(new THREE.Vector2(Math.max(.02, .5 * f), y)); } return new THREE.LatheGeometry(pts, 8); })();
+  P.camCap = pool(CAPG, P.cam.material, 12000, true); P.clothCap = pool(CAPG, P.cloth.material, 8000, true);
+  const CAP_OF = new Map([[P.cam, P.camCap], [P.cloth, P.clothCap]]);
+  const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond, P.trunk, P.leafCard, P.camCap, P.clothCap].concat(P.splat);   // trunks are per-frame now: they BEND with the wind so the crowns stay on them
   const PROPS = [P.birch, P.rock, P.barrel, P.wreck], foliage = [];
   /* pools grow on demand: when a frame asks for more instances than a pool holds (900-zombie hordes, forests of casings),
      the pool is rebuilt 60% larger after the frame — otherwise the overflow simply vanishes, which reads as figures
@@ -14891,7 +14996,9 @@ function ctrlHudTick(dt) {
   const FS = .6;                                                     // figures are 60% of the first draft's size
   const L_LA = 1, L_RA = 2, L_LL = 4, L_RL = 8;
   /* a limb box hanging from a pivot (shoulder / hip), swung fore-aft by rz */
-  function limb(pool3, sx, sy, sz, cx, cz, L, W, ry, rz, col, D) { const s = Math.sin(rz), c = Math.cos(rz); put(pool3, sx + cx * s * L / 2, sy - c * L / 2, sz + cz * s * L / 2, 0, ry, rz, D || W, L, W, col); }
+  /* limbs are rounded now: a lathe-turned capsule (unit height, rounded ends over the last 18% of its length) in the same camo /
+     cloth materials as the box pools, so thighs, shins, upper arms and forearms read as flesh under cloth instead of planks */
+  function limb(pool3, sx, sy, sz, cx, cz, L, W, ry, rz, col, D) { const s = Math.sin(rz), c = Math.cos(rz); put(CAP_OF.get(pool3) || pool3, sx + cx * s * L / 2, sy - c * L / 2, sz + cz * s * L / 2, 0, ry, rz, (D || W) * 1.06, L * 1.04, W * 1.06, col); }
   /* rig from the 2D kit spec S (MODEL[t].S): uni/helm/trouser/sleeve/gear/shoulder/pack/visor/wep + proportions */
   /* ======================= figure pose cache =======================
      drawFigure assembles 30-60 parts per body from a lot of per-kind logic. Its OUTPUT for a figure only changes when the
@@ -15088,7 +15195,12 @@ function ctrlHudTick(dt) {
     else put(P.box, X(tl * .15, 0), hipY + torsoH * .08, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.06, 1.6 * sc, torsoW * 1.04, gear);
     if (med) { if (!S.bare && o.mk !== 'archer') { put(P.box, X(tl * 1.1 + torsoD * .12, 0), tcY + torsoH * .14, Z(tl * 1.1 + torsoD * .12, 0), 0, ry, -lean, torsoD * 1.1, torsoH * .58, torsoW * .84, gear);   // leather breastplate
         put(P.box, X(tl * 1.1 + torsoD * .2, 0), tcY + torsoH * .38, Z(tl * 1.1 + torsoD * .2, 0), 0, ry, -lean, torsoD * 1.0, 1.0 * sc, torsoW * .6, GOLD); put(P.box, X(tl * 1.1 + torsoD * .22, 0), tcY + torsoH * .12, Z(tl * 1.1 + torsoD * .22, 0), 0, ry, -lean, torsoD * .9, torsoH * .2, 1.0 * sc, GOLD); } }   // gold neck trim + centre strap
-    else if (!zed) put(P.box, X(tl * 1.1 + torsoD * .08, 0), tcY + torsoH * .05, Z(tl * 1.1 + torsoD * .08, 0), 0, ry, -lean, torsoD * 1.18, torsoH * .62, torsoW * .92, gear);
+    else if (!zed) { put(P.box, X(tl * 1.1 + torsoD * .08, 0), tcY + torsoH * .05, Z(tl * 1.1 + torsoD * .08, 0), 0, ry, -lean, torsoD * 1.18, torsoH * .62, torsoW * .92, gear);
+      // kit that every soldier wears: three magazine pouches across the front of the carrier, a canteen on the back hip, a rolled collar at the neck
+      const PCH = col3k(S.gear || '#33482f', .78);
+      for (let k = -1; k <= 1; k++) put(P.box, X(tl * 1.1 + torsoD * .7, k * torsoW * .27), tcY - torsoH * .02, Z(tl * 1.1 + torsoD * .7, k * torsoW * .27), 0, ry, -lean, torsoD * .3, torsoH * .24, torsoW * .2, PCH);
+      put(P.cyl, X(tl * .2 - torsoD * .5, -torsoW * .48), hipY + torsoH * .16, Z(tl * .2 - torsoD * .5, -torsoW * .48), 0, ry, 0, 1.25 * sc, 2.6 * sc, 1.25 * sc, col3('#2c3627'));
+      put(P.cyl, X(tl * 1.9, 0), hipY + Math.cos(lean) * torsoH * .97, Z(tl * 1.9, 0), 0, ry, -lean, torsoW * .28, 1.1 * sc, torsoW * .28, col3k(S.uni || '#4a6344', .8)); }
     if (zed) { if (h1 > .3) put(P.box, X(tl * 1.4 + torsoD * .3, (h2 - .5) * torsoW * .6), tcY + (h1 - .5) * torsoH * .5, Z(tl * 1.4 + torsoD * .3, (h2 - .5) * torsoW * .6), 0, ry, -lean, torsoD * .5, torsoH * .3, torsoW * .35, blood); if (h2 > .55) put(P.box, X(tl * .6 - torsoD * .3, (h1 - .5) * torsoW * .5), tcY - torsoH * .2, Z(tl * .6 - torsoD * .3, (h1 - .5) * torsoW * .5), 0, ry, -lean, torsoD * .5, torsoH * .25, torsoW * .3, blood); }
     if (o.zt === 'bloater') put(P.head, X(tl * 1.3 + torsoD * .35, 0), tcY - torsoH * .12, Z(tl * 1.3 + torsoD * .35, 0), 0, ry, 0, torsoD * .9, torsoH * .42, torsoW * .55, uni);
     const shoY = hipY + Math.cos(lean) * torsoH, shoF = Math.sin(lean) * torsoH;
@@ -16192,11 +16304,61 @@ function ctrlHudTick(dt) {
     g.userData.bs = d.mw ? d.w / d.mw : 1;
     g.scale.setScalar(g.userData.bs);
     g.position.set(b.x * K, groundY(b.x, b.y), b.y * K);
+    bakeAO(g);
     scene3.add(g); return { g, wins: g.userData.wins, gun: g.userData.gun };
+  }
+  /* ---- baked ambient occlusion on the building models ----
+     Once per model, every vertex of every opaque part gets a shade: darker close to the ground (the foot of a wall never
+     takes full sky light) and darker where it sits against ANOTHER part of the same model — the crease where an annex
+     meets the main block, the underside of a canopy, the wall behind a tank or a stair. Only parts in FRONT of a vertex's
+     face count (the closest point of the other part must lie on the normal's side), so outer corners stay crisp and
+     bright. The shade is written as a vertex colour on a per-mesh clone of the geometry and material, so shared
+     materials elsewhere are untouched. This is what makes the models read as solid, weighted objects rather than
+     stacked boxes — a rendering trick baked once, free at run time. */
+  const _aoM = new THREE.Matrix4(), _aoV = new THREE.Vector3(), _aoN = new THREE.Vector3(), _aoC = new THREE.Vector3(), _aoNM = new THREE.Matrix3();
+  function bakeAO(g) {
+    if (g.userData.aoBaked) return; g.userData.aoBaked = true;
+    const parts = [];
+    const localOf = o => { _aoM.copy(o.matrix); let p = o.parent; while (p && p !== g) { _aoM.premultiply(p.matrix); p = p.parent; } return _aoM; };
+    g.traverse(o => {
+      if (!o.isMesh || !o.geometry || !o.material || !o.material.isMeshStandardMaterial || o.material.transparent || o.userData.noAO) return;
+      if (o.material.emissive && (o.material.emissive.r + o.material.emissive.g + o.material.emissive.b) > 0) return;   // lamps, LEDs and lit windows are driven through their shared material at run time — left as they are
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox.clone().applyMatrix4(localOf(o)); if (!isFinite(bb.min.x) || !isFinite(bb.max.x)) return;
+      const sz = bb.getSize(new THREE.Vector3()); if (Math.max(sz.x, sz.y, sz.z) < .04) return;   // trims, bolts and wires neither take nor throw occlusion
+      parts.push({ o, bb, sz });
+    });
+    if (parts.length < 2) return;
+    const gb = new THREE.Box3(); for (const p of parts) gb.union(p.bb); const H = Math.max(.3, gb.max.y - gb.min.y), footY = gb.min.y;
+    for (const p of parts) {
+      const o = p.o; if (o.geometry.attributes.position.count > 6000) continue;
+      const geo = o.geometry.clone(), pos = geo.attributes.position, nrm = geo.attributes.normal, n = pos.count, col = new Float32Array(n * 3);
+      const M = localOf(o).clone(); _aoNM.getNormalMatrix(M);
+      const R = Math.max(.12, Math.min(p.sz.x, p.sz.z, p.sz.y) * .8 + .05);   // reach of the contact shade, scaled to the part
+      for (let i = 0; i < n; i++) {
+        _aoV.fromBufferAttribute(pos, i).applyMatrix4(M); if (nrm) _aoN.fromBufferAttribute(nrm, i).applyMatrix3(_aoNM).normalize(); else _aoN.set(0, 1, 0);
+        let k = 1 - .22 * (1 - Math.min(1, Math.max(0, (_aoV.y - footY) / (H * .22))));            // ground contact: the lowest fifth of the model shades toward the foot
+        let occ = 0;
+        for (const q of parts) { if (q === p) continue;
+          _aoC.copy(_aoV).clamp(q.bb.min, q.bb.max);                                                 // closest point of the other part
+          const dx = _aoC.x - _aoV.x, dy = _aoC.y - _aoV.y, dz = _aoC.z - _aoV.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (d > R) continue;
+          if (d > 1e-4 && (dx * _aoN.x + dy * _aoN.y + dz * _aoN.z) / d < -.15) continue;          // the other part is behind this face
+          if (d <= 1e-4 && (_aoC.y - q.bb.min.y) > 1e-4 && (q.bb.max.y - _aoC.y) > 1e-4 && _aoN.y > .7) continue;   // a top face buried inside another part still reads as its top
+          const wq = Math.min(1, (Math.min(q.sz.x, q.sz.z) + q.sz.y * .5) / (R * 2));              // big neighbours occlude more than a bracket does
+          occ += (1 - d / R) * wq;
+        }
+        k *= 1 - .34 * Math.min(1, occ);
+        col[i * 3] = k; col[i * 3 + 1] = k; col[i * 3 + 2] = k;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); o.geometry = geo;
+      const m = o.material.clone(); m.onBeforeCompile = o.material.onBeforeCompile; m.vertexColors = true; m.needsUpdate = true; o.material = m;
+    }
   }
   const STRUCT_COL = { house1: ['#8b7c63', '#7a4638'], house2: ['#9a9488', '#455760'], house3: ['#7f8a6d', '#5a4f40'], house4: ['#a6774e', '#6a4030'], shed: ['#6d6f74', '#4a4c50'], gasShop: ['#cfd6d8', '#b23a2f'], gasCanopy: ['#e9edee', '#d3392c'], gaspump: ['#c7423a', '#3a3d42'], hospital: ['#e2e8ec', '#c6d0d6'], school: ['#a6644a', '#6b5648'], hangar: ['#7a7e84', '#9aa0a6'], ctltower: ['#5a5e64', '#8a8f94'], tent: ['#8a7c58', '#6f5f40'], tentBig: ['#6f5f40', '#5a4c30'], container: ['#2f6f8f', '#245a74'], structRubble: ['#4a4640', '#3a3630'] };
   function mkStruct(s) {
-    const spr = SPR[s.st], sc = s.sc || 1, w = spr ? spr.width * sc * K : 1.5, hgt = spr ? spr.height * sc * K * .55 : .8, dep = w * .62;
+    let spr = SPR[s.st]; if (Array.isArray(spr)) spr = spr[(s.ci || 0) % spr.length];               // per-colour sprite sets (shipping containers)
+    const sc = s.sc || 1, w = spr && spr.width > 0 ? spr.width * sc * K : 1.5, hgt = spr && spr.height > 0 ? spr.height * sc * K * .55 : .8, dep = w * .62;
     const c = STRUCT_COL[s.st] || (s.st.startsWith('wreck') ? ['#2a2624', '#2a2624'] : ['#7a7a70', '#5a5a50']);
     const g = new THREE.Group(), house = /^house/.test(s.st) || s.st === 'school' || s.st === 'hospital';
     if (s.st.startsWith('wreck')) { g.add(box(w * .7, .28, w * .34, WRECK, 0, .16, 0)); g.add(box(w * .35, .2, w * .3, WRECK, -w * .05, .36, 0)); for (const f of [-.22, .22]) for (const z of [-1, 1]) g.add(cyl(.08, .08, .06, TIRE, w * f, .08, z * w * .18, 'z')); }
@@ -16223,6 +16385,7 @@ function ctrlHudTick(dt) {
     else { g.add(box(w, hgt, dep, matFor(c[0], PANEL), 0, hgt / 2, 0)); g.add(box(w * 1.06, .1, dep * 1.06, matFor(c[1], { map: TEX.roof }), 0, hgt + .05, 0)); }
     g.position.set(s.x * K, groundY(s.x, s.y), s.y * K); g.rotation.y = -(s.a || 0);
     if (/^stilt/.test(s.st)) g.scale.setScalar(1.6);                                                    // village houses 60% larger
+    bakeAO(g);
     scene3.add(g); return g;
   }
 
@@ -16332,6 +16495,7 @@ function ctrlHudTick(dt) {
     g.userData.bs = t === 'mWall' ? 1.6 : 1.6; if (t === 'mWall') g.scale.set(1, 1.6, 1.6); else g.scale.setScalar(1.6);   // every enemy building 60% larger (a palisade run keeps its length so the segments still meet)
     for (const sx of [-w * .45, w * .45]) for (const sz of [-h * .45, h * .45]) scaf.add(box(.03, 1.1, .03, DKTIMBER, sx, .55, sz));
     for (const sz of [-h * .45, h * .45]) scaf.add(box(w * .9, .03, .03, DKTIMBER, 0, 1.0, sz)); for (const sx of [-w * .45, w * .45]) scaf.add(box(.03, .03, h * .9, DKTIMBER, sx, 1.0, 0));
+    bakeAO(g);
     scene3.add(g); return g;
   }
   /* damage state shared by player buildings and enemy constructions: once a structure has lost HP it burns and smokes at a few
@@ -16586,6 +16750,25 @@ function ctrlHudTick(dt) {
       if (swing > .86) { const hx = b.x + Math.cos(an) * (wr - 10) / K, hy = b.y + Math.sin(an) * (wr - 10) / K; bb(pAdd, hx * K, gy0 + .55 * buildK * fullH + .2, hy * K, .13, 1, .86, .5, .9); }   // spark at the strike
     }
   }
+  /* sharper shadows: the sun's orthographic shadow box is fitted every frame to exactly the patch of ground the camera sees
+     (its eight corners, floor to tree-top height, projected into light space) instead of a loose square around the view centre,
+     so the whole shadow map is spent on visible ground — 2–3× more texels per metre at ordinary zooms. The box origin is
+     snapped to whole shadow texels so edges don't crawl as the camera pans. The gun camera keeps the wide fixed box. */
+  const _lm = new THREE.Matrix4(), _lv = new THREE.Matrix4(), _lp = new THREE.Vector3();
+  function fitShadow(dist, ctlCam) {
+    const sc = sun.shadow.camera;
+    if (ctlCam || !sun.castShadow) { sc.left = -dist * .9; sc.right = dist * .9; sc.top = dist * .9; sc.bottom = -dist * .9; sc.near = 1; sc.far = 220; sc.updateProjectionMatrix(); return; }
+    _lm.lookAt(sun.position, sun.target.position, sc.up); _lm.setPosition(sun.position); _lv.copy(_lm).invert();
+    const x0 = (CAM.x - CAM.vw * .06) * K, x1 = (CAM.x + CAM.vw * 1.06) * K, z0 = (CAM.y - CAM.vh * .16) * K, z1 = (CAM.y + CAM.vh * 1.08) * K;
+    let l = 1e9, r = -1e9, b = 1e9, t = -1e9, zn = 1e9, zf = -1e9;
+    for (let i = 0; i < 8; i++) {
+      _lp.set(i & 1 ? x1 : x0, i & 2 ? 6.5 : -1.5, i & 4 ? z1 : z0).applyMatrix4(_lv);
+      if (_lp.x < l) l = _lp.x; if (_lp.x > r) r = _lp.x; if (_lp.y < b) b = _lp.y; if (_lp.y > t) t = _lp.y; if (-_lp.z < zn) zn = -_lp.z; if (-_lp.z > zf) zf = -_lp.z;
+    }
+    const ms = sun.shadow.mapSize.x || 2048, W = Math.ceil(Math.max(r - l, 8) / 3) * 3, H = Math.ceil(Math.max(t - b, 8) / 3) * 3, tx = W / ms, ty = H / ms;   // quantised extents → stable texel size
+    l = Math.floor(l / tx) * tx; b = Math.floor(b / ty) * ty;
+    sc.left = l; sc.right = l + W; sc.bottom = b; sc.top = b + H; sc.near = Math.max(.5, zn - 40); sc.far = zf + 40; sc.updateProjectionMatrix();
+  }
   render = function () {
     if (mapStamp !== MAP.t || structStamp !== MAP.structs) { resetWorld(); mapStamp = MAP.t; structStamp = MAP.structs; lastPX = 1e9; }
     { const _n = performance.now() / 1000; const _d = render._t ? Math.min(.1, _n - render._t) : 0; render._t = _n; render._dt = _d; if (G.started && !G.paused && G.speed > 0) healCraters(_d); }
@@ -16601,8 +16784,8 @@ function ctrlHudTick(dt) {
        is parked on the aim point by ctrlCamTick so the culling window below still covers everything the gun sees */
     const ctlCam = (typeof UI !== 'undefined' && UI.ctrl && typeof ctrlCamPose === 'function') ? ctrlCamPose(cam3, { K, ALTK, groundY, unitMeshes }) : false;
     if (!ctlCam && cam3.fov !== 40) { cam3.fov = 40; cam3.updateProjectionMatrix(); }
-    sun.shadow.camera.left = -dist * .9; sun.shadow.camera.right = dist * .9; sun.shadow.camera.top = dist * .9; sun.shadow.camera.bottom = -dist * .9; sun.shadow.camera.updateProjectionMatrix();
     const day = updateLighting3(cxw, cyw); dayNow = day;
+    fitShadow(dist, ctlCam);
     updateSky(day, cam3.position);
     TEX.waterN.offset.x = G.t * .006 + Math.sin(G.t * .7) * .002; TEX.waterN.offset.y = G.t * .0035 + Math.cos(G.t * .5) * .002; WATER_U.uWT.value = G.t;
     const apron = ctlCam ? 1.0 : .3, mgx = CAM.vw * apron, mgy = CAM.vh * apron;   // render a 30% apron beyond the view so panning reveals already-drawn ground/units (smoother scrolling); the gun camera looks across a much wider patch
@@ -16644,9 +16827,23 @@ function ctrlHudTick(dt) {
         const mx = bx + (baseDx || 0) * .5 + tipDx * .27, my = by + H * .5, mz = bz + (baseDz || 0) * .5 + tipDz * .27;
         seg(bx, by, bz, mx, my, mz, rad); seg(mx, my - .01, mz, bx + (baseDx || 0) + tipDx, by + H, bz + (baseDz || 0) + tipDz, rad * .84);
       };
+      /* leaf cards on the crown shells: 2 per crown sphere up close, 1 when the view holds a forest, none when zoomed right out
+         (the cards are then smaller than a pixel anyway). Each card sits just proud of the sphere surface, turned by the tree's
+         hash so no two trees repeat, and flutters on the gust — the top-most cards catch the light a shade brighter. */
+      const cardN = foliage.length < 420 ? 3 : foliage.length < 900 ? 2 : foliage.length < 1700 ? 1 : 0;
+      let cardSeed = 0, cardGust = 0;
+      const cards = (cx, cy, cz, r, col, n, k) => {
+        for (let c = 0; c < n; c++) {
+          const sl = 61 + c * 7 + k * 17, h1 = hash2(cardSeed, sl), h2 = hash2(cardSeed, sl + 1), h3 = hash2(cardSeed, sl + 2), th = h1 * TAU, up = .15 + h2 * .8;   // mostly on the upper shell
+          const hr = Math.sqrt(Math.max(0, 1 - up * up)), px = cx + Math.cos(th) * hr * r * .98, py = cy + up * r * .9, pz = cz + Math.sin(th) * hr * r * .98;
+          const fl = cardGust * .09 * Math.sin(th * 3.0 + c), s = r * (2.0 + h3 * .8);   // a card spans about the crown sphere's diameter (the leaf cluster fills ~60% of it)
+          put(P.leafCard, px, py, pz, (h2 - .5) * 1.4 + fl, -th + (h3 - .5) * 1.2, (h1 - .5) * .9 + fl * .7, s, s, s, col);
+        }
+      };
       for (let i = 0; i < foliage.length; i++) {
         const q = foliage[i]; if (G.deadProps.has(q.id)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
         const ph = tt * 1.7 + q.x * .013 + q.y * .011, gust = (Math.sin(ph) * .55 + Math.sin(ph * 2.7 + 1.3) * .25 + Math.sin(ph * .37) * .2);
+        cardSeed = q.id; cardGust = gust * (1 + wm);
         if (q.s === 'tree') {
           const lean = wm * (.07 + gust * .05); let lx = wdx * lean, lz = wdz * lean;
           if (G.shocks) for (let si = 0; si < G.shocks.length; si++) {   // a nearby blast: the whole tree is bent away from it by the pressure wave, then whips back
@@ -16671,19 +16868,19 @@ function ctrlHudTick(dt) {
           } else if (spv < .5) {
             // yang / dipterocarp: a tall bole with a compact high crown of small clustered rounds
             bentTrunk(x, y, z, lx * 2.1 * sc * 1.15, lz * 2.1 * sc * 1.15, 2.1 * sc, sc * .85, WHITE);
-            for (let k = 0; k < 7; k++) { const f = k / 6, r = (.8 - f * .18) * sc, an = k * 1.5 + q.a, hgt = (1.9 + f * .7) * sc, kk = 1.2 + f * .8, off = (k ? .5 - f * .1 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk, an * .5, rz * kk, r, r * .8, r, YANGC[(v + k) % 3]); }
+            for (let k = 0; k < 7; k++) { const f = k / 6, r = (.8 - f * .18) * sc, an = k * 1.5 + q.a, hgt = (1.9 + f * .7) * sc, kk = 1.2 + f * .8, off = (k ? .5 - f * .1 : 0) * sc, ccx = x + Math.cos(an) * off + lx * hgt * kk, ccz = z + Math.sin(an) * off + lz * hgt * kk; put(P.crown, ccx, y + hgt, ccz, rx * kk, an * .5, rz * kk, r, r * .8, r, YANGC[(v + k) % 3]); if (cardN) cards(ccx, y + hgt, ccz, r * .42, YANGC[(v + k + 1) % 3], cardN - (k & 1), k); }
           } else if (spv < .62) {
             // rain tree: a wide flat umbrella of spreading crowns on a short trunk, the classic tropical shade tree
             bentTrunk(x, y, z, lx * .9 * sc, lz * .9 * sc, .9 * sc, sc * 1.15, WHITE);
             put(P.crown, x + lx * .8, y + .72 * sc, z + lz * .8, rx, q.a, rz, 1.1 * sc, .35 * sc, 1.1 * sc, UNDERC);
-            for (let k = 0; k < 6; k++) { const f = k / 5, r = (.7 - f * .1) * sc, an = k * 1.05 + q.a, hgt = (.95 + f * .22) * sc, kk = 1 + f * .5, off = (k ? .55 + f * .25 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .1, an * .7, rz * kk, r * 1.25, r * .5, r * 1.25, RAINC[(v + k) % 4]); }
+            for (let k = 0; k < 6; k++) { const f = k / 5, r = (.7 - f * .1) * sc, an = k * 1.05 + q.a, hgt = (.95 + f * .22) * sc, kk = 1 + f * .5, off = (k ? .55 + f * .25 : 0) * sc, ccx = x + Math.cos(an) * off + lx * hgt * kk, ccz = z + Math.sin(an) * off + lz * hgt * kk; put(P.crown, ccx, y + hgt, ccz, rx * kk + an * .1, an * .7, rz * kk, r * 1.25, r * .5, r * 1.25, RAINC[(v + k) % 4]); if (cardN) cards(ccx, y + hgt - r * .1, ccz, r * .5, RAINC[(v + k + 1) % 4], cardN, k); }
           } else {
             // broadleaf: a rounded, layered crown built from overlapping smooth spheres (darker inside, lighter sunward top) over a shaded under-canopy
             bentTrunk(x, y, z, lx * .9 * sc, lz * .9 * sc, .9 * sc, sc * 1.15, WHITE);
             put(P.crown, x + lx * .9, y + .78 * sc, z + lz * .9, rx, q.a, rz, .85 * sc, .5 * sc, .85 * sc, UNDERC);
-            for (let k = 0; k < 6; k++) { const f = k / 5, r = (.78 - f * .2) * sc, an = k * 1.25 + q.a, hgt = (.95 + f * .62) * sc, kk = 1 + f * .7, off = (k ? .36 + (k % 2) * .1 : 0) * sc; put(P.crown, x + Math.cos(an) * off + lx * hgt * kk, y + hgt, z + Math.sin(an) * off + lz * hgt * kk, rx * kk + an * .2, an * .7, rz * kk, r, r * .85, r, LEAF[(v + k) % 5]); }
+            for (let k = 0; k < 6; k++) { const f = k / 5, r = (.78 - f * .2) * sc, an = k * 1.25 + q.a, hgt = (.95 + f * .62) * sc, kk = 1 + f * .7, off = (k ? .36 + (k % 2) * .1 : 0) * sc, ccx = x + Math.cos(an) * off + lx * hgt * kk, ccz = z + Math.sin(an) * off + lz * hgt * kk; put(P.crown, ccx, y + hgt, ccz, rx * kk + an * .2, an * .7, rz * kk, r, r * .85, r, LEAF[(v + k) % 5]); if (cardN) cards(ccx, y + hgt, ccz, r * .42, LEAF[(v + k + 2) % 5], cardN, k); }
           }
-        } else { const lean = wm * (.04 + gust * .03); put(P.bush, x + wdx * lean * .3, y + .16 * sc, z + wdz * lean * .3, wdz * lean * 2, q.a, -wdx * lean * 2, sc, sc * .8, sc, BUSHC[q.id & 1]); }
+        } else { const lean = wm * (.04 + gust * .03), bx = x + wdx * lean * .3, bz = z + wdz * lean * .3; put(P.bush, bx, y + .16 * sc, bz, wdz * lean * 2, q.a, -wdx * lean * 2, sc, sc * .8, sc, BUSHC[q.id & 1]); if (cardN) cards(bx, y + .14 * sc, bz, .24 * sc, BUSHC[(q.id + 1) & 1], cardN + 1, 0); }
       }
       /* ---- felled trees: tip over about the base toward f.dir, bounce once on impact, then lie until they break apart (sim removes them) ---- */
       if (G.fallen && G.fallen.length) for (let i = 0; i < G.fallen.length; i++) {
@@ -17362,7 +17559,7 @@ function ctrlHudTick(dt) {
     gh.g.position.set(wx * K, gy, wy * K);
   }
   postFX = function () { };                 // the 2D post pass is not used here
-  G._r3d = { P, PER_FRAME, PROPS, drawFigure, drawFigureC, FIG, MODEL, decals: decalList, crat: () => CRAT, crw: () => CRW, groundY, chunks: chunks3, renderer, scene3, unitMeshes, structMeshes, buildMeshes, wreckMeshes, toScreen, cam3, K, ALTK };
+  G._r3d = { P, PER_FRAME, PROPS, drawFigure, drawFigureC, FIG, MODEL, decals: decalList, crat: () => CRAT, crw: () => CRW, groundY, chunks: chunks3, renderer, scene3, unitMeshes, structMeshes, buildMeshes, wreckMeshes, toScreen, cam3, K, ALTK, FX, FXM, sun };
 })();
 
 /* ============================ BOOT & LOOP ============================ */
@@ -18092,7 +18289,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b167';
+const BUILD_TAG = 'b168';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
