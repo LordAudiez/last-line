@@ -4896,7 +4896,7 @@ function litAt(x, y) {
 }
 
 /* ---------------- particles ---------------- */
-const PMAX = 2400;   // particle cap (raised: leaf showers, brick bursts and napalm carpets all draw on it)
+const PMAX = 3200;   // particle cap (raised: leaf showers, brick bursts and napalm carpets all draw on it)
 function part(kind, x, y, vx, vy, life, r, col, opt) {
   if (G.parts.length > PMAX) G.parts.splice(0, 60);
   const p = {
@@ -9114,8 +9114,8 @@ function fire(src, tgt, wep, muz) {
   if (src.pose === 'prone' && src.kind === 'unit' && !src.def.veh && !src.def.fly && G.parts.length < PMAX * .97) {
     // firing from the prone: the muzzle blast slaps the ground — a ring of dust puffs out around the shooter's body with every shot (a heavy burst kicks up more)
     const mg = wep.sfx === 'rktmg' || wep.sfx === 'm2' || wep.sfx === 'auto' || wep.sfx === 'm4' || (wep.cd || 1) < .15, nD = mg ? 8 : 3;   // the rocketeer's M249 from the prone: a full ring of dust round him every shot
-    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, mg ? 16 : 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(18, 44) + G.wind.x * .2, Math.sin(a2) * rnd(14, 34) + G.wind.y * .2, rnd(.5, .9), rnd(7, 11), 'rgba(176,158,124,1)', { z: rnd(4, 10), vz: rnd(20, 50), g: 16, grow: 20, drag: .88, wind: 1, a: .9, am: .26 }); }
-    for (let k = 0; k < 3; k++) part('dust', m.x + Math.cos(base) * rnd(2, 12), m.y + Math.sin(base) * rnd(2, 10), Math.cos(base) * rnd(40, 90), Math.sin(base) * rnd(30, 70), rnd(.4, .75), rnd(7, 11), 'rgba(188,172,138,1)', { z: 3, vz: rnd(14, 44), g: 24, grow: 22, drag: .88, wind: 1, a: .9, am: .26 });   // and a squirt forward off the bore
+    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, mg ? 16 : 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(18, 44) + G.wind.x * .2, Math.sin(a2) * rnd(14, 34) + G.wind.y * .2, rnd(.5, .9), rnd(7, 11), 'rgba(176,158,124,1)', { z: rnd(4, 10), vz: rnd(20, 50), g: 16, grow: 20, drag: .88, wind: 1, a: .9, am: .78 }); }
+    for (let k = 0; k < 3; k++) part('dust', m.x + Math.cos(base) * rnd(2, 12), m.y + Math.sin(base) * rnd(2, 10), Math.cos(base) * rnd(40, 90), Math.sin(base) * rnd(30, 70), rnd(.4, .75), rnd(7, 11), 'rgba(188,172,138,1)', { z: 3, vz: rnd(14, 44), g: 24, grow: 22, drag: .88, wind: 1, a: .9, am: .78 });   // and a squirt forward off the bore
   }
   if (wep.rpg) {   // RPG-7 launch: a big fireball off the muzzle, and the BACKBLAST — a cone of flame, smoke and dust blasted out the rear of the tube behind the shooter
     const bz = (srcZ || 0) + 10, bk = base + Math.PI;
@@ -10287,30 +10287,42 @@ function updateCamps(dt) {
    blast, then spring back (the renderer reads G.shocks). Every fxExplosion
    raises one, scaled to its size.
    ================================================================== */
-function addShock(x, y, r, amp, dur) { (G.shocks || (G.shocks = [])).push({ x, y, r, amp: amp || 1, t: 0, dur: dur || .9 }); if (G.shocks.length > 24) G.shocks.shift(); shedLeaves(x, y, r, amp || 1); }
-/* the blast wave through the trees: every crown inside the pressure ring throws off a shower of leaves, blown outward from
-   the burst and then carried on the wind as they flutter down (the nearer the tree, the more it loses) */
-function shedLeaves(x, y, r, amp) {
-  if (G.parts.length > PMAX * .96) return;
-  let budget = Math.round(220 + amp * 160);                                             // a BIG shower: a nearby burst strips a crown of a couple of hundred leaves
-  const c0 = ((x - r) / CH) | 0, c1 = ((x + r) / CH) | 0, d0 = ((y - r) / CH) | 0, d1 = ((y + r) / CH) | 0, r2 = r * r;
-  for (let cy = d0; cy <= d1 && budget > 0; cy++) for (let cx = c0; cx <= c1 && budget > 0; cx++) {
-    if (cx < 0 || cy < 0 || cx * CH >= WW || cy * CH >= WH) continue;
-    const ps = chunkProps(cx, cy);
-    for (let i = 0; i < ps.length && budget > 0; i++) {
-      const q = ps[i]; if ((q.s !== 'tree' && q.s !== 'bush') || G.deadProps.has(q.id)) continue;
-      const dd = dist2(q.x, q.y, x, y); if (dd > r2) continue;
-      const d = Math.sqrt(dd), k = 1 - d / r, n = Math.min(budget, Math.round((q.s === 'bush' ? 8 : 26 + q.sc * 18) * (.25 + k * .75) * Math.min(2, amp))), a0 = angTo(x, y, q.x, q.y), H = q.s === 'bush' ? 8 : (26 + q.sc * 22);
-      for (let l = 0; l < n; l++) {
-        const a = a0 + rnd(-.9, .9), sp = rnd(60, 190) * (.4 + k * .6) * Math.min(1.6, amp), sh = hash2(q.id, l + 40);
-        part('leaf', q.x + rnd(-8, 8) * q.sc, q.y + rnd(-6, 6) * q.sc, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .8 + G.wind.y * .5, rnd(1.4, 3), rnd(2.2, 3.6), sh < .35 ? '#3f7a2e' : sh < .7 ? '#5c7d40' : sh < .85 ? '#6b8a3a' : '#8a7a3a',
-          { z: H * rnd(.5, 1.1), vz: rnd(20, 90), vr: rnd(-14, 14), g: 110, drag: .95, wind: 1 });
+function addShock(x, y, r, amp, dur) { (G.shocks || (G.shocks = [])).push({ x, y, r, amp: amp || 1, t: 0, dur: dur || .9 }); if (G.shocks.length > 24) G.shocks.shift(); shedLeaves(x, y, r, amp || 1, dur || .9); }
+/* the blast wave through the trees: as the pressure ring rolls outward every crown it reaches throws off a shower of leaves,
+   blown away from the burst and then carried on the wind as they flutter down (the nearer the tree, the more it loses).
+   The wave is walked over its duration — a grenade's ring is done in a moment, the nuclear front crosses the whole map in
+   ~5 s and strips EVERY tree as it passes — with a per-tick particle budget so a map-wide wave never stalls the frame.
+   Only trees within reach of the camera spawn particles (the rest could not be seen anyway). */
+function shedLeaves(x, y, r, amp, dur) { (G.leafWaves || (G.leafWaves = [])).push({ x, y, r, amp, t: 0, dur: Math.max(.08, dur || .9), r0: 0 }); }
+function updateLeafWaves(dt) {
+  const W = G.leafWaves; if (!W || !W.length) return;
+  const camx = CAM.x + CAM.vw / 2, camy = CAM.y + CAM.vh / 2, seeR = Math.max(1400, CAM.vw * 1.2), seeR2 = seeR * seeR;
+  let budget = 320;
+  for (let wi = W.length - 1; wi >= 0; wi--) {
+    const w = W[wi]; w.t += dt; const r1 = Math.min(w.r, w.r * w.t / w.dur), r0 = w.r0; w.r0 = r1;                // the band the front crossed this tick
+    if (w.t >= w.dur + .05) { W.splice(wi, 1); continue; }
+    if (r1 <= r0 || budget <= 0 || G.parts.length > PMAX * .96) continue;
+    const c0 = Math.max(0, ((w.x - r1) / CH) | 0), c1 = Math.min(((WW - 1) / CH) | 0, ((w.x + r1) / CH) | 0), d0 = Math.max(0, ((w.y - r1) / CH) | 0), d1 = Math.min(((WH - 1) / CH) | 0, ((w.y + r1) / CH) | 0);
+    for (let cy = d0; cy <= d1 && budget > 0; cy++) for (let cx = c0; cx <= c1 && budget > 0; cx++) {
+      const ccx = cx * CH + CH / 2, ccy = cy * CH + CH / 2, cd = Math.hypot(ccx - w.x, ccy - w.y);                  // skip chunks the band cannot touch, and chunks nobody can see
+      if (cd > r1 + CH || cd < r0 - CH || dist2(ccx, ccy, camx, camy) > seeR2 * 1.4) continue;
+      const ps = chunkProps(cx, cy);
+      for (let i = 0; i < ps.length && budget > 0; i++) {
+        const q = ps[i]; if ((q.s !== 'tree' && q.s !== 'bush') || G.deadProps.has(q.id)) continue;
+        const d = Math.sqrt(dist2(q.x, q.y, w.x, w.y)); if (d > r1 || d <= r0) continue;                         // the front reaches this tree THIS tick
+        if (dist2(q.x, q.y, camx, camy) > seeR2) continue;
+        const k = w.r > 2000 ? .8 : 1 - d / w.r, n = Math.min(budget, Math.round((q.s === 'bush' ? 8 : 26 + q.sc * 18) * (.25 + k * .75) * Math.min(2, w.amp))), a0 = angTo(w.x, w.y, q.x, q.y), H = q.s === 'bush' ? 8 : (26 + q.sc * 22);
+        for (let l = 0; l < n; l++) {
+          const a = a0 + rnd(-.9, .9), sp = rnd(60, 190) * (.4 + k * .6) * Math.min(1.6, w.amp), sh = hash2(q.id, l + 40);
+          part('leaf', q.x + rnd(-8, 8) * q.sc, q.y + rnd(-6, 6) * q.sc, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .8 + G.wind.y * .5, rnd(1.4, 3), rnd(2.2, 3.6), sh < .35 ? '#3f7a2e' : sh < .7 ? '#5c7d40' : sh < .85 ? '#6b8a3a' : '#8a7a3a',
+            { z: H * rnd(.5, 1.1), vz: rnd(20, 90), vr: rnd(-14, 14), g: 110, drag: .95, wind: 1 });
+        }
+        budget -= n;
       }
-      budget -= n;
     }
   }
 }
-function updateShocks(dt) { const S = G.shocks; if (!S) return; for (let i = S.length - 1; i >= 0; i--) { S[i].t += dt; if (S[i].t >= S[i].dur) S.splice(i, 1); } }
+function updateShocks(dt) { updateLeafWaves(dt); const S = G.shocks; if (!S) return; for (let i = S.length - 1; i >= 0; i--) { S[i].t += dt; if (S[i].t >= S[i].dur) S.splice(i, 1); } }
 /* the blast's knock-back: every enemy inside r is thrown away from it and takes pct of its full health (more the closer it stood) */
 /* the rim of a heavy burst: every enemy standing in the outer band (90%–150% of the radius) is knocked flying away from it and loses limbs */
 function shockRim(x, y, r) {
@@ -18470,7 +18482,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b173';
+const BUILD_TAG = 'b174';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
