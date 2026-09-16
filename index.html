@@ -13779,7 +13779,8 @@ function easeZoom(dt) {
   if (Math.abs(d) < CAM.zoom * .0015) { CAM.zoom = CAM.zoomT; CAM.zoomT = undefined; }
   else CAM.zoom += d * Math.min(1, dt * 14);                                        // exponential glide, ~0.15 s to settle
   CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
-  const a = CAM.zoomAnchor; if (a) { CAM.x = a.wx - a.mx / (CAM.zoom * PIX); CAM.y = a.wy - a.my / (CAM.zoom * PIX * VY); }
+  // the world point under the cursor is pinned in render() (a perspective-correct raycast that holds under tilt / yaw / pitch),
+  // so easeZoom only glides the zoom itself — no flat orthographic pan here, which was what made the point slide off the cursor
   if (CAM.zoomT === undefined) CAM.zoomAnchor = null;
   clampCam();
 }
@@ -16959,12 +16960,23 @@ function ctrlHudTick(dt) {
     updateSun();
     PF('props_begin'); if (G.prof) G.renderProf = {};
     CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
-    const cxw = CAM.x + CAM.vw / 2, cyw = CAM.y + CAM.vh / 2;
+    let cxw = CAM.x + CAM.vw / 2, cyw = CAM.y + CAM.vh / 2;
     const dist = (CAM.vw * K) / (2 * Math.tan(cam3.fov * Math.PI / 360) * cam3.aspect);
-    const tx = cxw * K + SHX * K * .5, tz = cyw * K + SHY * K * .5, ty = groundY(cxw, cyw);
+    let tx = cxw * K + SHX * K * .5, tz = cyw * K + SHY * K * .5, ty = groundY(cxw, cyw);
     const rot = CAM.rot || 0, rsn = Math.sin(rot), rcs = Math.cos(rot);                                 // camera yaw: the eye swings round the view centre (Shift + wheel)
     const tilt = Math.max(.32, Math.min(1.45, TILT + (CAM.pitch || 0)));                                 // camera pitch (Shift + wheel button, mouse forward/back)
-    cam3.position.set(tx + rsn * Math.cos(tilt) * dist, ty + Math.sin(tilt) * dist, tz + rcs * Math.cos(tilt) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld();
+    const poseCam = () => { cxw = CAM.x + CAM.vw / 2; cyw = CAM.y + CAM.vh / 2; tx = cxw * K + SHX * K * .5; tz = cyw * K + SHY * K * .5; ty = groundY(cxw, cyw);
+      cam3.position.set(tx + rsn * Math.cos(tilt) * dist, ty + Math.sin(tilt) * dist, tz + rcs * Math.cos(tilt) * dist); cam3.lookAt(tx, ty, tz); cam3.updateMatrixWorld(); };
+    poseCam();
+    /* smooth zoom to the cursor: the wheel stored the world point that sat under the cursor when it turned; as the zoom glides,
+       we raycast the cursor against the freshly-posed 3D camera (perspective-correct, so it holds under any tilt / yaw / pitch)
+       and pan CAM to put that world point back under the cursor — the ground the mouse points at never slides while zooming */
+    if (CAM.zoomAnchor && !(typeof UI !== 'undefined' && UI.ctrl)) {
+      const a = CAM.zoomAnchor;
+      for (let it = 0; it < 3; it++) { _pick.sx = -1e9; const gp = pick(a.mx, a.my); if (!gp || !isFinite(gp.x) || !isFinite(gp.y)) break; const dx = a.wx - gp.x, dy = a.wy - gp.y; CAM.x += dx; CAM.y += dy; poseCam(); if (dx * dx + dy * dy < .25) break; }
+      if (typeof clampCam === 'function') { clampCam(); poseCam(); }
+      _pick.sx = -1e9;
+    }
     /* direct-control gun camera: the 3D camera rides the controlled vehicle's gun sight (see 095_control.js) — the RTS camera (CAM)
        is parked on the aim point by ctrlCamTick so the culling window below still covers everything the gun sees */
     const ctlCam = (typeof UI !== 'undefined' && UI.ctrl && typeof ctrlCamPose === 'function') ? ctrlCamPose(cam3, { K, ALTK, groundY, unitMeshes }) : false;
@@ -18482,7 +18494,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b174';
+const BUILD_TAG = 'b175';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
