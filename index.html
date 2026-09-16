@@ -4896,7 +4896,7 @@ function litAt(x, y) {
 }
 
 /* ---------------- particles ---------------- */
-const PMAX = 1600;
+const PMAX = 2400;   // particle cap (raised: leaf showers, brick bursts and napalm carpets all draw on it)
 function part(kind, x, y, vx, vy, life, r, col, opt) {
   if (G.parts.length > PMAX) G.parts.splice(0, 60);
   const p = {
@@ -5923,7 +5923,7 @@ function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
     const f = 1 - Math.sqrt(dist2(z.x, z.y, x, y)) / r;
     z._blast = G.t;                                                                 // killed by a blast → the body is torn apart / thrown
     if (lethal && !z.def.struct) damage(z, 1e6, angTo(x, y, z.x, z.y), { trueDmg: true });   // a 120mm burst: nothing on two or four legs survives it
-    else damage(z, dmg * (.45 + f * .55), angTo(x, y, z.x, z.y));
+    else damage(z, dmg * (.45 + f * .55), angTo(x, y, z.x, z.y), z.def && z.def.struct ? { blast: 1 } : undefined);
     // killed by the blast → the body is thrown, not dropped (blast ragdoll)
     if (z.dead && dmg >= 20 && G.corpses.length) { const c = G.corpses[G.corpses.length - 1]; if (c.t === z.t && c.x === z.x && c.y === z.y) fling(c, x, y, f, !!z.def.big); }
   }
@@ -6056,17 +6056,18 @@ function fxGroundSpray(x, y, ang, dustCol, chipA, chipB) {
    loses the matching bricks on that side (see applyBricks in the renderer), and gets them back as it is repaired. */
 function brickBlast(e, amt, srcAng) {
   e.hitDir = srcAng; e.hitT = G.t;
-  if (G.parts.length > PMAX * .85) return;
-  const mh = e.maxHp || 1, frac = Math.min(1, amt / mh), n = Math.min(22, Math.max(2, Math.round(frac * 48)));
+  if (G.parts.length > PMAX * .97) return;
+  const mh = e.maxHp || 1, frac = Math.min(1, amt / mh), n = Math.min(30, Math.max(4, Math.round(frac * 80)));
   const w = ((e.def && e.def.w) || 2) * TS * .5, h = ((e.def && e.def.h) || 2) * TS * .5, col = (e.def && e.def.col) ? (Array.isArray(e.def.col) ? e.def.col[0] : e.def.col) : '#7a7068';
   const fx = e.x - Math.cos(srcAng) * w * .9, fy = e.y - Math.sin(srcAng) * h * .9;                      // the face toward the blast
   const px = -Math.sin(srcAng), py = Math.cos(srcAng);                                                  // along that face
   for (let i = 0; i < n; i++) {
     const t = rnd(-1, 1), sp = rnd(40, 160) * (.6 + frac), a = srcAng + rnd(-.7, .7);
-    part('chunk', fx + px * t * Math.max(w, h) * .9, fy + py * t * Math.max(w, h) * .9, Math.cos(a) * sp, Math.sin(a) * sp * .75, rnd(.9, 1.8), rnd(1.6, 3.2), i % 3 === 0 ? col : (i % 3 === 1 ? '#8a8078' : '#5a524a'),
+    part('chunk', fx + px * t * Math.max(w, h) * .9, fy + py * t * Math.max(w, h) * .9, Math.cos(a) * sp, Math.sin(a) * sp * .75, rnd(1.2, 2.4), rnd(3, 5.5), i % 3 === 0 ? col : (i % 3 === 1 ? '#8a8078' : '#5a524a'),
       { z: rnd(4, 26), vz: rnd(60, 220), g: 520, bounce: .35, drag: .97, rot: rnd(TAU), vr: rnd(-12, 12) });
   }
-  for (let i = 0; i < 3; i++) part('dust', fx + px * rnd(-w, w) * .8, fy + py * rnd(-h, h) * .8, Math.cos(srcAng) * rnd(20, 60) + G.wind.x * .2, Math.sin(srcAng) * rnd(20, 60) + G.wind.y * .2, rnd(.8, 1.4), rnd(6, 10), 'rgba(170,160,145,1)', { z: rnd(2, 18), vz: rnd(20, 60), g: 20, grow: 22, drag: .92, wind: 1, a: .6 });
+  for (let i = 0; i < 6; i++) part('dust', fx + px * rnd(-w, w) * .8, fy + py * rnd(-h, h) * .8, Math.cos(srcAng) * rnd(20, 60) + G.wind.x * .2, Math.sin(srcAng) * rnd(20, 60) + G.wind.y * .2, rnd(.8, 1.5), rnd(8, 14), 'rgba(170,160,145,1)', { z: rnd(2, 18), vz: rnd(20, 60), g: 20, grow: 26, drag: .92, wind: 1, a: .9, am: 2 });
+  part('flash', fx, fy, 0, 0, .08, 10, '#ffe0b0', { glow: 1, z: 8 });
 }
 function terrainHit(x, y, ang) {
   const t = terrainAt(x, y);
@@ -8820,6 +8821,7 @@ function muzzleFor(u, i, w) {
     }
   }
   const a = u.aims[i];
+  if (!w.mount && !u.def.veh && !u.def.fly) { const im = infMuzzle(u, a); if (im) return im; }   // a man on foot: the exact muzzle of the gun he is holding
   // aircraft guns leave the drawn nose; ground guns from the barrel offset
   const off = w.off || (u.def.fly && AMUZ[u.def.spr] ? AMUZ[u.def.spr] : (u.def.veh ? u.r + 12 : u.r + 11));
   // barrel height: each vehicle weapon leaves at the height of its own barrel on the drawn model
@@ -9024,15 +9026,20 @@ const AMUZ = { littlebird: 30, blackhawk: 60, apache: 58, f16: 36, ac130: 22 };
 const AEXH = { f16: 74, ac130: 60 };
 const AIR_ZK = 0.84;                    // matches the 3D renderer's ALTK: an aircraft is drawn at alt*ALTK*altK tiles up
 function airZ(u) { return (u.def.alt || 150) * AIR_ZK * (u.altK === undefined ? 1 : u.altK); }   // muzzle/effect height in the b.z (tiles) space
+/* infantry: the renderer notes where the muzzle of the drawn weapon actually is (standing, crouched or prone, whichever gun
+   is in his hands); the sim fires — and puts its flash and smoke — from that exact spot while the note is fresh, or while
+   the man hasn't moved or turned since it was taken (a cached pose replays in place) */
+function infMuzzle(u, a) {
+  const mz = u._muz; if (!mz || u.def.veh || u.def.fly || Math.abs(mz.x - u.x) > 60 || Math.abs(mz.y - u.y) > 60) return null;
+  let da = a - mz.ua; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
+  if (G.frame - mz.t < 24 || (Math.abs(mz.ux - u.x) < 2 && Math.abs(mz.uy - u.y) < 2 && Math.abs(da) < .12)) return { x: mz.x, y: mz.y, a, z: mz.z, exact: 1 };
+  return null;
+}
 function muzzlePos(u) {
   const a = u.def.veh ? u.aimT : u.ang;
   const vm = u.def.veh && VMUZ[u.def.spr];
   if (vm) { const s = u.r / .9 * vm[2]; return { x: u.x + Math.cos(a) * vm[0] * s, y: u.y + Math.sin(a) * vm[0] * s, a, z: vm[1] * s }; }
-  const mz = u._muz;                                                                  // infantry: the renderer noted where the muzzle of the drawn weapon actually is (standing, crouched or prone) — fire from there
-  if (mz && !u.def.veh && !u.def.fly && Math.abs(mz.x - u.x) < 60 && Math.abs(mz.y - u.y) < 60) {
-    let da = a - mz.ua; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
-    if (G.frame - mz.t < 24 || (Math.abs(mz.ux - u.x) < 2 && Math.abs(mz.uy - u.y) < 2 && Math.abs(da) < .12)) return { x: mz.x, y: mz.y, a, z: mz.z, exact: 1 };   // still where it was drawn (a cached pose replays in place)
-  }
+  const im = infMuzzle(u, a); if (im) return im;                                      // infantry: fire from where the drawn weapon's muzzle actually is
   const off = u.def.veh ? (u.def.heavy ? 40 : u.r + 12) : u.r + 11;
   return { x: u.x + Math.cos(a) * off, y: u.y + Math.sin(a) * off, a };
 }
@@ -9104,11 +9111,11 @@ function fire(src, tgt, wep, muz) {
     });
   }
   fxMuzzle(m.x, m.y, base, (wep.sfx === 'cannon' ? 2.6 : wep.sfx === 'shotgun' ? 1.9 : wep.sfx === 'm2' ? 1.7 : wep.sfx === 'auto' ? 1.5 : 1) * (1 + .28 * (tier - 1)) * (wep.rpg ? 1.7 : 1), m.exact ? srcZ - 8 : srcZ, tier);   // an exact muzzle height (from the drawn model) replaces the +8 standing guess inside fxMuzzle
-  if (m.exact && src.pose === 'prone' && !src.def.veh && G.parts.length < PMAX * .85) {
+  if (src.pose === 'prone' && src.kind === 'unit' && !src.def.veh && !src.def.fly && G.parts.length < PMAX * .97) {
     // firing from the prone: the muzzle blast slaps the ground — a ring of dust puffs out around the shooter's body with every shot (a heavy burst kicks up more)
     const mg = wep.sfx === 'rktmg' || wep.sfx === 'm2' || wep.sfx === 'auto' || wep.sfx === 'm4' || (wep.cd || 1) < .15, nD = mg ? 8 : 3;   // the rocketeer's M249 from the prone: a full ring of dust round him every shot
-    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, mg ? 16 : 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(14, 34) + G.wind.x * .2, Math.sin(a2) * rnd(10, 26) + G.wind.y * .2, rnd(.35, .7), rnd(2.4, 4), 'rgba(168,150,118,1)', { z: rnd(0, 2), vz: rnd(10, 30), g: 20, grow: 11, drag: .88, wind: 1, a: .5 }); }
-    for (let k = 0; k < 2; k++) part('dust', m.x + Math.cos(base) * rnd(2, 10), m.y + Math.sin(base) * rnd(2, 8), Math.cos(base) * rnd(30, 70), Math.sin(base) * rnd(20, 50), rnd(.3, .6), rnd(3, 5), 'rgba(180,164,132,1)', { z: 0, vz: rnd(10, 40), g: 30, grow: 14, drag: .88, wind: 1, a: .55 });   // and a squirt forward off the bore
+    for (let k = 0; k < nD; k++) { const a2 = rnd(TAU), rr = rnd(6, mg ? 16 : 13); part('dust', src.x + Math.cos(a2) * rr, src.y + Math.sin(a2) * rr * .8, Math.cos(a2) * rnd(18, 44) + G.wind.x * .2, Math.sin(a2) * rnd(14, 34) + G.wind.y * .2, rnd(.5, .9), rnd(7, 11), 'rgba(176,158,124,1)', { z: rnd(4, 10), vz: rnd(20, 50), g: 16, grow: 20, drag: .88, wind: 1, a: .9, am: 2.6 }); }
+    for (let k = 0; k < 3; k++) part('dust', m.x + Math.cos(base) * rnd(2, 12), m.y + Math.sin(base) * rnd(2, 10), Math.cos(base) * rnd(40, 90), Math.sin(base) * rnd(30, 70), rnd(.4, .75), rnd(7, 11), 'rgba(188,172,138,1)', { z: 3, vz: rnd(14, 44), g: 24, grow: 22, drag: .88, wind: 1, a: .9, am: 2.6 });   // and a squirt forward off the bore
   }
   if (wep.rpg) {   // RPG-7 launch: a big fireball off the muzzle, and the BACKBLAST — a cone of flame, smoke and dust blasted out the rear of the tube behind the shooter
     const bz = (srcZ || 0) + 10, bk = base + Math.PI;
@@ -10284,8 +10291,8 @@ function addShock(x, y, r, amp, dur) { (G.shocks || (G.shocks = [])).push({ x, y
 /* the blast wave through the trees: every crown inside the pressure ring throws off a shower of leaves, blown outward from
    the burst and then carried on the wind as they flutter down (the nearer the tree, the more it loses) */
 function shedLeaves(x, y, r, amp) {
-  if (G.parts.length > PMAX * .8) return;
-  let budget = Math.round(60 + amp * 70);
+  if (G.parts.length > PMAX * .96) return;
+  let budget = Math.round(220 + amp * 160);                                             // a BIG shower: a nearby burst strips a crown of a couple of hundred leaves
   const c0 = ((x - r) / CH) | 0, c1 = ((x + r) / CH) | 0, d0 = ((y - r) / CH) | 0, d1 = ((y + r) / CH) | 0, r2 = r * r;
   for (let cy = d0; cy <= d1 && budget > 0; cy++) for (let cx = c0; cx <= c1 && budget > 0; cx++) {
     if (cx < 0 || cy < 0 || cx * CH >= WW || cy * CH >= WH) continue;
@@ -10293,10 +10300,10 @@ function shedLeaves(x, y, r, amp) {
     for (let i = 0; i < ps.length && budget > 0; i++) {
       const q = ps[i]; if ((q.s !== 'tree' && q.s !== 'bush') || G.deadProps.has(q.id)) continue;
       const dd = dist2(q.x, q.y, x, y); if (dd > r2) continue;
-      const d = Math.sqrt(dd), k = 1 - d / r, n = Math.min(budget, Math.round((q.s === 'bush' ? 3 : 7 + q.sc * 5) * (.3 + k * .7) * Math.min(2, amp))), a0 = angTo(x, y, q.x, q.y), H = q.s === 'bush' ? 8 : (26 + q.sc * 22);
+      const d = Math.sqrt(dd), k = 1 - d / r, n = Math.min(budget, Math.round((q.s === 'bush' ? 8 : 26 + q.sc * 18) * (.25 + k * .75) * Math.min(2, amp))), a0 = angTo(x, y, q.x, q.y), H = q.s === 'bush' ? 8 : (26 + q.sc * 22);
       for (let l = 0; l < n; l++) {
         const a = a0 + rnd(-.9, .9), sp = rnd(60, 190) * (.4 + k * .6) * Math.min(1.6, amp), sh = hash2(q.id, l + 40);
-        part('leaf', q.x + rnd(-8, 8) * q.sc, q.y + rnd(-6, 6) * q.sc, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .8 + G.wind.y * .5, rnd(1.2, 2.6), rnd(1.3, 2.4), sh < .35 ? '#3f7a2e' : sh < .7 ? '#5c7d40' : sh < .85 ? '#6b8a3a' : '#8a7a3a',
+        part('leaf', q.x + rnd(-8, 8) * q.sc, q.y + rnd(-6, 6) * q.sc, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .8 + G.wind.y * .5, rnd(1.4, 3), rnd(2.2, 3.6), sh < .35 ? '#3f7a2e' : sh < .7 ? '#5c7d40' : sh < .85 ? '#6b8a3a' : '#8a7a3a',
           { z: H * rnd(.5, 1.1), vz: rnd(20, 90), vr: rnd(-14, 14), g: 110, drag: .95, wind: 1 });
       }
       budget -= n;
@@ -18463,7 +18470,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b171';
+const BUILD_TAG = 'b172';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
