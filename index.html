@@ -13169,7 +13169,7 @@ function ivSet(n) { $('dvIvN').value = clamp(n, 1, 4000); }
 $('dvIvMinus').onclick = e => { e.stopPropagation(); ivSet(ivN() - (ivN() > 50 ? 25 : 10)); };
 $('dvIvPlus').onclick = e => { e.stopPropagation(); ivSet(ivN() + (ivN() >= 50 ? 25 : 10)); };
 $('dvIvAdd').onclick = e => { e.stopPropagation(); $('dvIvMenu').classList.toggle('open'); };
-function ivKind() { const r = Math.random(); return r < .55 ? 'walker' : r < .75 ? 'runner' : r < .88 ? 'splitter' : r < .96 ? 'bloater' : 'brute'; }
+function ivKind() { const r = Math.random(); return r < .40 ? 'walker' : r < .62 ? 'runner' : r < .74 ? 'splitter' : r < .84 ? 'brute' : r < .94 ? 'predator' : 'bloater'; }   // a random mix of every zombie type
 function ivSpawnAt(cx, cy, n, spread) {
   let made = 0;
   for (let i = 0; i < n * 5 && made < n; i++) {
@@ -15978,6 +15978,13 @@ function ctrlHudTick(dt) {
         put(P.cyl, X(hF, 0), hb + headR * .3, Z(hF, 0), 0, ry, 0, headR * 1.0, headR * .16, headR * 1.0, band);                           // band round the crown
         put(P.cyl, X(hF, 0), hb + headR * 1.5, Z(hF, 0), 0, ry, 0, headR * .16, headR * .4, headR * .16, GOLD); }                        // gold finial
     }
+    else if (o.cap) {   // a commander's flat-topped peaked cap: crown, band, a jutting bill and a gold badge
+      const capC = col3(S.uni || '#4a6344'), bandC = col3k(S.uni || '#4a6344', .5), peak = col3('#14170f');
+      put(P.cyl, X(hF, 0), hY + headR * .5, Z(hF, 0), 0, ry, 0, headR * 1.16, headR * .5, headR * 1.16, capC);          // crown
+      put(P.cyl, X(hF + headR * .12, 0), hY + headR * .78, Z(hF + headR * .12, 0), 0, ry, 0, headR * 1.24, headR * .12, headR * 1.16, capC);   // flat top, canted forward
+      put(P.cyl, X(hF, 0), hY + headR * .3, Z(hF, 0), 0, ry, 0, headR * 1.12, headR * .2, headR * 1.12, bandC);         // band
+      put(P.box, X(hF + headR * 1.02, 0), hY + headR * .26, Z(hF + headR * 1.02, 0), 0, ry, .1, headR * .95, headR * .12, headR * 1.6, peak);   // bill
+      put(P.box, X(hF + headR * .72, 0), hY + headR * .5, Z(hF + headR * .72, 0), 0, ry, 0, headR * .18, headR * .34, headR * .42, GOLD); }   // gold cap badge
     else { put(P.helm, X(hF, 0), hY + headR * .16, Z(hF, 0), 0, ry, -.1, headR * 1.2, headR * 1.02, headR * 1.2, col3(S.helm || '#6f8757')); put(P.box, X(hF, 0), hY + headR * .08, Z(hF, 0), 0, ry, 0, headR * 2.0, headR * .4, headR * 2.3, col3k(S.helm || '#6f8757', .85)); if (S.visor) put(P.box, X(hF + headR * 1.0, 0), hY + headR * .2, Z(hF + headR * 1.0, 0), 0, ry, 0, headR * .3, headR * .5, headR * 1.6, col3(S.visor)); }
     setFrame(aTor);
     // upgrade tiers: every role gets its own kit at Mk2 and Mk3 (all of it hugs the body, so the figure never grows past its real size)
@@ -16073,7 +16080,14 @@ function ctrlHudTick(dt) {
           else put(P.box, X(hf, rt * .6), hy - 1.6 * sc, Z(hf, rt * .6), 0, ry, dip - .6, ww * .9, W.mag ? W.mag * sc * 1.3 : 4 * sc, ww * .6, col3('#1e2124')); } if (lm & bit) { hand[s2] = arm2(rt, rt * .6 + gr * .4, hf, hy, zed || med ? skin : GLOVE); } else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood); }
       hand.base = { f: bf, r: gr, y: by };
     } else for (let s2 = -1; s2 <= 1; s2 += 2) {
-      const bit = s2 < 0 ? L_LA : L_RA, sw2 = s2 < 0 ? la : ra, rt = s2 < 0 ? lrt : rrt;
+      const bit = s2 < 0 ? L_LA : L_RA;
+      if (o.command && s2 > 0 && (lm & bit)) {   // the commander's right arm thrust out, pointing and sweeping across the parade ground
+        const sweep = Math.sin(G.t * 1.7 + (o.id || 0) * .5), reach = armL * 1.02;
+        const hf = shoF + reach * .95, hy = shoY2 + reach * .18, rH = aR + sweep * armL * .85;
+        hand[s2] = arm2(aR, rH, hf, hy, skin);
+        continue;
+      }
+      const sw2 = s2 < 0 ? la : ra, rt = s2 < 0 ? lrt : rrt;
       if (lm & bit) { const ss = Math.sin(sw2), cc = Math.cos(sw2), reach = armL * (zed ? .9 : .93), hf = shoF + ss * reach, hy = shoY2 - cc * reach; hand[s2] = arm2(rt, rt, hf, hy, skin); }
       else STUMP(P.gore, X(shoF, s2 * aR), shoY - 2 * sc, Z(shoF, s2 * aR), 0, ry, 0, armW * .8, armW * .7, armW * .8, blood);
     }
@@ -17378,8 +17392,17 @@ function ctrlHudTick(dt) {
       const up = Math.sin(t * 2.0 + r * 0.5) * .5 + .5;
       fig(p.x, p.y, dirA, { prone: true, pushup: up, id: idb + r * 4 + c, gun: 'none' });
     }
-    // the sergeant out front, facing the ranks, barking the count (an arm thrust up on the beat)
-    { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.6) * TS, 0); const beat = Math.sin(t * 2.0); fig(p.x, p.y, dirA + Math.PI, { id: idb + 60, gun: player ? 'rifle' : 'sword', scale: .92, aimD: beat > .5 ? -1.2 : -0.2, tac: 1 }); }
+    // the commander stands off to one side of the flag, facing the ranks in a peaked cap, right arm thrust out sweeping the line
+    { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.4) * TS, -2.2 * TS); fig(p.x, p.y, dirA + Math.PI, { id: idb + 60, gun: 'none', cap: true, command: true, scale: .98 }); }
+    // a flag on a pole at the FRONT of the parade ground
+    { const fp = at(halfPx + (2.0 + 4 * 1.35 + 3.3) * TS, 0), fgy = groundY(fp.x, fp.y), fcolFlag = col3(cfg.flagCol || '#3fa64a');
+      const bx = fp.x * K, bz = fp.y * K, poleY = fgy + .1, poleH = 2.5;
+      put(P.cyl, bx, poleY + poleH * .5, bz, 0, 0, 0, .045, poleH, .045, WOOD);
+      put(P.head, bx, poleY + poleH + .08, bz, 0, 0, 0, .075, .11, .075, GOLD);
+      const w = G.wind || { x: 1, y: 0 }, wa = Math.atan2(w.y, w.x), tt = G.t * 2.4, ripple = Math.sin(tt) * .12, fa = wa + ripple * .6;
+      const fl = 1.15, fh = .74, fx = bx + Math.cos(fa) * fl * .5, fz = bz + Math.sin(fa) * fl * .5, fy = poleY + poleH - fh * .5;
+      put(P.cloth, fx, fy, fz, 0, -fa, ripple * .5, fl, fh, .02, fcolFlag);
+      put(P.cloth, fx, fy + fh * .4, fz, 0, -fa, ripple * .5, fl, fh * .16, .022, GOLD); }
     // two drilling pairs off to one side (bayonet drill for the player, sword/spear sparring for the ancient host)
     for (let d2 = 0; d2 < 2; d2++) {
       const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = 1.25 * TS, beat = Math.sin(t * 3 + d2 * 1.3);
@@ -17868,7 +17891,7 @@ function ctrlHudTick(dt) {
       if (g.userData.anim) { const rdt = Math.max(1e-3, render._dt || .016); for (let ai = 0; ai < g.userData.anim.length; ai++) g.userData.anim[ai](G.t, rdt, b, WIND3); }
       if (g.userData.flag) g.userData.flag.rotation.y = Math.sin(G.t * 2.2 + b.id) * .25;
       // the player's barracks drills recruits on the parade ground out front (decorative prop figures — push-ups + bayonet drill)
-      if (b.t === 'barracks' && b.done && MODEL.rifleman && typeof drawTrainingGround === 'function') drawTrainingGround(b, Math.PI / 2 + (b.facing || 0), { player: true, S: MODEL.rifleman.S });
+      if (b.t === 'barracks' && b.done && MODEL.rifleman && typeof drawTrainingGround === 'function') drawTrainingGround(b, Math.PI / 2 + (b.facing || 0), { player: true, S: MODEL.rifleman.S, flagCol: (G.players && G.players[b.owner || 0] && G.players[b.owner || 0].color) || '#3fa64a' });
       if (b.done && g.userData.fork) {                                                          // forklift cycle: rack → dock loaded, lower, back empty, lift
         const F = g.userData.fork, ph = (G.t * .12 + b.id * .37) % 1, x0 = -F.w * .3, x1 = F.w * .36, zA = 0, zD = F.h * .48 + .1;
         let x, z, ang, lift = .34, loaded = true;
@@ -19288,7 +19311,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b190';
+const BUILD_TAG = 'b191';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
