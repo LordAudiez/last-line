@@ -6796,14 +6796,6 @@ function updateWorker(z, dt, near) {
 function updateConstruction(z, dt, near) {
   z.target = null; z.vx = z.vy = 0; z.lunge = 0;
   if (!z.done) return;
-  // a barracks clears + paves its parade ground out front, once, so the drill square reads clean (the recruits train on it)
-  if (z.t === 'mBarracks' && !z._paved) {
-    z._paved = 1;
-    const hq = (typeof nearestHQ === 'function') ? nearestHQ(z.x, z.y) : null, a = hq ? angTo(z.x, z.y, hq.x, hq.y) : Math.PI / 2;
-    const gx = z.x + Math.cos(a) * (z.def.w * TS * .55 + 5.5 * TS), gy2 = z.y + Math.sin(a) * (z.def.w * TS * .55 + 5.5 * TS);
-    if (typeof clearTerrainAt === 'function') clearTerrainAt(gx, gy2, 6);
-    if (typeof paintGround === 'function') paintGround(gx, gy2, 5.5, 'sand');
-  }
   z.spawnCd -= dt;
   if (near && Math.random() < dt * 1.5) fxSmoke(z.x + rnd(-8, 8), z.y - 10, rnd(-4, 4), -6, rnd(4, 7), rnd(2, 3.5), 'rgba(120,112,100,1)');
   if (z.spawnCd <= 0) {
@@ -9680,9 +9672,9 @@ function treeLeapTarget(z, tx, ty) {
         const q = ps[k]; if (q.s !== 'tree' || G.deadProps.has(q.id) || q.id === z._lastTree) continue;
         const dz = dist2(q.x, q.y, z.x, z.y); if (dz > R2 || dz < MINR) continue;
         const dqT = dist2(q.x, q.y, tx, ty);
-        // skip only trees clearly BEHIND it and not advancing; otherwise allow lateral hops so it keeps to the canopy
-        const toTree = Math.atan2(q.y - z.y, q.x - z.x); let da = Math.abs(((toTree - toT + Math.PI * 3) % (2 * Math.PI)) - Math.PI);
-        if (da > 2.0 && dqT >= dToT) continue;
+        // every swing must get it CLOSER to the goal — so at the edge of the wood, where the only trees left are level with or
+        // behind it, none qualify and it drops out of the canopy and runs the rest on the ground
+        if (dqT >= dToT - 24 * 24) continue;
         const score = -Math.sqrt(dqT) - Math.sqrt(dz) * .12;            // prefer the branch nearest the prey, then the nearest to us
         if (score > bestScore) { bestScore = score; best = q; }
       }
@@ -9713,10 +9705,10 @@ function pouncePin(z) {
 /* predator locomotion toward a goal (gx,gy): vault tree→tree whenever a branch is reachable, pounce onto a foot soldier from
    close, otherwise sprint low over open ground. footTarget is the soldier to pin (null for a building / a roam point). */
 function predatorMove(z, dtz, gx, gy, footTarget, reach) {
-  const POUNCE = 175;
+  const up = (z.climb || 0) > 6, POUNCE = up ? 300 : 175;   // from up a tree it can spring straight down onto a soldier from further off
   z.spd = z.def.spd * (G.night ? 1.22 : 1) * (z.slow > 0 ? .5 : 1);
   const d = dist(z.x, z.y, gx, gy);
-  // 1) a soldier in reach — spring onto him
+  // 1) a soldier in reach — spring onto him (from the ground, or straight out of the canopy)
   if (footTarget && d <= POUNCE && d > (reach || 14) * .5 && (z.pounceCd || 0) <= 0) {
     z.pounceCd = 1.2; z._lastTree = 0; z.pounceU = footTarget;
     startPredatorLeap(z, gx, gy, 0, 'pounce', Math.max(34, d * .35));
@@ -10223,6 +10215,13 @@ function updateBuildings(dt) {
       continue;
     }
     b.builders = 0;
+    // the barracks lays a concrete drill square out front, once — the parade ground its recruits train on
+    if (b.t === 'barracks' && !b._paved) {
+      b._paved = 1;
+      const a = Math.PI / 2 + (b.facing || 0), gx = b.x + Math.cos(a) * (b.def.w * TS * .55 + 5.2 * TS), gy2 = b.y + Math.sin(a) * (b.def.w * TS * .55 + 5.2 * TS);
+      if (typeof clearTerrainAt === 'function') clearTerrainAt(gx, gy2, 5.5);
+      if (typeof paintGround === 'function') paintGround(gx, gy2, 5, 'concrete');
+    }
     if (b.def.scrapGen) G.scr += b.def.scrapGen * (b.tier || 1) * dt;   // scrap refinery / factory income — scales with its upgrade tier
     if (b.def.supGen) G.sup += b.def.supGen * (b.tier || 1) * dt;       // supply warehouse income
     if (b.t === 'factory') {                                              // the stacks smoke while the plant runs
@@ -17360,29 +17359,33 @@ function ctrlHudTick(dt) {
     return zz._tf;
   }
   /* the parade ground in front of a barracks: a sergeant calls the count while ~16 recruits do push-ups in ranks, and duos
-     spar off to the side. Purely decorative (drawn from a shared clock), so it costs nothing in the sim. */
-  function drawTrainingGround(zz) {
-    const M = MODEL['infantry']; const S = M ? M.S : { uni: '#4a6344' };
-    const fcol = (zz.faction > 0 && G.factions && G.factions[zz.faction]) ? G.factions[zz.faction].col : null;
-    const tf = trainFront(zz), fdx = tf.cx, fdy = tf.sy, rdx = -fdy, rdy = fdx, halfPx = zz.def.w * TS * .55;
-    const at = (fwd, lat) => ({ x: zz.x + fdx * fwd + rdx * lat, y: zz.y + fdy * fwd + rdy * lat });
-    const fig = (wx, wy, ang, opts) => { const gy2 = groundY(wx, wy); drawFigureC(wx * K, gy2, wy * K, ang, opts.walk || 0, S, Object.assign({ kind: 'med', mk: 'infantry', scale: .84, limbs: 15, fcol }, opts)); };
+     drill off to the side. Purely decorative (drawn from a shared clock), so it costs nothing in the sim.
+     ent = the building, dirA = the "front" heading (out from the door), cfg = { player, S, fcol }. */
+  function drawTrainingGround(ent, dirA, cfg) {
+    const S = cfg.S || { uni: '#4a6344' }, player = !!cfg.player;
+    const fdx = Math.cos(dirA), fdy = Math.sin(dirA), rdx = -fdy, rdy = fdx, halfPx = (ent.def ? ent.def.w : ent.w || 3) * TS * .55;
+    const at = (fwd, lat) => ({ x: ent.x + fdx * fwd + rdx * lat, y: ent.y + fdy * fwd + rdy * lat });
+    const idb = (ent.id | 0) * 64;
+    const fig = (wx, wy, ang, opts) => {
+      const gy2 = groundY(wx, wy);
+      const base = player ? { kind: 'mil', ut: 'rifleman', gun: 'rifle', scale: .84, limbs: 15 } : { kind: 'med', mk: 'infantry', gun: 'sword', scale: .84, limbs: 15, fcol: cfg.fcol };
+      drawFigureC(wx * K, gy2, wy * K, ang, opts.walk || 0, S, Object.assign(base, opts));
+    };
     const t = G.t;
-    // four ranks of four recruits doing push-ups, facing out toward the enemy, bobbing on the sergeant's count
+    // four ranks of four recruits doing push-ups, facing out, bobbing on the sergeant's count
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
       const p = at(halfPx + (2.0 + r * 1.35) * TS, (c - 1.5) * 1.4 * TS);
       const up = Math.sin(t * 2.0 + r * 0.5) * .5 + .5;
-      fig(p.x, p.y, tf.a, { prone: true, pushup: up, id: zz.id * 64 + r * 4 + c, gun: 'none' });
+      fig(p.x, p.y, dirA, { prone: true, pushup: up, id: idb + r * 4 + c, gun: 'none' });
     }
-    // the sergeant out front, facing the ranks, barking the count (a fist thrust up on the beat)
-    { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.6) * TS, 0); const beat = Math.sin(t * 2.0); fig(p.x, p.y, tf.a + Math.PI, { id: zz.id * 64 + 60, gun: 'sword', scale: .92, aimD: beat > .5 ? -1.2 : -0.2, tac: 1 }); }
-    // two sparring duos off to one side, trading strokes
+    // the sergeant out front, facing the ranks, barking the count (an arm thrust up on the beat)
+    { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.6) * TS, 0); const beat = Math.sin(t * 2.0); fig(p.x, p.y, dirA + Math.PI, { id: idb + 60, gun: player ? 'rifle' : 'sword', scale: .92, aimD: beat > .5 ? -1.2 : -0.2, tac: 1 }); }
+    // two drilling pairs off to one side (bayonet drill for the player, sword/spear sparring for the ancient host)
     for (let d2 = 0; d2 < 2; d2++) {
       const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = 1.25 * TS, beat = Math.sin(t * 3 + d2 * 1.3);
-      const a1 = at(fwd, lat), a2 = at(fwd + gap * fdx * 0 + gap, lat);   // second man a step further out
-      const b2 = at(fwd + gap, lat);
-      fig(a1.x, a1.y, tf.a, { id: zz.id * 64 + 70 + d2 * 2, gun: d2 & 1 ? 'spear' : 'sword', scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, beat) * .7 });
-      fig(b2.x, b2.y, tf.a + Math.PI, { id: zz.id * 64 + 71 + d2 * 2, gun: d2 & 1 ? 'sword' : 'spear', scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, -beat) * .7 });
+      const a1 = at(fwd, lat), b2 = at(fwd + gap, lat);
+      fig(a1.x, a1.y, dirA, { id: idb + 70 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'spear' : 'sword'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, beat) * .7 });
+      fig(b2.x, b2.y, dirA + Math.PI, { id: idb + 71 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'sword' : 'spear'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, -beat) * .7 });
     }
   }
   /* ======================= screen → world: raycast against the heightfield ======================= */
@@ -17864,6 +17867,8 @@ function ctrlHudTick(dt) {
       if (b.done && !b.def.flat) applyBricks(g, b.hp, b.maxHp, b.hitDir, g.rotation.y);                    // blast damage knocks the bricks off the struck side; repairs put them back
       if (g.userData.anim) { const rdt = Math.max(1e-3, render._dt || .016); for (let ai = 0; ai < g.userData.anim.length; ai++) g.userData.anim[ai](G.t, rdt, b, WIND3); }
       if (g.userData.flag) g.userData.flag.rotation.y = Math.sin(G.t * 2.2 + b.id) * .25;
+      // the player's barracks drills recruits on the parade ground out front (decorative prop figures — push-ups + bayonet drill)
+      if (b.t === 'barracks' && b.done && MODEL.rifleman && typeof drawTrainingGround === 'function') drawTrainingGround(b, Math.PI / 2 + (b.facing || 0), { player: true, S: MODEL.rifleman.S });
       if (b.done && g.userData.fork) {                                                          // forklift cycle: rack → dock loaded, lower, back empty, lift
         const F = g.userData.fork, ph = (G.t * .12 + b.id * .37) % 1, x0 = -F.w * .3, x1 = F.w * .36, zA = 0, zD = F.h * .48 + .1;
         let x, z, ang, lift = .34, loaded = true;
@@ -18094,8 +18099,6 @@ function ctrlHudTick(dt) {
       const M = MODEL[zz._mk] || MODEL[zz.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' };
       const push = zz.lunge > 0 ? zz.lunge * .5 : 0, x = (zz.x + Math.cos(zz.ang) * push * TS) * K, z = (zz.y + Math.sin(zz.ang) * push * TS) * K, gy = groundY(zz.x, zz.y);
       if (zz.def.struct) { drawEB(zz, x, gy, z);
-        // a barracks drills its recruits on the parade ground out front
-        if (zz.t === 'mBarracks' && zz.done && typeof drawTrainingGround === 'function') drawTrainingGround(zz);
         // every faction building flies its colours: a tall flag on the pavilion, a pennant at the FRONT of the army buildings
         if (zz.faction != null && G.factions && G.factions[zz.faction] && (zz.def.hq || zz.def.troop)) {
           // a large faction flag on a tall pole — the building's colours, clear from across the map
@@ -19285,7 +19288,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b189';
+const BUILD_TAG = 'b190';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
