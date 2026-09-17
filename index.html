@@ -8839,7 +8839,8 @@ function updateAircraft(u, dt) {
     // pilot has to DIVE the nose onto the target to shoot; nose-down also drives the airframe forward, so it banks
     // sideways and circles the target while it shoots, and pulls up (guns off the target) when it gets too close
     u.home = { x: focus.x, y: focus.y };
-    lbAttack(u, focus, dt, rng);
+    const aim = u._lbAim = lbAimPoint(u, focus);                                   // lead the densest knot of enemies, not just the nearest one
+    lbAttack(u, { x: aim.x, y: aim.y, vx: aim.vx, vy: aim.vy }, dt, rng);
   } else if (focus && u.def.rotor && u.ctrl && u.ctrl.on && u.ctrl.u === u && u.def.allWeps[u.ctrl.gun] && u.def.allWeps[u.ctrl.gun].fixed) {
     /* direct control with the forward-fixed rocket pod selected: the helicopter stops circling, holds a hover inside
        range and swings its nose onto the sight so the pod can fire down it */
@@ -8862,7 +8863,7 @@ function updateAircraft(u, dt) {
     circleAround(u, u.home.x, u.home.y, u.def.orbit ? 260 : 190, dt, .82);
   }
 
-  if (u.def.fixedGuns && !u._lbAtkF) { u.atk = null; u._atkAlt = 1; }   // not on a gun run: back to cruise height, next contact starts a fresh run
+  if (u.def.fixedGuns && !u._lbAtkF) { u.atk = null; u._atkAlt = 1; u._lbAim = null; }   // not on a gun run: back to cruise height, next contact starts a fresh run
   updateWeapons(u, dt, o);          // the guns aim & fire independently of the airframe
 }
 
@@ -8901,6 +8902,21 @@ function lbFlyTo(u, tx, ty, dt, arrive, boost) {
   const yawWant = near ? undefined : Math.atan2(dy, dx);
   lbStep(u, dt, lbCmd(vfD, b.vf), lbCmd(vlD, b.vl, LB_RMAX), yawWant);
   return near;
+}
+/* Little Bird fire-control brain: instead of chasing one runner, lay the guns on the DENSEST knot of enemies around the
+   focus and LEAD it — aim at where the pack will be by the time the rounds arrive, so a moving column is walked straight
+   into rather than trailed. Returns the ground point to put the nose gun-line on, plus the pack's mean velocity + size. */
+function lbAimPoint(u, focus) {
+  const R = 130, list = G.hZeds.near(focus.x, focus.y, R, _q);
+  let sx = 0, sy = 0, svx = 0, svy = 0, n = 0;
+  for (let k = 0; k < list.length; k++) { const z = list[k]; if (z.dead || z.inside || (z.def && z.def.fly)) continue; const w = 1; sx += z.x * w; sy += z.y * w; svx += (z.vx || 0); svy += (z.vy || 0); n++; }
+  let tx = focus.x, ty = focus.y, vx = focus.vx || 0, vy = focus.vy || 0;
+  if (n > 0) { tx = sx / n; ty = sy / n; vx = svx / n; vy = svy / n; }
+  const wep = u.def.wep || (u.def.allWeps && u.def.allWeps[0]) || { spd: 1400 };
+  const spd = wep.spd || 1400;
+  const dd = Math.hypot(tx - u.x, ty - u.y);
+  const lead = clamp(dd / spd, 0, .9) + .12;                       // round flight time to the point + a short reaction margin
+  return { x: clamp(tx + vx * lead, 8, WW - 8), y: clamp(ty + vy * lead, 8, WH - 8), vx, vy, n };
 }
 /* the gun run: run in → nose-down on the target and orbit it sideways while the guns fire → pull up and back off → run in again */
 function lbAttack(u, focus, dt, rng) {
@@ -9226,9 +9242,13 @@ function updateWeapons(u, dt, order) {
     u.aims[i] = angLerp(u.aims[i], want, 1 - Math.pow(w.slew || .0015, dt));
     if (w.arc) { const off = Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang)); if (Math.abs(off) > w.arc) continue; }   // a turret with a limited traverse (the Apache's chain gun: 135° either side of the nose)
     if (w.fixed) {   // forward-fixed gun: it fires only down the airframe's nose; the helicopter itself must turn onto the target
-      u.aims[i] = u.ang; const off = Math.atan2(Math.sin(want - u.ang), Math.cos(want - u.ang)); if (Math.abs(off) > .2) continue;
+      // Little Bird lays the gun-line on its PREDICTED pack point (lead + cluster), so suppressive fire lands where the
+      // enemies are walking to — not on the single target's current spot. Other fixed guns still lay on the real target.
+      const aimPt = (u.def.fixedGuns && u._lbAim) ? u._lbAim : t;
+      const wantF = (aimPt === t) ? want : angTo(u.x, u.y, aimPt.x, aimPt.y);
+      u.aims[i] = u.ang; const off = Math.atan2(Math.sin(wantF - u.ang), Math.cos(wantF - u.ang)); if (Math.abs(off) > .2) continue;
       if (u.def.fixedGuns && u.pitch !== undefined && !u.landed) {   // …and DIVE onto it: the gun-line follows the nose pitch. It fires whenever the point where that line meets the ground is
-        const dd = Math.sqrt(d2) || 1, imp = lbImpact(u);            // near the target — SUPPRESSIVE fire that walks onto the target through the run, not a sniper's single line
+        const dd = (aimPt === t ? Math.sqrt(d2) : Math.hypot(aimPt.x - u.x, aimPt.y - u.y)) || 1, imp = lbImpact(u);   // near the aim point — SUPPRESSIVE fire walked onto the pack, not a sniper's single line
         if (imp < 0 || Math.abs(imp - dd) > Math.max(40, dd * .32)) continue;
       }
     }
@@ -19402,7 +19422,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b194';
+const BUILD_TAG = 'b195';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
