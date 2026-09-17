@@ -3349,7 +3349,8 @@ const ZDEF = {
   bloater: { name: 'Bloater', hp: 175, spd: 34, r: 15, dmg: 12, rate: 1.2, armor: 1, spr: 'bloater', scrap: 14, burst: { dmg: 65, r: 86 }, special: true },
   spitter: { name: 'Spitter', hp: 95, spd: 54, r: 10, dmg: 15, rate: 1.5, armor: 0, spr: 'spitter', scrap: 11, special: true },   // no more spit: every zombie has to close to biting range
   // SPLITTER — spits bile from rifle range: a ranged infected that hangs back and shells your line from as far as a rifle reaches.
-  splitter: { name: 'Splitter', hp: 90, spd: 58, r: 10, dmg: 12, rate: 1.7, armor: 0, spr: 'splitter', scrap: 13, special: true, ranged: 235, spit: true },
+  // Its blob does little on impact (5) — the danger is the acid, which burns for 5 s and stacks up to 4 (8 hp/s under a full drenching).
+  splitter: { name: 'Splitter', hp: 90, spd: 58, r: 10, dmg: 5, rate: 1.7, armor: 0, spr: 'splitter', scrap: 13, special: true, ranged: 235, spit: true },
   // PREDATOR — the nightmare: sprints faster than a runner, vaults tree to tree like an ape when it can, then pounces onto a
   // soldier and rides him to the ground, clawing and feeding (3 dmg every 3 s) until the man is dead or the thing is shot off him.
   predator: { name: 'Predator', hp: 130, spd: 132, r: 10, dmg: 3, rate: 3.0, armor: 1, spr: 'predator', scrap: 18, special: true, predator: true, climber: true }
@@ -8036,6 +8037,15 @@ function updateUnits(dt) {
     u.cd -= dt; u.burstCd -= dt;
     const wep = u.def.wep;
 
+    /* --- ACID BURN (splitter bile): each blob eats for 5 s at 2 hp/s, stacking up to 4 (so 8 hp/s under a full drenching) --- */
+    if (u.acid && u.acid.stacks > 0) {
+      u.acid.t -= dt;
+      damage(u, 2 * u.acid.stacks * dt, rnd(TAU), { trueDmg: true });
+      if (Math.random() < dt * (4 + u.acid.stacks * 3)) part('spark', u.x + rnd(-6, 6), u.y + rnd(-4, 8), rnd(-6, 6), rnd(6, 20), rnd(.35, .6), rnd(1, 1.8), '#8fe23a', { z: rnd(3, 10), vz: rnd(-24, -8), g: 30, glow: 1, drag: .9 });
+      if (u.acid.t <= 0) u.acid = null;
+      if (u.dead) continue;
+    }
+
     /* --- PINNED by a Predator: helpless on the ground, thrashing but unable to fight, shoot or move (it's just animation) --- */
     if (u.pinnedBy) {
       const z = u.pinnedBy;
@@ -9265,9 +9275,17 @@ function zedFire(z, tgt) {
   }
   G.bullets.push({
     x: z.x, y: z.y, px: z.x, py: z.y, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300,
-    dmg, kind: 'acid', life: 1.4, ang: a, team: 2, src: z, splash: 26, z: 10
+    dmg, kind: 'acid', life: 1.4, ang: a, team: 2, src: z, splash: 26, z: 10, acidBleed: z.def.spit ? 1 : 0
   });
   AU.splat(z.x, z.y);
+}
+/* a splitter's bile lands on a soldier: another stack of acid, up to four, each refreshing the 5 s burn */
+function acidStack(u) {
+  if (!u || u.dead || u.kind !== 'unit' || (u.def && (u.def.veh || u.def.fly))) return;
+  if (!u.acid) u.acid = { stacks: 0, t: 0 };
+  u.acid.stacks = Math.min(4, u.acid.stacks + 1);
+  u.acid.t = 5;
+  popText(u.x, u.y - 22, 'ACID x' + u.acid.stacks, '#8fe23a');
 }
 
 /* the finisher on a confirmed kill: pick a move, freeze the killer in it for a second and tag the fresh corpse so the
@@ -9570,7 +9588,10 @@ function bruteCharge(z, dtz, t, d, reach) {
       const a = angTo(z.x, z.y, t.x, t.y);
       damage(t, (z.def.bumpDmg || 14) * ((G.diff && G.diff.dmgMul) || 1), a);
       if (!t.dead) knockUnit(t, a, 320, z);
-      addShake(z.x, z.y, 4); AU.splat && AU.splat(z.x, z.y);
+      addShake(z.x, z.y, 5); AU.splat && AU.splat(z.x, z.y);
+      // each bump throws up a thick ring of dust off the impact
+      for (let k = 0; k < 16; k++) { const da = rnd(TAU), sp = rnd(30, 150); part('dust', z.x + Math.cos(a) * z.r * .6 + rnd(-6, 6), z.y + Math.sin(a) * z.r * .6 + rnd(-6, 6), Math.cos(da) * sp + G.wind.x * .3, Math.sin(da) * sp * .7 + G.wind.y * .3, rnd(.5, 1.1), rnd(5, 10), k & 1 ? 'rgba(176,164,140,1)' : 'rgba(150,138,116,1)', { z: rnd(0, 6), vz: rnd(20, 70), g: 60, grow: 16, drag: .9, wind: 1, a: .6 }); }
+      part('ring', z.x, z.y, 0, 0, .4, 10, 'rgba(180,168,144,.8)', { grow: 70 });
     }
     steerZ(z, dtz, t.x + Math.cos(z.ang) * 70, t.y + Math.sin(z.ang) * 70, 4);   // keep barreling past
   } else {
@@ -9881,10 +9902,17 @@ function updateZeds(dt) {
     }
     /* ---- BRUTE: a fast charge that bowls foot soldiers flat instead of biting, kicking up dust ---- */
     if (z.def.charger && t.kind === 'unit' && !t.def.veh && !t.def.fly) {
+      const step0 = z.step || 0;
       bruteCharge(z, dtz, t, d, reach);
       z.bob += dtz * 16; z.step += dtz * 15; z.lunge = Math.max(0, z.lunge - dtz);
       if (solidAt(z.x, z.y, false)) unstick(z, false);
-      if (near && Math.random() < dtz * 20) part('dust', z.x + rnd(-9, 9), z.y + rnd(-9, 9), rnd(-14, 14), rnd(-14, 14), rnd(.4, .8), rnd(4, 8), 'rgba(150,140,120,.6)', { z: 2, vz: rnd(8, 24), g: -30, grow: 12, drag: .9 });
+      // dust flies from the feet — a fresh puff on every footfall (each half-stride) plus a light trail
+      const moving = Math.hypot(z.vx || 0, z.vy || 0) > 8;
+      if (near && moving) {
+        const fell = Math.floor((z.step || 0) / Math.PI) !== Math.floor(step0 / Math.PI);
+        if (fell) for (let k = 0; k < 7; k++) { const da = rnd(TAU), sp = rnd(16, 80); part('dust', z.x + rnd(-8, 8), z.y + rnd(-4, 10), Math.cos(da) * sp + G.wind.x * .3, Math.sin(da) * sp * .6 + G.wind.y * .3, rnd(.4, .9), rnd(4, 8), k & 1 ? 'rgba(176,164,140,1)' : 'rgba(150,138,116,1)', { z: rnd(0, 4), vz: rnd(14, 40), g: 40, grow: 13, drag: .9, wind: 1, a: .5 }); }
+        else if (Math.random() < dtz * 18) part('dust', z.x + rnd(-9, 9), z.y + rnd(-6, 8), rnd(-12, 12), rnd(-10, 10), rnd(.4, .8), rnd(4, 7), 'rgba(158,146,124,1)', { z: 2, vz: rnd(10, 26), g: 20, grow: 12, drag: .9, wind: 1, a: .45 });
+      }
       continue;
     }
 
@@ -10187,7 +10215,9 @@ function updateBullets(dt) {
         if (b.shock) shockRim(b.x, b.y, b.splash);                                            // 30mm: whatever stands at the rim of the burst is thrown and torn
         if (b.team === 1 && b.splash <= 24) { fxRoundBurst(b.x, b.y, b.ang, b.gndHit); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }   // 25 mm: a tight burst — dust, sparks, a small flash — that still bites everything within a body and a half
         else if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .49); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, b.sfx === 'tank'); }   // the 120mm kills every enemy in its burst outright
-        else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false); }
+        else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false);
+          if (b.acidBleed) { const rr = b.splash + 10, ul = G.hUnits.near(b.x, b.y, rr, _q); for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside) continue; const cr = b.splash + u.r; if (dist2(u.x, u.y, b.x, b.y) < cr * cr) acidStack(u); } }   // splitter bile: a stack of acid on everyone it splashes
+        }
       } else if (hit) {
         const arrowFoot = b.kind === 'arrow' && hit.kind === 'unit' && !hit.def.veh && !hit.def.fly;
         if (arrowFoot) hit._arrowHit = 1;                                                 // so killUnit plays "kill by archer" if this arrow drops him
@@ -12969,7 +12999,7 @@ const SP_CATS = [
     { id: 'air', label: 'Air', icon: '🚁', side: 'player', list: ['littlebird1', 'littlebird2', 'blackhawk', 'apache', 'ac130', 'f16'] }
   ] },
   { sec: 'ENEMY UNITS', groups: [
-    { id: 'zombie', label: 'Zombie', icon: '🧟', side: 'enemy', list: ['walker', 'runner', 'brute', 'bloater', 'spitter'] },
+    { id: 'zombie', label: 'Zombie', icon: '🧟', side: 'enemy', list: ['walker', 'runner', 'brute', 'predator', 'bloater', 'spitter', 'splitter'] },
     { id: 'medieval', label: 'Thai Ancient', icon: '🐘', side: 'enemy', list: ['infantry', 'duelist', 'archer', 'cavalry', 'siege', 'villager', 'worker'] }
   ] },
   { sec: 'STRIKES', groups: [
@@ -15669,7 +15699,7 @@ function ctrlHudTick(dt) {
     const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + idLean;   // tactical stance while engaged: leaning into the gun, knees bent; crouch/idle add more
     const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.sit ? legL * .82 : 0) - (o.ride ? legL * .3 : 0) + idHip;
     const spread = torsoW * (o.ride ? .56 : .24);                                   // a rider straddles the saddle
-    const hipSway = sw * legW * .11, hipRoll = -sw * .05;                          // the pelvis rocks a little from side to side with the stride
+    const hipSway = sw * legW * .11, hipRoll = -sw * .05 + (o.roll || 0);          // the pelvis rocks a little from side to side with the stride (o.roll: a heavy lumbering side-bend, e.g. the brute's charge)
     // legs (body heading): thigh + shin. The swinging leg lifts its knee through the middle of the stride, the trailing leg
     // folds as it pushes off, a knee pad sits on the joint and a chunky boot lands flat — a real leg in motion, not a pendulum
     for (let s = -1; s <= 1; s += 2) {
@@ -15699,7 +15729,8 @@ function ctrlHudTick(dt) {
     setFrame(aTor);
     // torso (leaning, twisted toward the aim), belt, plate carrier / surcoat, shoulder pads, pack
     const tl = Math.sin(lean) * torsoH * .5, tcY = hipY + Math.cos(lean) * torsoH * .5;
-    put(bodyCap, X(tl, 0), tcY, Z(tl, 0), hipRoll * .6, ry, -lean, torsoD, torsoH, torsoW, uni);
+    const torsoRoll = hipRoll * .6 + (o.roll || 0) * .7;                            // the upper body bends further than the hips — a top-heavy sway on the brute
+    put(bodyCap, X(tl, 0), tcY, Z(tl, 0), torsoRoll, ry, -lean, torsoD, torsoH, torsoW, uni);
     if (med) put(P.cloth, X(tl * .15, 0), hipY + torsoH * .1, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.1, 3.4 * sc, torsoW * 1.08, col3(S.sash || '#b8642a'));   // wide waist sash
     else put(P.box, X(tl * .15, 0), hipY + torsoH * .08, Z(tl * .15, 0), 0, ry, -lean, torsoD * 1.06, 1.6 * sc, torsoW * 1.04, gear);
     if (med) { if (!S.bare && o.mk !== 'archer') { put(P.box, X(tl * 1.1 + torsoD * .12, 0), tcY + torsoH * .14, Z(tl * 1.1 + torsoD * .12, 0), 0, ry, -lean, torsoD * 1.1, torsoH * .58, torsoW * .84, gear);   // leather breastplate
@@ -17809,6 +17840,12 @@ function ctrlHudTick(dt) {
         const el = (zz.climb || 0) * K, air = !!zz.leap, crouched = !!zz.perch || !!zz.pin || air;
         drawFigureC(x, gy + el, z, zz.ang, air ? 0 : (zz.step || 0), S, { ck: zz, kind: 'zed', zt: 'predator', scale: .9, limbs: zz.limbs, id: zz.id, hop: air ? 1 : 0, crouch: crouched, lunge: zz.lunge || 0, mv: zedMv(zz) });
       }
+      else if (zz.def.charger) {
+        // brute: a heavy, lumbering charge — the torso bends hard from side to side, the whole body waddles and bobs, arms pumping
+        const ph = zz.step || 0, mvv = zedMv(zz), roll = Math.sin(ph) * .38 * mvv, waddle = Math.sin(ph) * .2 * mvv, lurch = Math.abs(Math.cos(ph)) * .16 * mvv;
+        const pxw = -Math.sin(zz.ang) * waddle, pzw = Math.cos(zz.ang) * waddle;
+        drawFigureC(x + pxw, gy + lurch, z + pzw, zz.ang, ph, S, { ck: zz, kind: 'zed', zt: 'brute', scale: .9, limbs: zz.limbs, id: zz.id, roll, crouch: zz.getup > 0, mv: mvv });
+      }
       else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0, mv: zedMv(zz) }); }
     }
     PF('zeds');
@@ -18955,7 +18992,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b183';
+const BUILD_TAG = 'b184';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
