@@ -3349,7 +3349,7 @@ const ZDEF = {
   // PREDATOR — the nightmare: sprints faster than a runner, swings tree to tree like an ape through any forest, then pounces onto a
   // soldier and rides him to the ground, clawing and feeding until the man is dead or the thing is shot off him. Tuned to fall to
   // about 15 rifle rounds. Each feeding hit is a random left-claw / right-claw / bite for 3 clean damage every 3 s.
-  predator: { name: 'Predator', hp: 30, spd: 156, r: 10, dmg: 3, rate: 3.0, armor: 0, spr: 'predator', scrap: 18, special: true, predator: true, climber: true }
+  predator: { name: 'Predator', hp: 30, spd: 187, r: 10, dmg: 3, rate: 3.0, armor: 0, spr: 'predator', scrap: 18, special: true, predator: true, climber: true }
 };
 
 /* ---- INVADERS mode: THAI ANCIENT — an Ayutthaya-era army warped forward in time ----
@@ -6321,8 +6321,14 @@ function setupInvaders() {
     G.villages.push(vil);
   }
 
-  // the stronghold: the host's fortified compound, as far from the players' posts (their average) as the land allows
-  setupStronghold(hqList, placed);
+  // six evenly-spaced slots on an ELLIPSE that matches the map's shape — the factions ring the border at equal angular gaps
+  const mcx = MW * TS / 2, mcy = MH * TS / 2, rx = MW * TS * .40, ry = MH * TS * .40, off = Math.random() * TAU, NF = 6;
+  const facSlots = []; for (let i = 0; i < NF; i++) { const a = off + i / NF * TAU; facSlots.push({ x: clamp(mcx + Math.cos(a) * rx, TS * 6, MW * TS - TS * 6), y: clamp(mcy + Math.sin(a) * ry, TS * 6, MH * TS - TS * 6) }); }
+  // faction 0 (the main host) takes the ring slot farthest from every player's post
+  let f0 = 0, f0d = -1; for (let i = 0; i < NF; i++) { let near = 1e18; for (const p of hqList) { const d = dist2(facSlots[i].x, facSlots[i].y, p.x, p.y); if (d < near) near = d; } if (near > f0d) { f0d = near; f0 = i; } }
+  G._facSlots = facSlots; G._f0Slot = f0;
+  // the stronghold: the host's fortified compound, built on its ring slot
+  setupStronghold(hqList, placed, facSlots[f0]);
   // vassal villages: the six villages nearest the stronghold are sworn to the host — they start in its hands and raise militia
   if (G.stronghold) { G.villages.slice().sort((a, b) => dist2(a.x, a.y, G.stronghold.x, G.stronghold.y) - dist2(b.x, b.y, G.stronghold.x, G.stronghold.y)).slice(0, 6).forEach(v => { v.owner = 'invader'; v.cap = -1; v.vassal = true; v.milT = rnd(4, 12); for (let i = 0; i < 4; i++) spawnMilitia(v); }); }
 
@@ -6374,7 +6380,8 @@ const FACTIONS = [
    rival compounds that raise their own troops and send them raiding — at the player (80%) and at each other (20%). */
 function setupFactions(hqList, placed) {
   G.factions = [];
-  // faction 0 — tag the existing stronghold + register it
+  const N = FACTIONS.length, slots = G._facSlots || [], f0 = G._f0Slot || 0;
+  // faction 0 — the existing main host, already built on slot f0
   if (G.stronghold) {
     const S = G.stronghold; S.faction = 0; S.col = FACTIONS[0].col;
     for (const w of (S.walls || [])) w.faction = 0;
@@ -6382,32 +6389,42 @@ function setupFactions(hqList, placed) {
     if (S.hq) S.hq.faction = 0;
     G.factions.push({ idx: 0, name: FACTIONS[0].name, col: FACTIONS[0].col, accent: FACTIONS[0].accent, bias: FACTIONS[0].bias, x: S.x, y: S.y, S, dead: false });
   }
-  // factions 1..5 — a rival compound each, spread far from the players and from one another
-  for (let idx = 1; idx < FACTIONS.length; idx++) {
+  // factions 1..5 — one to each of the OTHER five ring slots, so all six sit around the map at even angular gaps
+  let si = 0;
+  for (let idx = 1; idx < N; idx++) {
     const f = FACTIONS[idx];
-    const S = buildRivalStronghold(idx, f, hqList, placed);
+    while (si < N && si === f0) si++;                            // skip the slot the main host holds
+    const slot = slots[si] || null; si++;
+    const S = buildRivalStronghold(idx, f, hqList, placed, slot);
     if (!S) continue;
     G.factions.push({ idx, name: f.name, col: f.col, accent: f.accent, bias: f.bias, x: S.x, y: S.y, S, dead: false });
   }
-  if (G.factions.length) alertMsg(G.factions.length + ' warring factions hold this land — they will fight you and each other', 'bad');
+  if (G.factions.length) alertMsg(G.factions.length + ' warring factions ring the land — they will fight you and each other', 'bad');
 }
 /* a rival faction's compound: a royal pavilion, its favoured army buildings, a small palisade ring, and starting levies.
    Its structures carry .faction = idx (drawn in the faction colour); its troops raid independently. */
-function buildRivalStronghold(idx, f, hqList, placed) {
+function buildRivalStronghold(idx, f, hqList, placed, slot) {
   const half = 12;                                             // smaller than the main host's compound (keeps the map from drowning in buildings)
-  let best = null, bd = -1;
+  let best = null;
   const clearOf = (x, y, r) => { for (const p of placed) if (dist2(x, y, p[0], p[1]) < (p[2] + r) * (p[2] + r)) return false; return true; };
-  for (let a = 0; a < 160; a++) {
-    const q = randomLandPoint(); if (!q) continue;
-    const tx = clamp(Math.round(q.x / TS), half + 3, MW - half - 3), ty = clamp(Math.round(q.y / TS), half + 3, MH - half - 3);
+  const anchor = slot || { x: MW * TS / 2, y: MH * TS / 2 };
+  const okSite = (tx, ty, playerR) => {
     let bad = 0, n = 0; for (let yy = -half; yy <= half; yy += 2) for (let xx = -half; xx <= half; xx += 2) { n++; if (IMPASSABLE(MAP.t[tileIdx(tx + xx, ty + yy)])) bad++; }
-    if (bad > n * .05) continue;                                          // reject sites that sit on water / cliff
+    if (bad > n * .05) return false;
     const px = tx * TS, py = ty * TS;
-    if (!clearOf(px, py, half * TS * 1.3)) continue;
-    let near = 1e18; for (const p of hqList) { const d2 = dist2(px, py, p.x, p.y); if (d2 < near) near = d2; }
-    if (near < 1700 * 1700) continue;                          // keep it off the players' doorstep
-    const score = Math.sqrt(near);
-    if (score > bd) { bd = score; best = { tx, ty }; }
+    if (!clearOf(px, py, half * TS * 1.3)) return false;
+    for (const p of hqList) if (dist2(px, py, p.x, p.y) < playerR * playerR) return false;
+    return true;
+  };
+  // search OUTWARD from the assigned ring slot so the faction lands as close as the land allows to its even-gap position
+  for (let a = 0; a < 260 && !best; a++) {
+    const rad = (a / 260) * Math.min(MW, MH) * TS * .3, ang = Math.random() * TAU;
+    const qx = anchor.x + Math.cos(ang) * rad, qy = anchor.y + Math.sin(ang) * rad;
+    const tx = clamp(Math.round(qx / TS), half + 3, MW - half - 3), ty = clamp(Math.round(qy / TS), half + 3, MH - half - 3);
+    if (okSite(tx, ty, 1200)) best = { tx, ty };
+  }
+  { // last resort: anywhere valid, ignoring player clearance
+    if (!best) for (let a = 0; a < 120 && !best; a++) { const q = randomLandPoint(); if (!q) continue; const tx = clamp(Math.round(q.x / TS), half + 3, MW - half - 3), ty = clamp(Math.round(q.y / TS), half + 3, MH - half - 3); if (okSite(tx, ty, 300)) best = { tx, ty }; }
   }
   if (!best) return null;
   const cx = (best.tx + .5) * TS, cy = (best.ty + .5) * TS;
@@ -6429,7 +6446,7 @@ function buildRivalStronghold(idx, f, hqList, placed) {
   // starting levies + a small standing raiding party
   for (let i = 0; i < 3; i++) { const p = randomLandPoint(cx, cy, 30, 120) || { x: cx, y: cy }; const w = spawnZed('worker', p.x, p.y); w.mode = 'hunt'; w.restT = rnd(.5, 3); w.faction = idx; }
   const pick = () => { const r = Math.random(); return f.bias === 'archer' ? (r < .5 ? 'archer' : 'infantry') : f.bias === 'cavalry' ? (r < .4 ? 'cavalry' : 'infantry') : f.bias === 'siege' ? (r < .25 ? 'siege' : 'infantry') : (r < .3 ? 'duelist' : 'infantry'); };
-  for (let i = 0; i < 5; i++) { const p = randomLandPoint(cx, cy, 60, 260); if (!p) continue; const z = spawnZed(pick(), p.x, p.y); z.faction = idx; z.mode = 'roam'; assignFactionMission(z); if (i === 0) z.banner = 1; }   // a leader flies the faction standard
+  for (let i = 0; i < 5; i++) { const p = randomLandPoint(cx, cy, 60, 260); if (!p) continue; const z = spawnZed(pick(), p.x, p.y); z.faction = idx; z.mode = 'roam'; if (typeof factionDeploy === 'function') factionDeploy(z); }   // 75% muster + march, 25% raid a rival
   return S;
 }
 
@@ -6439,22 +6456,32 @@ function buildRivalStronghold(idx, f, hqList, placed) {
    builders raise fast, in order, and rebuild when they are burned. The compound is capped at 30% of the map's area (and
    at 44 tiles a side), and sits as far from the player's command post as open ground allows. */
 const STRONGHOLD_MAX_SIDE = 44;
-function setupStronghold(hqList, placed) {
+function setupStronghold(hqList, placed, target) {
   G.stronghold = null;
   if (!hqList || !hqList.length) hqList = [{ x: BASE_X, y: BASE_Y }];
   const side = Math.min(STRONGHOLD_MAX_SIDE, Math.floor(Math.sqrt(.3 * MW * MH)) & ~1), half = side / 2;
   if (side < 16) return;
-  // site: the open, mostly-passable square whose summed distance to every commander's post is greatest — i.e. as far
-  // across the map from the players' average position as the land allows (and never lopsided toward one of them)
-  let best = null, bd = -1;
-  for (let a = 0; a < 140; a++) {
-    const q = randomLandPoint(); if (!q) continue;
-    const tx = clamp(Math.round(q.x / TS), half + 3, MW - half - 3), ty = clamp(Math.round(q.y / TS), half + 3, MH - half - 3);
-    let bad = 0, n = 0; for (let yy = -half; yy <= half; yy += 3) for (let xx = -half; xx <= half; xx += 3) { n++; if (IMPASSABLE(MAP.t[tileIdx(tx + xx, ty + yy)])) bad++; }
-    if (bad > n * .12) continue;
-    const px = tx * TS, py = ty * TS; let sum = 0, near = 1e18; for (const p of hqList) { const d2 = dist2(px, py, p.x, p.y); sum += Math.sqrt(d2); if (d2 < near) near = d2; }
-    const score = sum / hqList.length + Math.sqrt(near) * .5;      // reward a big average distance, but keep it from hugging the nearest post
-    if (score > bd) { bd = score; best = { tx, ty }; }
+  const okStrong = (tx, ty) => { let bad = 0, n = 0; for (let yy = -half; yy <= half; yy += 3) for (let xx = -half; xx <= half; xx += 3) { n++; if (IMPASSABLE(MAP.t[tileIdx(tx + xx, ty + yy)])) bad++; } return bad <= n * .12; };
+  let best = null;
+  if (target) {
+    // sit on its assigned ring slot: search outward from it for the nearest open, mostly-dry square
+    for (let a = 0; a < 280 && !best; a++) {
+      const rad = (a / 280) * Math.min(MW, MH) * TS * .28, ang = Math.random() * TAU;
+      const tx = clamp(Math.round((target.x + Math.cos(ang) * rad) / TS), half + 3, MW - half - 3), ty = clamp(Math.round((target.y + Math.sin(ang) * rad) / TS), half + 3, MH - half - 3);
+      if (okStrong(tx, ty)) best = { tx, ty };
+    }
+  }
+  if (!best) {
+    // no slot (or none fit near it): the original rule — as far across the map from the players as open ground allows
+    let bd = -1;
+    for (let a = 0; a < 140; a++) {
+      const q = randomLandPoint(); if (!q) continue;
+      const tx = clamp(Math.round(q.x / TS), half + 3, MW - half - 3), ty = clamp(Math.round(q.y / TS), half + 3, MH - half - 3);
+      if (!okStrong(tx, ty)) continue;
+      const px = tx * TS, py = ty * TS; let sum = 0, near = 1e18; for (const p of hqList) { const d2 = dist2(px, py, p.x, p.y); sum += Math.sqrt(d2); if (d2 < near) near = d2; }
+      const score = sum / hqList.length + Math.sqrt(near) * .5;
+      if (score > bd) { bd = score; best = { tx, ty }; }
+    }
   }
   if (!best) return;
   const cx = (best.tx + .5) * TS, cy = (best.ty + .5) * TS;
@@ -6778,7 +6805,7 @@ function updateConstruction(z, dt, near) {
     if (z.def.troop === 'worker') { let w = 0; for (const o of G.zeds) if (!o.dead && o.def.worker) w++; n = Math.min(n, 8 - w); if (n <= 0) return; }   // the pavilion keeps eight levies at work
     for (let i = 0; i < n; i++) { const p = randomLandPoint(z.x, z.y, z.r + 6, z.r + 60) || { x: z.x + z.r, y: z.y }; const zz = spawnZed(z.def.troop === 'infantry' && Math.random() < .3 ? 'duelist' : z.def.troop, p.x, p.y); zz.mode = 'hunt'; zz.faction = z.faction != null ? z.faction : 0;
       if (zz.def.worker) zz.restT = rnd(.5, 2);
-      else if (zz.faction > 0) { if (typeof assignFactionMission === 'function') assignFactionMission(zz); if (Math.random() < .22) zz.banner = 1; }   // rival factions raid on their own — no shared muster; some carry the faction standard
+      else if (zz.faction > 0) { if (typeof factionDeploy === 'function') factionDeploy(zz); }   // 75% muster at the gate + march on the player, 25% raid a random rival faction
       else if (typeof musterJoin === 'function') musterJoin(zz); else assignInvaderMission(zz); }
     if (near) popText(z.x, z.y - 26, '+' + n + ' ' + enemyDef(z.def.troop).name.toUpperCase(), '#ff9a5a');
   }
@@ -9460,13 +9487,15 @@ function musterYard(mx, my, dir) {
   return [mk(-lat, 3 * MUSTER_ROWSP, '1v1'), mk(-lat, 9 * MUSTER_ROWSP, '1v3'), mk(lat, 6 * MUSTER_ROWSP, '1v1')];
 }
 const MUSTER_RANK = { siege: 0, duelist: 1, infantry: 2, cavalry: 3, archer: 4 };
-function musterNew() {
-  // the muster ground is the field in front of the stronghold gate that faces the player's post (the ranks form up 12 tiles
-  // out from the gate, facing the base); without a stronghold it falls back to open ground 60-105 tiles from the post
+const musterOf = fidx => ((fidx | 0) > 0 && G.musters) ? G.musters[fidx] : G.muster;
+function musterNew(fidx) {
+  // the muster ground is the field in front of THIS faction's gate that faces the player's post (the ranks form up out from
+  // the gate, facing the base); without a stronghold it falls back to open ground near the post
+  fidx = fidx | 0;
   let o = null, dir = 0;
-  const S = G.stronghold;
+  const S = (fidx > 0 && G.factions && G.factions[fidx]) ? G.factions[fidx].S : G.stronghold;
   if (S) {
-    const hq = nearestHQ(S.x, S.y), gates = G.zeds.filter(z => !z.dead && z.def.struct && z.def.gate);
+    const hq = nearestHQ(S.x, S.y), gates = G.zeds.filter(z => !z.dead && z.def.struct && z.def.gate && (z.faction || 0) === fidx);
     let g = null, bd = Infinity; for (const q of gates) { const d = hq ? dist2(q.x, q.y, hq.x, hq.y) : 0; if (d < bd) { bd = d; g = q; } }
     // the ranks stand square to the wall (facing straight out through the gate) and the WHOLE block — front rank to rear
     // rank, ~15 rows deep — sits outside the palisade: the front rank is MUSTER_OUT tiles from the gate, the rear rank a few
@@ -9475,15 +9504,27 @@ function musterNew() {
     if (!o) { const hq2 = hq || { x: BASE_X, y: BASE_Y }; const out = angTo(S.x, S.y, hq2.x, hq2.y); o = { x: S.x + Math.cos(out) * (S.half + MUSTER_OUT) * TS, y: S.y + Math.sin(out) * (S.half + MUSTER_OUT) * TS }; dir = out; }
   } else { o = waveOrigin(MUSTER_FULL); if (!o) return null; const hq = nearestHQ(o.x, o.y); dir = hq ? angTo(o.x, o.y, hq.x, hq.y) : 0; }
   if (typeof clearProps === 'function') clearProps(o.x - Math.cos(dir) * 8 * TS, o.y - Math.sin(dir) * 8 * TS, 19 * TS);   // the parade ground is cleared of trees so the ranks can be seen
-  G.muster = { id: (G.musterId = (G.musterId || 0) + 1), x: o.x, y: o.y, dir, members: [], n: 0, marching: false, t: 0, drill: musterYard(o.x, o.y, dir) };
-  return G.muster;
+  const M = { id: (G.musterId = (G.musterId || 0) + 1), x: o.x, y: o.y, dir, members: [], n: 0, marching: false, t: 0, drill: musterYard(o.x, o.y, dir), faction: fidx };
+  if (fidx > 0) { G.musters = G.musters || {}; G.musters[fidx] = M; } else G.muster = M;
+  return M;
 }
 const H_ORIGIN = z => z.guard;
 function musterJoin(z) {
   if (!z || z.dead || !z.med || z.def.worker || z.def.struct || z.def.militia) return;
-  let M = G.muster; if (!M || M.marching) M = musterNew(); if (!M) return;
+  const fidx = z.faction | 0;
+  let M = musterOf(fidx); if (!M || M.marching) M = musterNew(fidx); if (!M) return;
   M.members.push(z); z.muster = { id: M.id, x: M.x, y: M.y }; z.mission = 'muster'; z.target = null; z.mode = 'hunt';
   musterLayout(M);
+}
+/* a rival faction's fresh troop: 75% assemble at the gate and march on the player together; 25% peel off to raid a RANDOM
+   other faction (no muster — straight there) */
+function factionDeploy(z) {
+  if (z.faction == null) { assignInvaderMission(z); return; }
+  if (Math.random() < .25) {
+    z.mission = 'raid'; z.raidRival = null;
+    const rivals = (G.factions || []).filter(f => !f.dead && f.idx !== z.faction && f.x !== undefined);
+    if (rivals.length) { z.raidRival = rivals[(Math.random() * rivals.length) | 0]; z.mission = 'raidRival'; }
+  } else musterJoin(z);
 }
 /* every arm has its own zone of rows in the block, so a late arrival never shuffles men already standing in the ranks:
    war elephants rows 0-1 (each two files wide), twin-sword raiders 2-3, spearmen 4-8, lancers 9-10, bowmen 11-13;
@@ -9520,13 +9561,22 @@ function musterMarch(M) {
   G.hostPace = G.hostPace || {}; G.hostPace[M.id] = pace < 1e9 ? pace : MUSTER_PACE;
   G.hostFm = G.hostFm || {}; G.hostFm[M.id] = { id: M.id, x: M.x, y: M.y, dir: M.dir, pace: G.hostPace[M.id] * 1.5, wait: 0 };   // the block marches 50% faster than its slowest man's walk   // the block itself: an anchor that walks toward the base; every man holds his slot in it
   for (const z of M.members) if (!z.dead) { z.slot = { lat: z.muster.lat || 0, back: z.muster.back || 0 }; z.muster = null; z.host = M.id; z.mission = 'raid'; z.target = null; z.mode = 'hunt'; }
-  alertMsg('⚠ THE HOST MARCHES — ' + M.n + ' strong, making for the base', 'bad'); AU.ui('alarm');
-  G.muster = null;
+  const fn = (M.faction > 0 && G.factions && G.factions[M.faction]) ? G.factions[M.faction].name : 'THE HOST';
+  alertMsg('⚠ ' + fn.toUpperCase() + ' MARCHES — ' + M.n + ' strong, making for the base', 'bad'); AU.ui('alarm');
+  if (M.faction > 0 && G.musters) delete G.musters[M.faction]; else G.muster = null;
 }
 function updateMuster(dt) {
-  const M = G.muster; if (!M || M.marching) return;
-  M.t += dt;
-  if ((G.frame % 30) === 0) { musterLayout(M); if (M.n >= MUSTER_FULL) musterMarch(M); }
+  const tick = M => {
+    if (!M || M.marching) return;
+    M.t += dt;
+    if ((G.frame % 30) !== 0) return;
+    musterLayout(M);
+    // the main host waits for its full 200; a rival faction steps off at 14 strong, or after ~55 s with at least 6 formed up
+    const march = M.faction > 0 ? (M.n >= 14 || (M.t > 55 && M.n >= 6)) : (M.n >= MUSTER_FULL);
+    if (march) musterMarch(M);
+  };
+  tick(G.muster);
+  if (G.musters) for (const k in G.musters) tick(G.musters[k]);
 }
 function updateHosts(dt) { updateMuster(dt); if ((G.frame % 60) === 0) updateHostBanners(); updateHostFormations(dt); }
 /* the marching block: its anchor walks toward the nearest command post at the host's pace, turning gently, and waits when
@@ -9609,10 +9659,11 @@ function knockUnit(u, ang, power, src) {
 
 /* how high a tree's canopy sits (px) — the predator perches ~78% of the way up before springing to the next one */
 function treeTopPx(sc) { return 30 + (sc || 1.8) * 16; }
-/* find a tree to vault to: within leap reach, roughly toward the target, closer to it than we are, and not the one we just left */
+/* find the next tree to vault to: within leap reach and roughly toward the prey — it swings to whichever branch gets it
+   closest to the target (so it keeps to the canopy through a whole wood), never straight back to the one it just left */
 function treeLeapTarget(z, tx, ty) {
-  const R = 380, R2 = R * R, MINR = 60 * 60, dToT = dist2(z.x, z.y, tx, ty);
-  let best = null, bestD = Infinity;
+  const R = 420, R2 = R * R, MINR = 40 * 40, dToT = dist2(z.x, z.y, tx, ty), toT = Math.atan2(ty - z.y, tx - z.x);
+  let best = null, bestScore = -Infinity;
   for (let a = ((z.x - R) / CH | 0); a <= ((z.x + R) / CH | 0); a++)
     for (let b = ((z.y - R) / CH | 0); b <= ((z.y + R) / CH | 0); b++) {
       if (a < 0 || b < 0 || a * CH >= WW || b * CH >= WH) continue;
@@ -9620,8 +9671,12 @@ function treeLeapTarget(z, tx, ty) {
       for (let k = 0; k < ps.length; k++) {
         const q = ps[k]; if (q.s !== 'tree' || G.deadProps.has(q.id) || q.id === z._lastTree) continue;
         const dz = dist2(q.x, q.y, z.x, z.y); if (dz > R2 || dz < MINR) continue;
-        if (dist2(q.x, q.y, tx, ty) > dToT - 30 * 30) continue;         // must make real progress toward the prey
-        if (dz < bestD) { bestD = dz; best = q; }
+        const dqT = dist2(q.x, q.y, tx, ty);
+        // skip only trees clearly BEHIND it and not advancing; otherwise allow lateral hops so it keeps to the canopy
+        const toTree = Math.atan2(q.y - z.y, q.x - z.x); let da = Math.abs(((toTree - toT + Math.PI * 3) % (2 * Math.PI)) - Math.PI);
+        if (da > 2.0 && dqT >= dToT) continue;
+        const score = -Math.sqrt(dqT) - Math.sqrt(dz) * .12;            // prefer the branch nearest the prey, then the nearest to us
+        if (score > bestScore) { bestScore = score; best = q; }
       }
     }
   return best;
@@ -9630,7 +9685,7 @@ function treeLeapTarget(z, tx, ty) {
 function startPredatorLeap(z, tx, ty, th, land, arc) {
   const d = dist(z.x, z.y, tx, ty);
   z.leap = { fx: z.x, fy: z.y, tx, ty, fh: z.climb || 0, th: th || 0, land, arc: arc !== undefined ? arc : Math.max(26, d * .22), t: 0, dur: clamp(d / 620, .16, .62), ang: angTo(z.x, z.y, tx, ty) };
-  if (land === 'pounce') { z.pounceU = z.target; AU.groan && AU.groan(z.x, z.y); }
+  if (land === 'pounce' && AU.groan) AU.groan(z.x, z.y);                // z.pounceU is set by the caller (the soldier to ride down)
 }
 /* the pounce lands: ride the nearest foot soldier to the ground and hold him */
 function pouncePin(z) {
@@ -9647,37 +9702,41 @@ function pouncePin(z) {
     addShake(z.x, z.y, 4); popText(u.x, u.y - 20, 'PINNED!', '#ff6a4a');
   }
 }
-/* predator locomotion: vault tree→tree when it can, pounce from close, otherwise sprint low to the ground.
-   Returns true when it has taken over this frame's movement. */
-function predatorMove(z, dtz, t, d, reach) {
+/* predator locomotion toward a goal (gx,gy): vault tree→tree whenever a branch is reachable, pounce onto a foot soldier from
+   close, otherwise sprint low over open ground. footTarget is the soldier to pin (null for a building / a roam point). */
+function predatorMove(z, dtz, gx, gy, footTarget, reach) {
   const POUNCE = 175;
   z.spd = z.def.spd * (G.night ? 1.22 : 1) * (z.slow > 0 ? .5 : 1);
-  // 1) close enough — spring onto him
-  if (d <= POUNCE && d > reach * .5 && (z.pounceCd || 0) <= 0) {
-    z.pounceCd = 1.2; z._lastTree = 0;
-    startPredatorLeap(z, t.x, t.y, 0, 'pounce', Math.max(34, d * .35));
-    return true;
+  const d = dist(z.x, z.y, gx, gy);
+  // 1) a soldier in reach — spring onto him
+  if (footTarget && d <= POUNCE && d > (reach || 14) * .5 && (z.pounceCd || 0) <= 0) {
+    z.pounceCd = 1.2; z._lastTree = 0; z.pounceU = footTarget;
+    startPredatorLeap(z, gx, gy, 0, 'pounce', Math.max(34, d * .35));
+    return;
   }
   z.pounceCd = (z.pounceCd || 0) - dtz;
-  // 2) out of pounce range: if there's ANY tree to swing to, it never touches the ground — it monkeys through the canopy toward him
-  if ((z.treeCd || 0) > 0) z.treeCd -= dtz;
-  else {
-    const tree = treeLeapTarget(z, t.x, t.y);
-    if (tree) { z._lastTree = tree.id; startPredatorLeap(z, tree.x, tree.y, treeTopPx(tree.sc) * .78, 'tree'); z.treeCd = 0; return true; }
-    z.treeCd = .3;                                                     // no branch in reach: don't rescan every frame
+  // 2) while it's still FAR from the goal (or just roaming/heading for a building), it stays in the canopy — swinging tree to
+  //    tree. Once it's closed to within pouncing distance of a soldier it stops hopping and rushes in for the leap.
+  const closingOnMan = footTarget && d < 240;
+  if (!closingOnMan) {
+    if ((z.treeCd || 0) > 0) z.treeCd -= dtz;
+    else {
+      const tree = treeLeapTarget(z, gx, gy);
+      if (tree) { z._lastTree = tree.id; startPredatorLeap(z, tree.x, tree.y, treeTopPx(tree.sc) * .78, 'tree'); z.treeCd = 0; return; }
+      z.treeCd = .12;                                                  // no branch in reach: rescan again very soon
+    }
   }
-  // 3) up a tree with nowhere left to swing → drop and dash the last stretch
+  // 3) up a tree with nowhere left to swing (or now closing on a soldier) → drop and dash the last stretch
   if ((z.climb || 0) > 6) {
-    const a = angTo(z.x, z.y, t.x, t.y);
-    startPredatorLeap(z, z.x + Math.cos(a) * 150, z.y + Math.sin(a) * 150, 0, 'ground', 40);
-    return true;
+    const a = angTo(z.x, z.y, gx, gy), hop = Math.min(150, Math.max(60, d));
+    startPredatorLeap(z, z.x + Math.cos(a) * hop, z.y + Math.sin(a) * hop, 0, 'ground', 40);
+    return;
   }
-  // 4) open ground, no trees at all: sprint at him
+  // 4) open ground (or the final rush at a soldier): sprint at the goal
   z.climb = 0;
-  z.ang = angLerp(z.ang, angTo(z.x, z.y, t.x, t.y), .2);
-  steerZ(z, dtz, t.x, t.y, reach * .7);
+  z.ang = angLerp(z.ang, angTo(z.x, z.y, gx, gy), .2);
+  steerZ(z, dtz, gx, gy, (reach || 14) * .7);
   z.bob += dtz * 15; z.step += dtz * 14;
-  return true;
 }
 /* brute charge: barrel at the line and bowl soldiers flat instead of biting — a barge that plows through a crowd */
 function bruteCharge(z, dtz, t, reach) {
@@ -9867,7 +9926,7 @@ function updateZeds(dt) {
     }
     /* ---- host muster (invaders): walk to my place in the ranks and stand facing the base until the host is full ---- */
     if (z.muster) {
-      const M = G.muster;
+      const M = musterOf(z.faction | 0);
       if (!M || M.id !== z.muster.id || M.marching) { z.muster = null; z.drill = null; z.mission = 'raid'; z.target = null; }
       else {
         if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
@@ -9964,6 +10023,22 @@ function updateZeds(dt) {
     // capture mission fulfilled or void → switch to seek-and-destroy
     if (z.mission === 'capture' && (!z.missionTarget || z.missionTarget.dead || z.missionTarget.owner === 'invader')) z.mission = 'raid';
     const t = z.target;
+
+    /* ---- PREDATOR: its locomotion is the canopy. Wherever it's headed — a soldier, the HQ, or just roaming — if there are
+       trees in the way it swings tree to tree instead of walking; only over open ground does it sprint. It pounces + pins
+       foot soldiers, and gnaws weakly at a building if that's all there is. ---- */
+    if (z.def.predator && !z.def.worker && !z.def.struct) {
+      let gx, gy, foot = null, rch = z.r + 4;
+      if (t) { gx = t.x; gy = t.y; rch = z.r + (t.kind === 'build' ? Math.max(t.w, t.h) * TS * .48 : t.r) + 4; if (t.kind === 'unit' && !t.def.veh && !t.def.fly) foot = t; }
+      else { z.wT -= dtz; if (z.wT <= 0 || (z.wx === 0 && z.wy === 0)) { const pnt = randomLandPoint(z.x, z.y, 400, 1800); if (pnt) { z.wx = pnt.x; z.wy = pnt.y; } z.wT = rnd(9, 22); } gx = z.wx; gy = z.wy; }
+      if (t && t.kind === 'build' && (z.climb || 0) < 6 && dist(z.x, z.y, gx, gy) <= rch) {
+        z.ang = angLerp(z.ang, angTo(z.x, z.y, gx, gy), .2);
+        if (z.cd <= 0) { z.cd = z.def.rate; z.lunge = .18; damage(t, z.def.dmg * ((G.diff && G.diff.dmgMul) || 1), angTo(z.x, z.y, gx, gy)); if (t.def && t.def.thorns) damage(z, t.def.thorns, 0, { trueDmg: true }); }
+      } else predatorMove(z, dtz, gx, gy, foot, rch);
+      z.lunge = Math.max(0, z.lunge - dtz);
+      if ((z.climb || 0) <= .5 && solidAt(z.x, z.y, false)) unstick(z, false);
+      continue;
+    }
     // a body missing legs does not move like one that still has them: one leg gone → 50%, both gone → a 5% crawl
     const legs = ((z.limbs & 4) ? 1 : 0) + ((z.limbs & 8) ? 1 : 0);
     z.spd = z.def.spd * nightSpd * (legs === 2 ? 1 : legs === 1 ? .5 : .05);
@@ -10022,13 +10097,6 @@ function updateZeds(dt) {
     const reach = z.r + (t.kind === 'build' ? Math.max(t.w, t.h) * TS * .48 : t.r) + 4;
     const d = dist(z.x, z.y, t.x, t.y);
 
-    /* ---- PREDATOR: parkour + pounce takes over against foot soldiers — it never bites, it pins ---- */
-    if (z.def.predator && t.kind === 'unit' && !t.def.veh && !t.def.fly) {
-      predatorMove(z, dtz, t, d, reach);
-      z.lunge = Math.max(0, z.lunge - dtz);
-      if ((z.climb || 0) <= .5 && solidAt(z.x, z.y, false)) unstick(z, false);
-      continue;
-    }
     /* ---- BRUTE: a fast charge that bowls foot soldiers flat instead of biting, kicking up dust ---- */
     if (z.def.charger && t.kind === 'unit' && !t.def.veh && !t.def.fly) {
       const step0 = z.step || 0;
@@ -13748,7 +13816,7 @@ function cardFor() {
       }
     }
     if (d.ability === 'strikes') {
-      const CD = { napalm: 45, artillery: 60, nuke: 300 }, COST = { napalm: { s: 0, c: 600 }, artillery: { s: 0, c: 750 }, nuke: { s: 0, c: 6000 } }, KEYS = { napalm: 'N', artillery: 'A', nuke: 'X' };
+      const CD = { napalm: 45, artillery: 60, nuke: 300 }, COST = { napalm: { s: 0, c: 600 }, artillery: { s: 0, c: 750 }, nuke: { s: 0, c: 60000 } }, KEYS = { napalm: 'N', artillery: 'A', nuke: 'X' };
       const NB = [4, 6, 8, 12, 16, 24, 32]; if (!G.napalmN) G.napalmN = 8;
       for (const st of ['napalm', 'artillery', 'nuke']) {
         const sd = STRIKE_DEF[st], left = Math.max(0, ((G.strikeCd && G.strikeCd[st]) || 0) - G.t), can = affordable(COST[st]) && left <= 0;
@@ -19167,7 +19235,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b187';
+const BUILD_TAG = 'b188';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
