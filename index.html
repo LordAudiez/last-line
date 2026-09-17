@@ -3074,10 +3074,20 @@ function buildSprites() {
     { skin: '#8c8676', shirt: '#3f4238', pants: '#2c2b26', blood: '#5f1010', extra: { len: 26, wid: 24, head: 5.6, armLen: 17, armW: 6.5, legLen: 13, legW: 7.5, round: 7 } },
     { skin: '#928a74', shirt: '#5a4a2c', pants: '#2f2a22', blood: '#5f1010', extra: { len: 26, wid: 24, head: 5.6, armLen: 17, armW: 6.5, legLen: 13, legW: 7.5, round: 7 } }
   ]);
+  // SPLITTER — bile-thrower: sickly grey-green, acid-eaten clothes, green blood (like the spitter but ranged)
+  V('splitter', [
+    { skin: '#869a6e', shirt: '#425238', pants: '#2e3626', blood: '#8fe23a' },
+    { skin: '#8ea074', shirt: '#54603a', pants: '#31362a', blood: '#8fe23a' }
+  ]);
+  // PREDATOR — long, sinewy, ape-limbed nightmare: ashen-grey hide, ragged dark rags, long reaching arms and light legs; deep red blood
+  V('predator', [
+    { skin: '#7f8478', shirt: '#26262a', pants: '#1f1f22', blood: '#8f1010', extra: { len: 16, wid: 12, head: 4.2, armLen: 19, armW: 4.6, legLen: 12.5, legW: 4.6, round: 5 } },
+    { skin: '#868a7c', shirt: '#2a241f', pants: '#221d1a', blood: '#8f1010', extra: { len: 16, wid: 12, head: 4.2, armLen: 19, armW: 4.6, legLen: 12.5, legW: 4.6, round: 5 } }
+  ]);
 
   buildMedieval();
 }
-const ZVARS = { walker: 5, runner: 4, spitter: 2, bloater: 2, brute: 2, infantry: 4, cavalry: 2, archer: 3, siege: 1, villager: 3, duelist: 2 };
+const ZVARS = { walker: 5, runner: 4, spitter: 2, splitter: 2, bloater: 2, brute: 2, predator: 2, infantry: 4, cavalry: 2, archer: 3, siege: 1, villager: 3, duelist: 2 };
 
 /* ---- INVADERS: the medieval army rigs, mounts and hand weapons ---- */
 function buildMedieval() {
@@ -3333,9 +3343,16 @@ const UDEF = {
 const ZDEF = {
   walker: { name: 'Walker', hp: 62, spd: 34, r: 10, dmg: 9, rate: 1.0, armor: 0, spr: 'walker', scrap: 4 },
   runner: { name: 'Runner', hp: 46, spd: 92, r: 9, dmg: 6, rate: .55, armor: 0, spr: 'runner', scrap: 5 },
-  brute: { name: 'Brute', hp: 460, spd: 42, r: 18, dmg: 40, rate: 1.5, armor: 5, spr: 'brute', scrap: 26, big: true, special: true },
+  // BRUTE — no longer a slow tank: a fast bull that runs 50% quicker than a runner, kicks up dust, and bowls your
+  // infantry flat on contact (a knock that chains into whoever they're flung against). bumpDmg is the hit it lands as it barges through.
+  brute: { name: 'Brute', hp: 340, spd: 138, r: 18, dmg: 34, rate: 1.2, armor: 5, spr: 'brute', scrap: 26, big: true, special: true, charger: true, bumpDmg: 16 },
   bloater: { name: 'Bloater', hp: 175, spd: 34, r: 15, dmg: 12, rate: 1.2, armor: 1, spr: 'bloater', scrap: 14, burst: { dmg: 65, r: 86 }, special: true },
-  spitter: { name: 'Spitter', hp: 95, spd: 54, r: 10, dmg: 15, rate: 1.5, armor: 0, spr: 'spitter', scrap: 11, special: true }   // no more spit: every zombie has to close to biting range
+  spitter: { name: 'Spitter', hp: 95, spd: 54, r: 10, dmg: 15, rate: 1.5, armor: 0, spr: 'spitter', scrap: 11, special: true },   // no more spit: every zombie has to close to biting range
+  // SPLITTER — spits bile from rifle range: a ranged infected that hangs back and shells your line from as far as a rifle reaches.
+  splitter: { name: 'Splitter', hp: 90, spd: 58, r: 10, dmg: 12, rate: 1.7, armor: 0, spr: 'splitter', scrap: 13, special: true, ranged: 235, spit: true },
+  // PREDATOR — the nightmare: sprints faster than a runner, vaults tree to tree like an ape when it can, then pounces onto a
+  // soldier and rides him to the ground, clawing and feeding (3 dmg every 3 s) until the man is dead or the thing is shot off him.
+  predator: { name: 'Predator', hp: 130, spd: 132, r: 10, dmg: 3, rate: 3.0, armor: 1, spr: 'predator', scrap: 18, special: true, predator: true, climber: true }
 };
 
 /* ---- INVADERS mode: THAI ANCIENT — an Ayutthaya-era army warped forward in time ----
@@ -5869,6 +5886,7 @@ function damage(e, amt, srcAng, opts) {
 function killZed(z, ang) {
   if (z.dead) return;
   z.dead = true; G.killed++; if (!z.def.struct && !z.def.worker) G.waveAlive--;
+  if (z.pin) { if (z.pin.pinnedBy === z) { z.pin.pinnedBy = null; z.pin.pose = null; z.pin.getupT = .5; } z.pin = null; }   // a predator shot off its victim lets him scramble up
   if (z.def.struct) {                                  // a construction collapses in a burst of timber and fire
     if (typeof markStructBlk === 'function') markStructBlk(z, false);
     fxExplosion(z.x, z.y, z.r * 1.4, '#ffb060', '#ff6a2a'); fxDebris(z.x, z.y, 18, '#6a4a26'); fxDebris(z.x, z.y, 10, '#c9a86a');
@@ -5917,6 +5935,7 @@ function killZed(z, ang) {
 function killUnit(u) {
   if (u.dead) return;
   u.dead = true; G.lost++;
+  if (u.pinnedBy) { if (u.pinnedBy.pin === u) u.pinnedBy.pin = null; u.pinnedBy = null; }   // its captor is freed to hunt the next man
   // co-op: tell the other players one of my units just fell, with how it fell so everyone hears the right sound
   //   1 = vehicle brew-up · 3 = felled by an archer's arrow · 4 = finished by an ancient blade · 0 = ordinary foot soldier
   if (typeof NP !== 'undefined' && NP.on && !u.remote) NP.deaths.push([Math.round(u.x), Math.round(u.y), u.def.veh ? 1 : (u._finish ? 4 : (u._arrowHit ? 3 : 0))]);
@@ -7567,8 +7586,8 @@ function startWave() {
   if (horde) count = Math.round(count * .5);
   // normal pool: walkers, with runners mixed in from wave 2 (more of them as the waves climb)
   const norm = [['walker', 60], ['runner', w >= 2 ? Math.min(45, 20 + w * .5) : 0]];
-  // special pool: spitters / brutes (bloaters are handled separately — see below)
-  const specs = [['spitter', 40], ['brute', elite ? 50 : 25]];
+  // special pool: spitters / splitters / brutes / predators (bloaters are handled separately — see below)
+  const specs = [['spitter', 34], ['splitter', 26], ['brute', elite ? 46 : 24], ['predator', elite ? 34 : 18]];
   const pick = opts => { let ws = 0; for (const o of opts) ws += o[1]; let r = Math.random() * ws; for (const o of opts) { r -= o[1]; if (r <= 0) return o[0]; } return opts[0][0]; };
   const list = [];
   for (let i = 0; i < count && list.length < 600; i++) {
@@ -7639,7 +7658,7 @@ function updateHordeEvent(dt) {
       if (G.zeds.length >= MAXZ || h.n >= 260) break;
       const p = nearPoint(h.origin, h.origin.r);
       const r = Math.random();
-      const t = (w > 30 && r < .05) ? 'bloater' : (w > 50 && r < .18) ? (Math.random() < .5 ? 'spitter' : 'brute') : (w >= 2 && r < .4) ? 'runner' : 'walker';
+      const t = (w > 30 && r < .05) ? 'bloater' : (w > 50 && r < .2) ? ['spitter', 'splitter', 'brute', 'predator'][(Math.random() * 4) | 0] : (w >= 2 && r < .4) ? 'runner' : 'walker';
       const z = spawnZed(t, p.x, p.y); if (!z) continue;
       z.mode = 'hunt'; z.horde = true; z.assembly = h.origin; h.n++;
     }
@@ -8016,6 +8035,32 @@ function updateUnits(dt) {
     if (u.rc > 0) u.rc = Math.max(0, u.rc - dt * 7);              // recoil animation decays over ~0.15 s
     u.cd -= dt; u.burstCd -= dt;
     const wep = u.def.wep;
+
+    /* --- PINNED by a Predator: helpless on the ground, thrashing but unable to fight, shoot or move (it's just animation) --- */
+    if (u.pinnedBy) {
+      const z = u.pinnedBy;
+      if (z.dead || z.pin !== u) { u.pinnedBy = null; u.pose = null; u.getupT = .5; }
+      else { u.pose = 'prone'; u.vx = u.vy = 0; u.target = null; u.order = null; u.rolling = 0; u.struggle = (u.struggle || 0) + dt; continue; }
+    }
+    /* --- KNOCKED FLAT by a Brute barge: down for ~2 s, only the sidearm from the ground; flung into a mate and he drops too --- */
+    if (u.knock) {
+      const K = u.knock; K.t += dt;
+      const sp = Math.hypot(u.knockVx || 0, u.knockVy || 0);
+      if (sp > 4) {
+        const nx = u.x + u.knockVx * dt, ny = u.y + u.knockVy * dt;
+        if (!solidAt(nx, ny, true)) { u.x = nx; u.y = ny; }
+        if (sp > 60) {                                             // still sliding hard → whoever it slams into goes down too (the domino chain)
+          const nl = G.hUnits.near(u.x, u.y, u.r + 16, _q);
+          for (let k = 0; k < nl.length; k++) { const v = nl[k]; if (v === u || v.dead || v.inside || v.knock || v.pinnedBy || (v.def && (v.def.veh || v.def.fly))) continue; if (plyOf(v).team !== plyOf(u).team) continue; const rr = u.r + v.r + 3; if (dist2(v.x, v.y, u.x, u.y) < rr * rr) knockUnit(v, angTo(u.x, u.y, v.x, v.y), sp * .7, u); }
+        }
+        const dec = Math.max(0, 1 - dt * 3.4); u.knockVx *= dec; u.knockVy *= dec;
+      }
+      u.pose = 'prone'; u.vx = u.vy = 0;
+      if (typeof ropePistol === 'function') ropePistol(u, dt);   // one hand free to answer with the pistol while down
+      if (K.t >= K.dur) { u.knock = null; u.pose = null; u.getupT = .45; }
+      continue;
+    }
+    if (u.getupT > 0) u.getupT -= dt;
 
     if (u.reloadT > 0) {
       u.reloadT -= dt;
@@ -9434,6 +9479,106 @@ function nearPoint(o, rad) {
   return { x: o.x, y: o.y };
 }
 
+/* ============================ SPECIAL ZOMBIE ABILITIES ============================ */
+/* --- shared knockdown: fling a soldier flat; he lies helpless (pistol only) for ~2 s, and while he slides he can
+   bowl over any standing squadmate he is thrown into (that one goes down too — a chain of dominoes). --- */
+function knockUnit(u, ang, power, src) {
+  if (!u || u.dead || u.inside || (u.def && (u.def.veh || u.def.fly))) return;
+  if (u.knock || u.pinnedBy) return;                                   // already down / pinned
+  u.knock = { t: 0, dur: 2.0 };
+  u.knockVx = Math.cos(ang) * power; u.knockVy = Math.sin(ang) * power;
+  u.pose = 'prone'; u.target = null; u.aimT = ang; u.rolling = 0; u.coverActive = false;
+  fxBlood(u.x, u.y, ang, 3, '#b32020');
+}
+
+/* how high a tree's canopy sits (px) — the predator perches ~78% of the way up before springing to the next one */
+function treeTopPx(sc) { return 30 + (sc || 1.8) * 16; }
+/* find a tree to vault to: within leap reach, roughly toward the target, closer to it than we are, and not the one we just left */
+function treeLeapTarget(z, tx, ty) {
+  const R = 380, R2 = R * R, MINR = 60 * 60, dToT = dist2(z.x, z.y, tx, ty);
+  let best = null, bestD = Infinity;
+  for (let a = ((z.x - R) / CH | 0); a <= ((z.x + R) / CH | 0); a++)
+    for (let b = ((z.y - R) / CH | 0); b <= ((z.y + R) / CH | 0); b++) {
+      if (a < 0 || b < 0 || a * CH >= WW || b * CH >= WH) continue;
+      const ps = (typeof chunkProps === 'function') ? chunkProps(a, b) : null; if (!ps) continue;
+      for (let k = 0; k < ps.length; k++) {
+        const q = ps[k]; if (q.s !== 'tree' || G.deadProps.has(q.id) || q.id === z._lastTree) continue;
+        const dz = dist2(q.x, q.y, z.x, z.y); if (dz > R2 || dz < MINR) continue;
+        if (dist2(q.x, q.y, tx, ty) > dToT - 30 * 30) continue;         // must make real progress toward the prey
+        if (dz < bestD) { bestD = dz; best = q; }
+      }
+    }
+  return best;
+}
+/* launch the predator on an airborne arc. land: 'tree' (perch on canopy), 'pounce' (drop onto a soldier), 'ground' (dash-drop) */
+function startPredatorLeap(z, tx, ty, th, land, arc) {
+  const d = dist(z.x, z.y, tx, ty);
+  z.leap = { fx: z.x, fy: z.y, tx, ty, fh: z.climb || 0, th: th || 0, land, arc: arc !== undefined ? arc : Math.max(26, d * .22), t: 0, dur: clamp(d / 620, .16, .62), ang: angTo(z.x, z.y, tx, ty) };
+  if (land === 'pounce') { z.pounceU = z.target; AU.groan && AU.groan(z.x, z.y); }
+}
+/* the pounce lands: ride the nearest foot soldier to the ground and hold him */
+function pouncePin(z) {
+  z.climb = 0;
+  let u = z.pounceU; z.pounceU = null;
+  if (!u || u.dead || u.inside || u.pinnedBy || (u.def && (u.def.veh || u.def.fly)) || dist2(u.x, u.y, z.x, z.y) > 46 * 46) {
+    // whoever it actually landed on
+    u = null; const nl = G.hUnits.near(z.x, z.y, 40, _q); let bd = 40 * 40;
+    for (let k = 0; k < nl.length; k++) { const v = nl[k]; if (v.dead || v.inside || v.pinnedBy || (v.def && (v.def.veh || v.def.fly))) continue; const dd = dist2(v.x, v.y, z.x, z.y); if (dd < bd) { bd = dd; u = v; } }
+  }
+  if (u) {
+    z.pin = u; u.pinnedBy = z; u.pose = 'prone'; u.knock = null; u.target = null; u.order = null; u.rolling = 0;
+    z.x = u.x - Math.cos(z.ang) * 3; z.y = u.y - Math.sin(z.ang) * 3; z.clawT = z.def.rate * .5;
+    addShake(z.x, z.y, 4); popText(u.x, u.y - 20, 'PINNED!', '#ff6a4a');
+  }
+}
+/* predator locomotion: vault tree→tree when it can, pounce from close, otherwise sprint low to the ground.
+   Returns true when it has taken over this frame's movement. */
+function predatorMove(z, dtz, t, d, reach) {
+  const POUNCE = 175;
+  z.spd = z.def.spd * (G.night ? 1.22 : 1) * (z.slow > 0 ? .5 : 1);
+  // close enough to spring onto him
+  if (d <= POUNCE && d > reach * .5 && (z.pounceCd || 0) <= 0) {
+    z.pounceCd = 1.2; z._lastTree = 0;
+    startPredatorLeap(z, t.x, t.y, 0, 'pounce', Math.max(34, d * .35));
+    return true;
+  }
+  z.pounceCd = (z.pounceCd || 0) - dtz;
+  // perched up a tree, or far from the prey: look for the next branch to swing to
+  if ((z.climb || 0) > 6 || d > 260) {
+    if ((z.climb || 0) <= 6 && (z.treeCd || 0) > 0) { z.treeCd -= dtz; }
+    else {
+      const tree = treeLeapTarget(z, t.x, t.y);
+      if (tree) { z._lastTree = tree.id; startPredatorLeap(z, tree.x, tree.y, treeTopPx(tree.sc) * .78, 'tree'); z.treeCd = 0; return true; }
+      z.treeCd = .5;                                                   // none handy: don't rescan every frame
+    }
+    // up a tree but nowhere to swing → drop and dash at him
+    if ((z.climb || 0) > 6) { startPredatorLeap(z, z.x + Math.cos(angTo(z.x, z.y, t.x, t.y)) * 150, z.y + Math.sin(angTo(z.x, z.y, t.x, t.y)) * 150, 0, 'ground', 40); return true; }
+  }
+  // otherwise: sprint at him on the ground
+  z.climb = 0;
+  z.ang = angLerp(z.ang, angTo(z.x, z.y, t.x, t.y), .2);
+  steerZ(z, dtz, t.x, t.y, reach * .7);
+  z.bob += dtz * 15; z.step += dtz * 14;
+  return true;
+}
+/* brute charge: barrel at the line and bowl soldiers flat instead of biting — a barge that chains through a crowd */
+function bruteCharge(z, dtz, t, d, reach) {
+  z.spd = z.def.spd * (G.night ? 1.22 : 1) * (z.slow > 0 ? .5 : 1);
+  if (d <= reach + 8) {
+    if ((z.bumpT || 0) <= G.t) {
+      z.bumpT = G.t + .5; z.lunge = .3;
+      const a = angTo(z.x, z.y, t.x, t.y);
+      damage(t, (z.def.bumpDmg || 14) * ((G.diff && G.diff.dmgMul) || 1), a);
+      if (!t.dead) knockUnit(t, a, 320, z);
+      addShake(z.x, z.y, 4); AU.splat && AU.splat(z.x, z.y);
+    }
+    steerZ(z, dtz, t.x + Math.cos(z.ang) * 70, t.y + Math.sin(z.ang) * 70, 4);   // keep barreling past
+  } else {
+    z.ang = angLerp(z.ang, angTo(z.x, z.y, t.x, t.y), .18);
+    steerZ(z, dtz, t.x, t.y, reach * .7);
+  }
+}
+
 function updateZeds(dt) {
   const nightSpd = G.night ? 1.22 : 1;
   const camx = CAM.x + CAM.vw / 2, camy = CAM.y + CAM.vh / 2;
@@ -9469,6 +9614,42 @@ function updateZeds(dt) {
     }
     if (z.def.struct) { updateConstruction(z, dtz, near); continue; }      // invader buildings: build progress + mustering
     if (z.def.worker) { updateWorker(z, dtz, near); continue; }            // unarmed levies: walk to the site and build
+
+    /* ---- PREDATOR airborne: vaulting through the trees or pouncing — a pure arc, no steering, no collisions ---- */
+    if (z.leap) {
+      const L = z.leap; L.t += dtz; const k = Math.min(1, L.t / L.dur);
+      z.x = L.fx + (L.tx - L.fx) * k; z.y = L.fy + (L.ty - L.fy) * k;
+      z.climb = L.fh + (L.th - L.fh) * k + Math.sin(k * Math.PI) * L.arc;
+      z.ang = angLerp(z.ang, L.ang, .3); z.lunge = 0; z.step = 0; z.bob = 0;
+      if (near && Math.random() < dtz * 6) part('dust', z.x + rnd(-4, 4), z.y + rnd(-4, 4), rnd(-6, 6), rnd(-6, 6), rnd(.3, .6), rnd(1.5, 3), 'rgba(150,140,120,.4)', { z: (z.climb || 0) * .5, vz: -30, grow: 4 });
+      if (k >= 1) {
+        z.climb = L.th; const land = L.land; z.leap = null;
+        if (land === 'pounce') pouncePin(z);
+        else if (land === 'tree') { z.perch = rnd(.04, .16); addShake && 0; }
+        else z.climb = 0;
+      }
+      continue;
+    }
+    /* ---- PREDATOR pinning a soldier: ride him down and feed until he — or it — is dead ---- */
+    if (z.pin) {
+      const u = z.pin;
+      if (!u || u.dead || u.pinnedBy !== z) { if (u && u.pinnedBy === z) u.pinnedBy = null; z.pin = null; z.climb = 0; }
+      else {
+        z.x = u.x - Math.cos(z.ang) * 3; z.y = u.y - Math.sin(z.ang) * 3; z.climb = 4;
+        z.ang = angLerp(z.ang, angTo(z.x, z.y, u.x, u.y) + Math.PI, .12);
+        z.clawT = (z.clawT || 0) - dtz;
+        if (z.clawT <= 0) {
+          z.clawT = z.def.rate; z.lunge = .35;
+          damage(u, z.def.dmg * ((G.diff && G.diff.dmgMul) || 1), angTo(z.x, z.y, u.x, u.y) + Math.PI, { trueDmg: true });   // 3 clean claw/bite damage, armour doesn't help you down here
+          if (near) { bloodJet(u.x, u.y, z.ang); AU.gore ? AU.gore(u.x, u.y, .7) : AU.splat(u.x, u.y); }
+          if (u.dead || u.pinnedBy !== z) { if (u.pinnedBy === z) u.pinnedBy = null; z.pin = null; z.climb = 0; }
+        } else z.lunge = Math.max(0, z.lunge - dtz * 2);
+        continue;
+      }
+    }
+    /* ---- PREDATOR perched: a beat crouched on the branch before the next spring ---- */
+    if (z.perch) { z.perch -= dtz; z.lunge = 0; if (z.perch <= 0) z.perch = 0; else continue; }
+
     /* ---- finisher: a melee man who has just cut down a foot soldier spends a second finishing him — a spin-slash, a
        flipping cut, a lunging stab, a shoulder-bump that puts the man on the ground followed by a stab, or a leg-sweep and
        a stab. The move is choreographed by the renderer from fin.kind and fin.t; here he just stands over the body. */
@@ -9691,11 +9872,27 @@ function updateZeds(dt) {
     const reach = z.r + (t.kind === 'build' ? Math.max(t.w, t.h) * TS * .48 : t.r) + 4;
     const d = dist(z.x, z.y, t.x, t.y);
 
+    /* ---- PREDATOR: parkour + pounce takes over against foot soldiers — it never bites, it pins ---- */
+    if (z.def.predator && t.kind === 'unit' && !t.def.veh && !t.def.fly) {
+      predatorMove(z, dtz, t, d, reach);
+      z.lunge = Math.max(0, z.lunge - dtz);
+      if ((z.climb || 0) <= .5 && solidAt(z.x, z.y, false)) unstick(z, false);
+      continue;
+    }
+    /* ---- BRUTE: a fast charge that bowls foot soldiers flat instead of biting, kicking up dust ---- */
+    if (z.def.charger && t.kind === 'unit' && !t.def.veh && !t.def.fly) {
+      bruteCharge(z, dtz, t, d, reach);
+      z.bob += dtz * 16; z.step += dtz * 15; z.lunge = Math.max(0, z.lunge - dtz);
+      if (solidAt(z.x, z.y, false)) unstick(z, false);
+      if (near && Math.random() < dtz * 20) part('dust', z.x + rnd(-9, 9), z.y + rnd(-9, 9), rnd(-14, 14), rnd(-14, 14), rnd(.4, .8), rnd(4, 8), 'rgba(150,140,120,.6)', { z: 2, vz: rnd(8, 24), g: -30, grow: 12, drag: .9 });
+      continue;
+    }
+
     /* runners: a few of them break into a sprint with a leap in the last stretch — a hop that carries them at the target */
     z.hopCd = (z.hopCd || 0) - dtz;
     if (z.hop > 0) { z.hop -= dtz; z.spd *= 1.7; }
     else if (z.def.spd > 60 && z.hopCd <= 0 && d < 150 && d > reach * 1.3 && (z.leaper === undefined ? (z.leaper = Math.random() < .45) : z.leaper)) { z.hop = .5; z.hopCd = rnd(1.4, 3.0); }
-    if (z.def.ranged && z.def.med && t.kind !== 'build' && d < z.def.ranged) {          // only the invaders' bowmen shoot; zombies bite
+    if (z.def.ranged && (z.def.med || z.def.spit) && t.kind !== 'build' && d < z.def.ranged) {          // invaders' bowmen and the splitter's bile shoot; other zombies bite
       z.ang = angLerp(z.ang, angTo(z.x, z.y, t.x, t.y), .12);
       if (z.cd <= 0) { zedFire(z, t); z.cd = z.def.rate * atkRate; }
     } else if (d <= reach) {
@@ -17607,6 +17804,11 @@ function ctrlHudTick(dt) {
         else if (zz.fin) { const q = finKiller(zz.fin); drawFigureC(x, gy, z, zz.ang, q.o.walk || 0, S, { ck: zz, kind: 'med', mk: zz.def.militia ? 'villager' : 'infantry', gun: zz.def.dual ? 'dual' : (zz.id & 1) ? 'spear' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id, crouch: !!q.o.crouch, fx: q.fx }); }   // finishing a man
         else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : zz.def.militia ? 'villager' : 'infantry', gun: zz.def.arrow ? 'bow' : zz.def.dual ? 'dual' : ((zz.id & 1) ? 'spear' : 'sword'), scale: zz.def.militia ? .9 : .92, limbs: zz.limbs, id: zz.id, mv: zedMv(zz) });   // spearmen and dha-and-shield men mixed; militia with no hat or shield; raiders with twin blades
       } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
+      else if (zz.def.predator) {
+        // airborne vault / pounce (elevated on its arc), a tight crouch on the branch, or hunched over a pinned man
+        const el = (zz.climb || 0) * K, air = !!zz.leap, crouched = !!zz.perch || !!zz.pin || air;
+        drawFigureC(x, gy + el, z, zz.ang, air ? 0 : (zz.step || 0), S, { ck: zz, kind: 'zed', zt: 'predator', scale: .9, limbs: zz.limbs, id: zz.id, hop: air ? 1 : 0, crouch: crouched, lunge: zz.lunge || 0, mv: zedMv(zz) });
+      }
       else { const hop = zz.hop > 0 ? Math.sin(Math.PI * (1 - zz.hop / .5)) : 0; drawFigureC(x, gy + hop * .36, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, hop, crouch: zz.getup > 0, mv: zedMv(zz) }); }
     }
     PF('zeds');
@@ -18753,7 +18955,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b182';
+const BUILD_TAG = 'b183';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
