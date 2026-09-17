@@ -5653,6 +5653,22 @@ function clearTerrainAt(wx, wy, rTiles) {
     }
   return n;
 }
+/* the engineer's tuft brush: paint grass tufts onto any ground, or brush them away — held in two tile sets the grass
+   renderer honours (G.forceTuft / G.noTuft), with G.tuftStamp bumped so the affected grass chunks rebuild. */
+function paintTuft(wx, wy, rTiles, add) {
+  const r = rTiles * TS, r2 = r * r; let changed = 0;
+  if (!G.forceTuft) G.forceTuft = new Set(); if (!G.noTuft) G.noTuft = new Set();
+  for (let ty = Math.floor((wy - r) / TS); ty <= Math.floor((wy + r) / TS); ty++)
+    for (let tx = Math.floor((wx - r) / TS); tx <= Math.floor((wx + r) / TS); tx++) {
+      if (!inMap(tx, ty)) continue;
+      const cxp = tx * TS + TS * .5, cyp = ty * TS + TS * .5; if (dist2(cxp, cyp, wx, wy) > r2) continue;
+      const ti = tileIdx(tx, ty);
+      if (add) { if (!G.forceTuft.has(ti) || G.noTuft.has(ti)) { G.forceTuft.add(ti); G.noTuft.delete(ti); changed++; } }
+      else { if (!G.noTuft.has(ti) || G.forceTuft.has(ti)) { G.noTuft.add(ti); G.forceTuft.delete(ti); changed++; } }
+    }
+  if (changed) G.tuftStamp = (G.tuftStamp || 0) + 1;
+  return changed;
+}
 /* the dust a structure kicks up as it drops onto its freshly-graded platform: a ring of dust puffs bumping OUTWARD around
    the footprint edge (not a hard circle), plus a soft shockwave ring. Shared by real and ally-ghost buildings. */
 function buildingDropFx(b) {
@@ -5696,7 +5712,7 @@ function addBuilding(t, tx, ty, done) {
     x: (tx + d.w / 2) * TS, y: (ty + d.h / 2) * TS,
     hp: done ? d.hp : Math.max(1, d.hp * .12), maxHp: d.hp, armor: d.armor,
     done: !!done, prog: done ? 1 : 0, dead: false, sel: false,
-    q: [], qT: 0, rally: null, gar: [], cd: 0, target: null, ang: 0,
+    q: [], qT: 0, rally: null, gar: [], cd: 0, target: null, ang: 0, facing: 0,
     lr: d.light || 0, flick: rnd(TAU), hurt: 0, armT: 0, builders: 0, born: G.t,
     beam: rnd(TAU), moving: false, ammo: d.wep ? (d.wep.mag || 0) : 0, reloadT: 0,
     tier: 1, upgT: 0, owner: G.cur
@@ -10636,6 +10652,11 @@ function step(dt) {
       alertMsg('HORDE BROKEN — every horde body is down', ''); AU.ui('ok');
     }
   }
+  // Zombies (defense) mode: clearing wave 10 wins the game — no wave 11 comes
+  if (G.mode === 'defense' && !G.over && !G.won && G.wave >= 10) {
+    const spawningW = !!(G.waveQueue && G.waveQueue.list && G.waveQueue.list.length) || !!(G.hordeEv && G.hordeEv.t < HORDE_SPAWN_T);
+    if (!spawningW) { let aliveZ = 0; for (const z of G.zeds) if (!z.dead && !(z.def && (z.def.struct || z.worker))) { aliveZ++; break; } if (aliveZ === 0) { G.won = true; G.waveT = 1e9; if (typeof gameOver === 'function') gameOver('VICTORY — the tenth wave is broken'); AU.ui('ok'); } }
+  }
   updateSiren(dt);
   if (typeof updateFallen === 'function') updateFallen(dt);
   if (typeof npTick === 'function') npTick(dt);                    // real-time co-op sync: broadcast my state, apply allies' + host's horde
@@ -13007,6 +13028,7 @@ function startBuild(t, tx, ty) {
   const d = BDEF[t];
   pay(d.cost);
   const b = addBuilding(t, tx, ty, false);
+  b.facing = UI.placeRot || 0;                                   // the angle it was spun to while placing (R + wheel)
   const engs = G.sel.filter(u => u.kind === 'unit' && u.def.builder);
   for (const e of engs) e.order = { type: 'build', b };
   part('ring', b.x, b.y, 0, 0, .4, 8, '#3ea0ff', { grow: 90, glow: 1 });
@@ -13304,7 +13326,7 @@ function cardFor() {
         btns.push({
           g: buildIcon(k) || d.g, n: d.name, k: d.key, cost: d.cost, tip: d.desc + (d.needs ? '\nRequires: ' + BDEF[d.needs].name : ''),
           dis: !affordable(d.cost) || (d.needs && !G.builds.some(b => b.t === d.needs && b.done && !b.dead)),
-          fn: () => { UI.place = k; UI.tab = 'build'; AU.ui('ok'); refreshCard(true); }
+          fn: () => { UI.place = k; UI.placeRot = 0; UI.tab = 'build'; AU.ui('ok'); refreshCard(true); }
         });
       }
       btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.bcat = null; UI.place = null; refreshCard(true); } });
@@ -13315,6 +13337,11 @@ function cardFor() {
     if (hasEng) {
       btns.push({ g: '🪓', n: UI.clearMode ? 'Clearing…' : 'Clear Terrain', k: 'X', act: !!UI.clearMode, tip: 'Paint the ground to permanently clear trees and keep the area from growing back. Drag to paint; use Brush to resize; right-click to stop.', fn: () => { UI.clearMode = !UI.clearMode; if (UI.clearMode) { UI.place = null; UI.attackMove = false; } AU.ui('ok'); refreshCard(true); } });
       if (UI.clearMode) btns.push({ g: '⭕', n: 'Brush ' + (UI.clearSize || 2), k: 'Z', tip: 'Cycle the clearing brush radius (1–6 tiles).', fn: () => { UI.clearSize = ((UI.clearSize || 2) % 6) + 1; AU.ui('ok'); refreshCard(true); } });
+      btns.push({ g: '🌱', n: UI.tuftBrush ? (UI.tuftAdd ? 'Adding…' : 'Clearing…') : 'Tuft Brush', k: 'V', act: !!UI.tuftBrush, tip: 'Paint grass tufts onto any ground, or brush them away. Drag to paint; toggle Add/Clear; use Brush to resize; right-click to stop.', fn: () => { UI.tuftBrush = !UI.tuftBrush; if (UI.tuftBrush) { UI.clearMode = false; UI.place = null; UI.attackMove = false; if (UI.tuftAdd === undefined) UI.tuftAdd = true; } AU.ui('ok'); refreshCard(true); } });
+      if (UI.tuftBrush) {
+        btns.push({ g: UI.tuftAdd ? '➕' : '➖', n: UI.tuftAdd ? 'Add' : 'Clear', k: 'G', tip: 'Switch the tuft brush between adding and clearing.', fn: () => { UI.tuftAdd = !UI.tuftAdd; AU.ui('ok'); refreshCard(true); } });
+        btns.push({ g: '⭕', n: 'Brush ' + (UI.tuftSize || 2), k: 'Z', tip: 'Cycle the tuft brush radius (1–6 tiles).', fn: () => { UI.tuftSize = ((UI.tuftSize || 2) % 6) + 1; AU.ui('ok'); refreshCard(true); } });
+      }
     }
     btns.push({ g: '⚔️', n: 'Attack Move', k: 'A', tip: 'Advance and engage anything on the way.', act: UI.attackMove, fn: () => { UI.attackMove = !UI.attackMove; refreshCard(true); } });
     btns.push({ g: '✋', n: 'Stop', k: 'S', tip: 'Cancel current orders.', fn: () => { for (const u of units) u.order = null; AU.ui('ok'); } });
@@ -13698,6 +13725,7 @@ cv.addEventListener('mousedown', e => {
     }
     if (UI.moving) { finishRelocate(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
     if (UI.clearMode) { clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2); IN.down = true; return; }
+    if (UI.tuftBrush && typeof paintTuft === 'function') { paintTuft(s2wx(x, y), s2wy(y, x), UI.tuftSize || 2, !!UI.tuftAdd); IN.down = true; return; }
     if (UI.place) { tryPlace(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
     IN.down = true; IN.dragging = true; IN.dx0 = x; IN.dy0 = y; IN.dragDist = 0;
   } else if (e.button === 2) {
@@ -13705,6 +13733,7 @@ cv.addEventListener('mousedown', e => {
     if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); alertMsg('Spawn placement cancelled', ''); return; }
     if (UI.moving) { cancelRelocate(); return; }
     if (UI.clearMode) { UI.clearMode = false; refreshCard(true); AU.ui('no'); return; }
+    if (UI.tuftBrush) { UI.tuftBrush = false; refreshCard(true); AU.ui('no'); return; }
     if (UI.pending) { cancelPending(); return; }
     if (UI.queue.length) { cancelQueue(); return; }
     if (UI.place) { UI.place = null; UI.tab = null; refreshCard(true); return; }   // un-arm placement (deploy stays; the Place HQ button re-arms)
@@ -13724,6 +13753,7 @@ window.addEventListener('mousemove', e => {
   if (IN.dragging) IN.dragDist = Math.hypot(x - IN.dx0, y - IN.dy0);
   if (UI.artyDrag) artyDragMove(s2wx(x, y), s2wy(y, x));
   if (IN.down && UI.clearMode) clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2);
+  if (IN.down && UI.tuftBrush && typeof paintTuft === 'function') paintTuft(s2wx(x, y), s2wy(y, x), UI.tuftSize || 2, !!UI.tuftAdd);
   if (IN.down && UI.place && BDEF[UI.place] && (BDEF[UI.place].wall || BDEF[UI.place].trap || BDEF[UI.place].row)) tryPlace(s2wx(x, y), s2wy(y, x));
   if (IN.miniDrag) miniJump(e);
 });
@@ -13757,6 +13787,11 @@ window.addEventListener('mouseup', e => {
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
+  if (IN.keys.r && (UI.place || UI.pending || (UI.queue && UI.queue.length))) {   // hold R + wheel: spin the building before you place it (15 deg a click)
+    UI.placeRot = (((UI.placeRot || 0) - Math.sign(e.deltaY || 0) * (Math.PI / 12)) % TAU + TAU) % TAU;
+    if (typeof refreshConfirm === 'function') refreshConfirm();
+    return;
+  }
   if (e.shiftKey) {   // Shift + wheel: turn the camera (some browsers report a shifted wheel as horizontal scroll, so take either axis)
     const d = e.deltaY || e.deltaX || 0; if (!d) return;
     const cur = CAM.rotT !== undefined ? CAM.rotT : (CAM.rot || 0);
@@ -14973,6 +15008,7 @@ function ctrlHudTick(dt) {
     let s = 7; const tx0 = cx * GCH, ty0 = cy * GCH, tx1 = Math.min(MW, tx0 + GCH), ty1 = Math.min(MH, ty0 + GCH);
     for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) { const ti = tileIdx(tx, ty); s = (s * 31 + (G.gridB[ti] ? 97 : MAP.t[ti] + 1)) | 0; }
     if (G.grassBlood && G.grassBlood.length) { const x0 = tx0 * TS - 3 * TS, x1 = tx1 * TS + 3 * TS, y0 = ty0 * TS - 3 * TS, y1 = ty1 * TS + 3 * TS; let n = 0; for (const b of G.grassBlood) if (b.x > x0 && b.x < x1 && b.y > y0 && b.y < y1) n++; s = (s * 31 + n) | 0; }
+    s = (s * 31 + (G.tuftStamp || 0)) | 0;                 // the engineer's tuft brush repaints these tiles
     return s;
   }
   const BLOODGRASS = new THREE.Color(.36, .05, .04);
@@ -14990,7 +15026,8 @@ function ctrlHudTick(dt) {
     for (let k = 0; k < gd; k++) {                         // blade layers interleaved so lowering count thins the carpet evenly (density LOD)
       for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
         const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
-        if (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;
+        if (G.noTuft && G.noTuft.has(ti)) continue;                                                   // engineer brushed the tufts away here
+        if (!(G.forceTuft && G.forceTuft.has(ti)) && t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;   // brushed-in tufts grow on any ground
         const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
         const white = MAP.f && MAP.f[ti] === 2 && h1 < .66;                 // a silvergrass field is ~2/3 white plumes with plain green tufts mixed through, so it isn't a solid white cap
         const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;
@@ -17142,7 +17179,8 @@ function ctrlHudTick(dt) {
           }
           // wildflower heads removed — the bright petal balls read as debris scattered on the grass
         }
-        if (useGpuGrass || (t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP)) continue;     // GPU path: the carpet is already on the GPU; only clutter above is per-frame
+        if (G.noTuft && G.noTuft.has(ti)) continue;
+        if (useGpuGrass || (!(G.forceTuft && G.forceTuft.has(ti)) && t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP)) continue;     // GPU path: the carpet is already on the GPU; only clutter above is per-frame
         const tsway = wm * (.2 + Math.sin(swayBase + tx * swayKx + ty * swayKy) * .14);          // one wind value for the whole tuft-tile — the ripple still travels tile-to-tile
         const trx = wdz * tsway, trz = -wdx * tsway;
         for (let k = 0; k < per; k++) {
@@ -17178,7 +17216,12 @@ function ctrlHudTick(dt) {
           else if (dtl < DUR + .30) { const bt = (dtl - DUR) / .30, sq = Math.sin(bt * Math.PI) * (1 - bt) * .2; g.scale.set(bs * (1 + sq), bs * buildK * (1 - sq * 1.3), bs * (1 + sq)); }   // impact: compress down and spring back
         }
         if (!b.done && !b.def.flat) buildScene(b, g, bs, buildK, partsAdd);   // rising layer-line + workers hammering the structure together
-      } if (b.moving) g.position.y += .3; if (bm.gun) bm.gun.rotation.y = -(b.ang || 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6; if (g.userData.tube) { const ta = Math.PI - (b.ang !== undefined ? b.ang : -HPI); let dA = ta - g.userData.tube.rotation.y; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); g.userData.tube.rotation.y += dA * Math.min(1, (render._dt || .016) * 3); }   // the mortar tubes traverse smoothly onto the target
+      } if (b.moving) g.position.y += .3;
+      // placement facing: the whole model turns to the angle it was placed at (R + wheel while placing). Walls / traps / the
+      // gate snap to the grid so they never rotate; a turret's gun still aims independently — its child rotation is compensated
+      const _bd = b.def, _rotable = !_bd.wall && !_bd.flat && !_bd.trap && b.t !== 'gate' && b.t !== 'culvert' && b.t !== 'hq' && b.facing !== undefined;
+      if (_rotable) g.rotation.y = -(b.facing || 0);
+      if (bm.gun) bm.gun.rotation.y = -(b.ang || 0) + (_rotable ? (b.facing || 0) : 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6; if (g.userData.tube) { const ta = Math.PI - (b.ang !== undefined ? b.ang : -HPI); let dA = ta - g.userData.tube.rotation.y; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); g.userData.tube.rotation.y += dA * Math.min(1, (render._dt || .016) * 3); }   // the mortar tubes traverse smoothly onto the target
         if (g.userData.dish) { g.userData.dish.rotation.y = G.t * .9; } if (g.userData.plane) { const P = g.userData.plane, a = G.t * .6; P.position.set(Math.cos(a) * P.userData.R, P.userData.H + Math.sin(G.t * .9) * .12, Math.sin(a) * P.userData.R); P.rotation.set(0, -a - HPI, 0); P.rotateX(-.18); P.rotateZ(-.12); if (P.userData.props) for (const pr of P.userData.props) pr.rotation.x = G.t * 60; if (P.userData.rotor) P.userData.rotor.rotation.z = G.t * 40; if (P.userData.disc) P.userData.disc.visible = true; if (P.userData.tails) for (const tr of P.userData.tails) tr.rotation.z = G.t * 70; }   // Airspace Command: the big dish sweeps, the transport orbits the tower banked into its turn
       if (b.done && g.userData.conveyor) { const cs = g.userData.conveyor.crates; for (let i = 0; i < cs.length; i++) cs[i].position.x = ((G.t * .35 + i / cs.length) % 1) * 1.0; }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
@@ -17663,6 +17706,34 @@ function ctrlHudTick(dt) {
     if (G.mp) for (const u of G.units) { if (u.dead || u.inside || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue; const sc2 = toScreen(u.x, u.y, groundY(u.x, u.y) + (u.def.fly ? (u.def.alt || 150) * K * ALTK : 0) + u.r * K * (u.def.veh ? 3.0 : 2.9)); if (sc2[2] > 1) continue; const col = (TEAM_COL[plyOf(u).team]) || '#8dffbe'; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.moveTo(sc2[0], sc2[1] + 1); ctx.lineTo(sc2[0] - 4, sc2[1] - 6); ctx.lineTo(sc2[0] + 4, sc2[1] - 6); ctx.closePath(); ctx.fill(); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(sc2[0], sc2[1]); ctx.lineTo(sc2[0] - 3.2, sc2[1] - 5.2); ctx.lineTo(sc2[0] + 3.2, sc2[1] - 5.2); ctx.closePath(); ctx.fill(); }
     /* enemy health bars are hidden — you read a zombie's state from its wounds and dismemberment, not a bar */
     for (const b of G.builds) if (!b.dead && b.hp < b.maxHp && b.x > vx0 && b.x < vx1 && b.y > vy0 && b.y < vy1) bar(b.x, b.y, groundY(b.x, b.y) + (b.def.hgt || 30) * K + .3, 30, b.hp / b.maxHp, '#4de08c');
+    /* base lights: a warm glowing dot over every lamp / floodlit building, drawn in screen space so it stays visible at ANY
+       zoom — pull the camera all the way out and your base still reads as a cluster of lights on the dark map */
+    { const dk = 1 - dayNow, zk = clamp(1.6 - CAM.zoom, .25, 1.2); ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (const b of G.builds) { if (b.dead || !b.done || !(b.lr || b.def.lamp || b.def.searchlight)) continue; if (b.x < vx0 || b.x > vx1 || b.y < vy0 || b.y > vy1) continue;
+        const s = toScreen(b.x, b.y, groundY(b.x, b.y) + (b.def.hgt || 30) * K * (b.def.mw ? b.def.w / b.def.mw : 1) * .9 + .3); if (s[2] > 1) continue;
+        const a = (dk * .85 + .18) * (b.def.lamp || b.def.searchlight ? 1 : .7), rad = (5 + zk * 9) * (b.def.lamp ? 1.3 : 1);
+        const gr = ctx.createRadialGradient(s[0], s[1], 0, s[0], s[1], rad); gr.addColorStop(0, 'rgba(255,238,190,' + Math.min(1, a) + ')'); gr.addColorStop(.5, 'rgba(255,206,120,' + (a * .5) + ')'); gr.addColorStop(1, 'rgba(255,190,90,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(s[0], s[1], rad, 0, TAU); ctx.fill();
+      } ctx.restore(); }
+    /* rally point: a dashed lead line from each selected production building to its rally spot, with a little flag + reticle
+       marking where new units will muster (set it with a right-click on the ground while the building is selected) */
+    for (const e of G.sel) { if (e.kind !== 'build' || e.dead || !e.rally) continue;
+      const s0 = toScreen(e.x, e.y, groundY(e.x, e.y) + .3), s1 = toScreen(e.rally.x, e.rally.y, groundY(e.rally.x, e.rally.y) + .05);
+      if (s1[2] > 1) continue;
+      if (s0[2] <= 1) { ctx.strokeStyle = 'rgba(125,255,178,.55)'; ctx.setLineDash([7, 5]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(s0[0], s0[1]); ctx.lineTo(s1[0], s1[1]); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.strokeStyle = 'rgba(125,255,178,.9)'; ctx.lineWidth = 2;                                     // reticle at the muster point
+      ctx.beginPath(); ctx.arc(s1[0], s1[1], 7, 0, TAU); ctx.moveTo(s1[0] - 11, s1[1]); ctx.lineTo(s1[0] + 11, s1[1]); ctx.moveTo(s1[0], s1[1] - 11); ctx.lineTo(s1[0], s1[1] + 11); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(s1[0] + .5, s1[1] - 20.5, 2, 15); ctx.fillStyle = '#7dffb2'; ctx.fillRect(s1[0], s1[1] - 21, 2, 15);   // flagpole
+      ctx.beginPath(); ctx.moveTo(s1[0] + 2, s1[1] - 21); ctx.lineTo(s1[0] + 13, s1[1] - 18); ctx.lineTo(s1[0] + 2, s1[1] - 14); ctx.closePath(); ctx.fill();
+    }
+    /* placement facing: while you spin a building with R + wheel, an arrow on the footprint shows the way it faces and its angle */
+    if (UI._ghostAt && UI._ghostAt.rotable) { const gA = UI._ghostAt, deg = Math.round(((-gA.rot * 180 / Math.PI) % 360 + 360) % 360);
+      const c = toScreen(gA.x, gA.y, gA.gy + .1), tip = toScreen(gA.x + Math.cos(gA.rot) * TS * 1.1, gA.y + Math.sin(gA.rot) * TS * 1.1, gA.gy + .1);
+      if (c[2] <= 1 && tip[2] <= 1) { ctx.strokeStyle = '#ffe06a'; ctx.fillStyle = '#ffe06a'; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(tip[0], tip[1]); ctx.stroke();
+        const ang = Math.atan2(tip[1] - c[1], tip[0] - c[0]); ctx.beginPath(); ctx.moveTo(tip[0], tip[1]); ctx.lineTo(tip[0] - Math.cos(ang - .5) * 9, tip[1] - Math.sin(ang - .5) * 9); ctx.lineTo(tip[0] - Math.cos(ang + .5) * 9, tip[1] - Math.sin(ang + .5) * 9); ctx.closePath(); ctx.fill();
+        ctx.font = 'bold 12px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillText('⟳ ' + deg + '°', c[0] + .5, c[1] - 13.5); ctx.fillStyle = '#ffe06a'; ctx.fillText('⟳ ' + deg + '°', c[0], c[1] - 14); }
+    }
     ctx.font = 'bold 12px ui-monospace,monospace'; ctx.textAlign = 'center';
     for (const t of G.texts) { const s = toScreen(t.x, t.y, groundY(t.x, t.y) + 1.2); ctx.globalAlpha = Math.min(1, t.life / .4); ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillText(t.txt, s[0] + 1, s[1] + 1); ctx.fillStyle = t.col; ctx.fillText(t.txt, s[0], s[1]); }
     ctx.globalAlpha = 1;
@@ -17728,7 +17799,7 @@ function ctrlHudTick(dt) {
   const GHOST_PLATE = { ok: new THREE.MeshBasicMaterial({ color: lin(0x8dffbe), transparent: true, opacity: .26, depthWrite: false, side: THREE.DoubleSide }), bad: new THREE.MeshBasicMaterial({ color: lin(0xff6a5a), transparent: true, opacity: .26, depthWrite: false, side: THREE.DoubleSide }), q: new THREE.MeshBasicMaterial({ color: lin(0x7fc8ff), transparent: true, opacity: .26, depthWrite: false, side: THREE.DoubleSide }) };
   const ghostPool = [], ghostBox = new THREE.BoxGeometry(1, 1, 1), ghostEdge = new THREE.EdgesGeometry(ghostBox), ghostPlane = new THREE.PlaneGeometry(1, 1);
   let ghostUsed = 0;
-  const ghostBegin = () => { ghostUsed = 0; for (const k in previewCache) previewCache[k].live = false; };
+  const ghostBegin = () => { ghostUsed = 0; UI._ghostAt = null; for (const k in previewCache) previewCache[k].live = false; };
   const ghostEnd = () => { for (let i = ghostUsed; i < ghostPool.length; i++) ghostPool[i].g.visible = false; for (const k in previewCache) if (!previewCache[k].live && previewCache[k].g) previewCache[k].g.visible = false; };
   // a translucent preview of the ACTUAL building model, so placement shows exactly what will be built (the HQ looks like the HQ, a turret like a turret). Built once per type from mkBuilding, its materials cloned to translucent.
   const previewCache = {};
@@ -17750,10 +17821,12 @@ function ctrlHudTick(dt) {
     const k = ok ? (queued ? 'q' : 'ok') : 'bad'; gh.g.visible = true; gh.e.material = GHOST_LINE[k]; gh.f.material = GHOST_PLATE[k];
     const ht = d.flat ? .06 : (d.hgt || 30) * K * (d.mw ? d.w / d.mw : 1) * (queued ? .55 : 1);
     const wx = (tx + d.w / 2) * TS, wy = (ty + d.h / 2) * TS, gy = groundY(wx, wy);
+    const prot = (!d.wall && !d.flat && !d.trap && d !== BDEF.gate && !queued) ? (UI.placeRot || 0) : 0;   // R + wheel spins the ghost before you place it (walls / traps stay grid-aligned)
+    if (!queued) UI._ghostAt = { x: wx, y: wy, gy, rot: UI.placeRot || 0, rotable: prot !== 0 || (!d.wall && !d.flat && !d.trap && d !== BDEF.gate) };
     const pc = previewModel(d);
     if (pc) {                                                                       // show the real model silhouette; the footprint plate under it carries the green/red validity
       gh.m.visible = false;
-      pc.live = true; pc.g.visible = true; pc.g.position.set(wx * K, gy, wy * K); pc.g.scale.setScalar(pc.bs);
+      pc.live = true; pc.g.visible = true; pc.g.position.set(wx * K, gy, wy * K); pc.g.scale.setScalar(pc.bs); pc.g.rotation.y = -prot;
     } else {
       gh.m.visible = true; gh.m.material = GHOST_MAT[k];
       gh.m.scale.set(d.w * .94, ht, d.h * .94); gh.m.position.set(0, ht / 2, 0);
@@ -18494,7 +18567,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b175';
+const BUILD_TAG = 'b176';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
