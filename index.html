@@ -7503,7 +7503,8 @@ function startWave() {
                       where the specials come in heavier (brutes + bloaters double weighted).
      Horde (every 15th wave): 40 seconds of normal zombies streaming in at 3 per second (5 per second once
      past wave 100) — 180 / 300 bodies — on top of a half-strength regular column. */
-  const horde = w % 15 === 0;
+  const horde = w % 15 === 0 && w > (G.hordeCancelUntil || 0) && !G.hordeAlert;   // once a horde begins, no new horde for the next 10 waves, and never while the last horde is still unbroken
+  if (horde) G.hordeCancelUntil = w + 10;
   let count, spec;
   if (w <= 10) { count = 5 * w; spec = 0; }
   else if (w <= 30) { count = 50; spec = 0; }
@@ -10651,11 +10652,6 @@ function step(dt) {
       G.hordeAlert = false; G.hordeEv = null; G.sirenT = 0; for (const z of G.zeds) z.horde = false;
       alertMsg('HORDE BROKEN — every horde body is down', ''); AU.ui('ok');
     }
-  }
-  // Zombies (defense) mode: clearing wave 10 wins the game — no wave 11 comes
-  if (G.mode === 'defense' && !G.over && !G.won && G.wave >= 10) {
-    const spawningW = !!(G.waveQueue && G.waveQueue.list && G.waveQueue.list.length) || !!(G.hordeEv && G.hordeEv.t < HORDE_SPAWN_T);
-    if (!spawningW) { let aliveZ = 0; for (const z of G.zeds) if (!z.dead && !(z.def && (z.def.struct || z.worker))) { aliveZ++; break; } if (aliveZ === 0) { G.won = true; G.waveT = 1e9; if (typeof gameOver === 'function') gameOver('VICTORY — the tenth wave is broken'); AU.ui('ok'); } }
   }
   updateSiren(dt);
   if (typeof updateFallen === 'function') updateFallen(dt);
@@ -18567,7 +18563,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b176';
+const BUILD_TAG = 'b177';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
