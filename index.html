@@ -3425,7 +3425,7 @@ const BDEF = {
     desc: 'Trains infantry, supply Support teams, combat Medics, marksmen, snipers and mortar crews. Right-click the map to set a rally point.'
   },
   armory: {
-    name: 'Research Lab', key: 'Y', g: '🔬', cat: 'infra', w: 7, h: 7, mw: 3, mh: 3, hgt: 62, hp: 850, armor: 2, cost: { s: 180, c: 80 }, time: 18,
+    name: 'Research Lab', key: 'Y', g: '🔬', cat: 'spec', w: 7, h: 7, mw: 3, mh: 3, hgt: 62, hp: 850, armor: 2, cost: { s: 180, c: 80 }, time: 18,
     col: ['#3f4a50', '#2c343a'], roof: '#4f5d64', light: 140, research: true,
     desc: 'Research lab with a live test range: unlocks permanent upgrades for weapons, armour, optics and traps.'
   },
@@ -3507,7 +3507,7 @@ const BDEF = {
     desc: 'A dug trench segment — press and drag to dig a straight line of them. Sunk to shoulder depth: the men inside stand with only head and rifle over the lip, popping up to fire and ducking to reload, +40% range, almost untouchable — and they mend while they hold it, like a camp.'
   },
   aircmd: {
-    name: 'Airspace Command', key: 'J', g: '🛰️', cat: 'infra', w: 7, h: 6, mw: 4, mh: 3, hgt: 70, hp: 2200, armor: 4, cost: { s: 520, c: 420 }, time: 40, needs: 'airbase',
+    name: 'Airspace Command', key: 'J', g: '🛰️', cat: 'spec', w: 7, h: 6, mw: 4, mh: 3, hgt: 70, hp: 2200, armor: 4, cost: { s: 520, c: 420 }, time: 40, needs: 'airbase',
     col: ['#4a5344', '#37402f'], roof: '#5d6a52', light: 220, ability: 'strikes',
     desc: 'Air-force headquarters with a long-range radar tower and a transport on station overhead. Calls in the napalm run, the artillery barrage and — at a price — the nuclear strike. Requires an Airbase.'
   }
@@ -13438,7 +13438,8 @@ function cardFor() {
       const CATS = [
         { id: 'infra', n: 'Infrastructure', k: '1', g: '🏭', tip: 'Economy and tech: Research Lab, Scrap Refinery, Scrap Factory, Supply Warehouse.' },
         { id: 'unit', n: 'Unit Buildings', k: '2', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Vehicle Bay, Airbase.' },
-        { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, Floodlights, walls, fences, gates, traps and the Culvert bunker.' }];
+        { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, Floodlights, walls, fences, gates, traps and the Culvert bunker.' },
+        { id: 'spec', n: 'Specialization', k: '4', g: '🔬', tip: 'Advanced facilities: Research Lab and Airspace Command.' }];
       if (!UI.bcat) {
         btns.title = 'construction';
         for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, cls: 'cat cat-' + c.id, fn: () => { UI.bcat = c.id; AU.ui('ok'); refreshCard(true); } });
@@ -18052,11 +18053,7 @@ function newGame(opts) {
     const hq = addBuilding('hq', tx - 3, ty - 3, true); G.players[pi].hq = hq; if (pi === G.me) myHQ = hq;
     const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = tx + dx + rndi(-2, 3), by = ty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
     place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
-    const hx = (tx + 0) * TS, hy = (ty + 0) * TS;
-    for (let i = 0; i < 3; i++) spawnUnit('engineer', hx + rnd(-70, 90), hy + rnd(-70, 70), true);
-    for (let i = 0; i < 4; i++) spawnUnit('rifleman', hx + rnd(40, 150), hy + rnd(-90, 90), true);
-    for (let i = 0; i < 2; i++) spawnUnit('support', hx + rnd(-40, 60), hy + rnd(-70, 70), true);
-    for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100 * 15, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
+    startingSquad(tx, ty);
   }
   G.cur = G.me; const hq = myHQ;
   BASE_TX = sites[G.me][0]; BASE_TY = sites[G.me][1]; BASE_X = BASE_TX * TS; BASE_Y = BASE_TY * TS;
@@ -18079,12 +18076,29 @@ function spawnPlayerBaseAt(pi, gx, gy) {
   const hq = addBuilding('hq', gx, gy, true); G.players[pi].hq = hq;
   const place = (t, dx, dy) => { for (let a = 0; a < 40; a++) { const bx = ctx + dx + rndi(-2, 3), by = cty + dy + rndi(-2, 3); if (canPlace(t, bx, by)) return addBuilding(t, bx, by, true); } return null; };
   place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
-  const hx = ctx * TS, hy = cty * TS;
-  for (let i = 0; i < 3; i++) spawnUnit('engineer', hx + rnd(-70, 90), hy + rnd(-70, 70), true);
-  for (let i = 0; i < 4; i++) spawnUnit('rifleman', hx + rnd(40, 150), hy + rnd(-90, 90), true);
-  for (let i = 0; i < 2; i++) spawnUnit('support', hx + rnd(-40, 60), hy + rnd(-70, 70), true);
-  for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100 * 15, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
+  startingSquad(ctx, cty);
   G.cur = prev; return hq;
+}
+/* the starting squad, arranged the way a real base opens a match: a concrete apron laid in front of the command post, with
+   the engineers, riflemen and support teams drawn up in tidy ranks on it facing out toward the field, and two supply crates
+   out beyond. (cx, cy) are the HQ's centre tile. */
+function startingSquad(cx, cy) {
+  const hx = cx * TS, hy = cy * TS;
+  // pave a concrete apron in front of the post (toward +y — the side the ranks form up on)
+  { const aw = 6, ad = 10, ay0 = cy + 4; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (let ty = ay0; ty < ay0 + ad; ty++) for (let tx = cx - aw; tx <= cx + aw; tx++) {
+      if (!inMap(tx, ty)) continue; const ti = tileIdx(tx, ty); if (WATER(MAP.t[ti]) || (G.gridB && G.gridB[ti])) continue;
+      if (MAP.t[ti] !== T_ROAD) { MAP.t[ti] = T_ROAD; if (tx < x0) x0 = tx; if (ty < y0) y0 = ty; if (tx > x1) x1 = tx; if (ty > y1) y1 = ty; }
+    }
+    if (x1 >= x0) { G.tuftStamp = (G.tuftStamp || 0) + 1; if (typeof dirtyTerrain === 'function') dirtyTerrain(x0, y0, x1, y1); }
+  }
+  // ranks on the apron, all facing out toward the field
+  const ang = Math.PI / 2, rowY = hy + 6.5 * TS, gap = 34, rowGap = 40;   // stand off from the post, out around the floodlight line — not hugging the wall
+  const rows = [['engineer', 'engineer', 'engineer'], ['rifleman', 'rifleman', 'rifleman', 'rifleman'], ['support', 'support']];
+  rows.forEach((row, ri) => { const n = row.length, sx = hx - (n - 1) * gap / 2;
+    row.forEach((t, ci) => { const u = spawnUnit(t, sx + ci * gap, rowY + ri * rowGap, true); if (u) { u.ang = ang; u.tang = ang; if (u.aimT !== undefined) u.aimT = ang; } });
+  });
+  for (let i = 0; i < 2; i++) { const p = randomLandPoint(hx, hy, 120, 300); if (p) G.crates.push({ x: p.x, y: p.y, z: 0, vz: 0, amt: 100 * 15, chute: 0, claimed: null, bob: rnd(TAU), landed: true }); }
 }
 /* the local commander clicks the map to site their post */
 const HQ_MIN_GAP = 26 * TS;   // a commander's post must sit at least this far from another's
@@ -18739,7 +18753,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b180';
+const BUILD_TAG = 'b182';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
