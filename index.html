@@ -6355,8 +6355,82 @@ function setupInvaders() {
     }
   }
   // levy builders set out from the pavilion to raise the army buildings on the planned plots
-  if (G.stronghold) for (let i = 0; i < 6; i++) { const p = randomLandPoint(G.stronghold.x, G.stronghold.y, 40, 140) || G.stronghold; const z = spawnZed('worker', p.x, p.y); z.mode = 'hunt'; z.restT = rnd(.5, 3); }
+  if (G.stronghold) for (let i = 0; i < 6; i++) { const p = randomLandPoint(G.stronghold.x, G.stronghold.y, 40, 140) || G.stronghold; const z = spawnZed('worker', p.x, p.y); z.mode = 'hunt'; z.restT = rnd(.5, 3); z.faction = 0; }
+  // the five RIVAL human factions: their own colours, compounds and armies — they war on you AND on each other
+  setupFactions(hqList, placed);
   G.waveAlive = 0;        // the standing garrison is not a wave
+}
+
+/* ---- the six warring human factions ---- */
+const FACTIONS = [
+  { name: 'Crimson Host',    col: '#e24a4a', accent: '#8a1f1f', bias: 'infantry' },
+  { name: 'Amber Horde',     col: '#e8962f', accent: '#a05a12', bias: 'archer'   },
+  { name: 'Violet Dominion', col: '#c463e0', accent: '#7a2f9a', bias: 'cavalry'  },
+  { name: 'Azure Legion',    col: '#3fb0e0', accent: '#1f6a9a', bias: 'infantry' },
+  { name: 'Jade Clan',       col: '#5ecb6f', accent: '#2f7a3a', bias: 'siege'    },
+  { name: 'Golden Empire',   col: '#e0cf3f', accent: '#9a8a12', bias: 'cavalry'  }
+];
+/* faction 0 is the original main host (its full stronghold + muster stays exactly as it was); factions 1..5 are lighter
+   rival compounds that raise their own troops and send them raiding — at the player (80%) and at each other (20%). */
+function setupFactions(hqList, placed) {
+  G.factions = [];
+  // faction 0 — tag the existing stronghold + register it
+  if (G.stronghold) {
+    const S = G.stronghold; S.faction = 0; S.col = FACTIONS[0].col;
+    for (const w of (S.walls || [])) w.faction = 0;
+    for (const h of (S.huts || [])) h.faction = 0;
+    if (S.hq) S.hq.faction = 0;
+    G.factions.push({ idx: 0, name: FACTIONS[0].name, col: FACTIONS[0].col, accent: FACTIONS[0].accent, bias: FACTIONS[0].bias, x: S.x, y: S.y, S, dead: false });
+  }
+  // factions 1..5 — a rival compound each, spread far from the players and from one another
+  for (let idx = 1; idx < FACTIONS.length; idx++) {
+    const f = FACTIONS[idx];
+    const S = buildRivalStronghold(idx, f, hqList, placed);
+    if (!S) continue;
+    G.factions.push({ idx, name: f.name, col: f.col, accent: f.accent, bias: f.bias, x: S.x, y: S.y, S, dead: false });
+  }
+  if (G.factions.length) alertMsg(G.factions.length + ' warring factions hold this land — they will fight you and each other', 'bad');
+}
+/* a rival faction's compound: a royal pavilion, its favoured army buildings, a small palisade ring, and starting levies.
+   Its structures carry .faction = idx (drawn in the faction colour); its troops raid independently. */
+function buildRivalStronghold(idx, f, hqList, placed) {
+  const half = 12;                                             // smaller than the main host's compound (keeps the map from drowning in buildings)
+  let best = null, bd = -1;
+  const clearOf = (x, y, r) => { for (const p of placed) if (dist2(x, y, p[0], p[1]) < (p[2] + r) * (p[2] + r)) return false; return true; };
+  for (let a = 0; a < 160; a++) {
+    const q = randomLandPoint(); if (!q) continue;
+    const tx = clamp(Math.round(q.x / TS), half + 3, MW - half - 3), ty = clamp(Math.round(q.y / TS), half + 3, MH - half - 3);
+    let bad = 0, n = 0; for (let yy = -half; yy <= half; yy += 2) for (let xx = -half; xx <= half; xx += 2) { n++; if (IMPASSABLE(MAP.t[tileIdx(tx + xx, ty + yy)])) bad++; }
+    if (bad > n * .05) continue;                                          // reject sites that sit on water / cliff
+    const px = tx * TS, py = ty * TS;
+    if (!clearOf(px, py, half * TS * 1.3)) continue;
+    let near = 1e18; for (const p of hqList) { const d2 = dist2(px, py, p.x, p.y); if (d2 < near) near = d2; }
+    if (near < 1700 * 1700) continue;                          // keep it off the players' doorstep
+    const score = Math.sqrt(near);
+    if (score > bd) { bd = score; best = { tx, ty }; }
+  }
+  if (!best) return null;
+  const cx = (best.tx + .5) * TS, cy = (best.ty + .5) * TS;
+  const S = { x: cx, y: cy, half, plots: [], walls: [], huts: [], faction: idx, col: f.col };
+  if (typeof clearProps === 'function') clearProps(cx, cy, half * TS * 1.5);
+  const raise = (t, x, y, done) => { if (IMPASSABLE(terrainAt(x, y))) return null; const z = spawnZed(t, x, y); z.mode = 'hunt'; z.mission = 'raid'; z.faction = idx; if (done) { z.done = true; z.prog = 1; z.hp = z.maxHp; z.spawnCd = z.def.spawnT * .5; } markStructBlk(z, true); return z; };
+  const at = (fx, fy) => ({ x: cx + fx * half * TS, y: cy + fy * half * TS });
+  S.hq = raise('mHQ', cx, cy, true);
+  // this faction's favoured army buildings (its bias gets an extra one)
+  const barr = raise('mBarracks', at(-.5, -.2).x, at(-.5, -.2).y, true); if (barr) S.plots.push({ t: 'mBarracks', x: barr.x, y: barr.y, s: barr });
+  const rng = raise('mRange', at(.5, -.2).x, at(.5, -.2).y, true); if (rng) S.plots.push({ t: 'mRange', x: rng.x, y: rng.y, s: rng });
+  const biasT = f.bias === 'archer' ? 'mRange' : f.bias === 'cavalry' ? 'mStable' : f.bias === 'siege' ? 'mWorkshop' : 'mBarracks';
+  const bz = raise(biasT, at(0, .5).x, at(0, .5).y, true); if (bz) S.plots.push({ t: biasT, x: bz.x, y: bz.y, s: bz });
+  // a light palisade ring with a gate on each side
+  const L = 2 * half * TS, seg = 4 * TS;
+  const sideWalls = (x0, y0, dx, dy) => { const nseg = Math.max(1, Math.round(L / seg)), mid = (nseg / 2) | 0; for (let i = 0; i < nseg; i++) { const gate = i === mid; const wx = x0 + dx * (i + .5) * seg, wy = y0 + dy * (i + .5) * seg; const z = raise(gate ? 'mGate' : 'mWall', wx, wy, true); if (z) { z.wdir = dx ? 0 : 1; S.walls.push(z); } } };
+  sideWalls(cx - L / 2, cy - L / 2, 1, 0); sideWalls(cx - L / 2, cy + L / 2, 1, 0); sideWalls(cx - L / 2, cy - L / 2, 0, 1); sideWalls(cx + L / 2, cy - L / 2, 0, 1);
+  placed.push([cx, cy, L * .8]);
+  // starting levies + a small standing raiding party
+  for (let i = 0; i < 3; i++) { const p = randomLandPoint(cx, cy, 30, 120) || { x: cx, y: cy }; const w = spawnZed('worker', p.x, p.y); w.mode = 'hunt'; w.restT = rnd(.5, 3); w.faction = idx; }
+  const pick = () => { const r = Math.random(); return f.bias === 'archer' ? (r < .5 ? 'archer' : 'infantry') : f.bias === 'cavalry' ? (r < .4 ? 'cavalry' : 'infantry') : f.bias === 'siege' ? (r < .25 ? 'siege' : 'infantry') : (r < .3 ? 'duelist' : 'infantry'); };
+  for (let i = 0; i < 5; i++) { const p = randomLandPoint(cx, cy, 60, 260); if (!p) continue; const z = spawnZed(pick(), p.x, p.y); z.faction = idx; z.mode = 'roam'; assignFactionMission(z); if (i === 0) z.banner = 1; }   // a leader flies the faction standard
+  return S;
 }
 
 /* ---- the stronghold ----
@@ -6627,11 +6701,13 @@ function eBuilds() { return G.zeds.filter(z => !z.dead && z.def.struct); }
 /* pick a site for a new construction near invader-held ground, away from the player's base */
 function planConstruction(z) {
   const cur = eBuilds();
-  if (G.stronghold) {
-    const S = G.stronghold;
+  // a faction levy works only for its own stronghold's plots
+  const homeS = (z && z.faction != null && G.factions && G.factions[z.faction]) ? G.factions[z.faction].S : G.stronghold;
+  if (homeS) {
+    const S = homeS;
     // help at an unfinished plot that is short of hands, else start the next empty plot in the plan
     for (const pl of S.plots) if (pl.s && !pl.s.dead && !pl.s.done) { let hands = 0; for (const o of G.zeds) if (!o.dead && o.def.worker && o.site === pl.s) hands++; if (hands < 3) return pl.s; }
-    for (const pl of S.plots) if (!pl.s || pl.s.dead) { const s = spawnZed(pl.t, pl.x, pl.y); s.mode = 'hunt'; s.mission = 'raid'; pl.s = s; return s; }
+    for (const pl of S.plots) if (!pl.s || pl.s.dead) { const s = spawnZed(pl.t, pl.x, pl.y); s.mode = 'hunt'; s.mission = 'raid'; s.faction = S.faction != null ? S.faction : 0; pl.s = s; return s; }
     return null;
   }
   // join an unfinished site nearby if it is short of hands
@@ -6700,7 +6776,10 @@ function updateConstruction(z, dt, near) {
     if (!z.def.troop || G.zeds.length > 900) return;
     let n = rndi(z.def.spawnN[0], z.def.spawnN[1] + 1);
     if (z.def.troop === 'worker') { let w = 0; for (const o of G.zeds) if (!o.dead && o.def.worker) w++; n = Math.min(n, 8 - w); if (n <= 0) return; }   // the pavilion keeps eight levies at work
-    for (let i = 0; i < n; i++) { const p = randomLandPoint(z.x, z.y, z.r + 6, z.r + 60) || { x: z.x + z.r, y: z.y }; const zz = spawnZed(z.def.troop === 'infantry' && Math.random() < .3 ? 'duelist' : z.def.troop, p.x, p.y); zz.mode = 'hunt'; if (zz.def.worker) zz.restT = rnd(.5, 2); else if (typeof musterJoin === 'function') musterJoin(zz); else assignInvaderMission(zz); }
+    for (let i = 0; i < n; i++) { const p = randomLandPoint(z.x, z.y, z.r + 6, z.r + 60) || { x: z.x + z.r, y: z.y }; const zz = spawnZed(z.def.troop === 'infantry' && Math.random() < .3 ? 'duelist' : z.def.troop, p.x, p.y); zz.mode = 'hunt'; zz.faction = z.faction != null ? z.faction : 0;
+      if (zz.def.worker) zz.restT = rnd(.5, 2);
+      else if (zz.faction > 0) { if (typeof assignFactionMission === 'function') assignFactionMission(zz); if (Math.random() < .22) zz.banner = 1; }   // rival factions raid on their own — no shared muster; some carry the faction standard
+      else if (typeof musterJoin === 'function') musterJoin(zz); else assignInvaderMission(zz); }
     if (near) popText(z.x, z.y - 26, '+' + n + ' ' + enemyDef(z.def.troop).name.toUpperCase(), '#ff9a5a');
   }
 }
@@ -7783,6 +7862,23 @@ function assignInvaderMission(z) {
     for (const v of targets) { const d = dist2(z.x, z.y, v.x, v.y); if (d < bd) { bd = d; best = v; } }
     z.missionTarget = best;
   } else z.mission = 'raid';
+}
+/* a rival faction's troop: 80% march on the player, 20% raid the nearest RIVAL faction's stronghold (so the factions grind
+   on each other too). It also fights any rival troop it meets on the way (see the inter-faction block in updateZeds). */
+function assignFactionMission(z) {
+  z.mission = 'raid'; z.missionTarget = null; z.raidRival = null;
+  if (z.faction != null && G.factions && Math.random() < .2) {
+    let best = null, bd = Infinity;
+    for (const f of G.factions) { if (f.dead || f.idx === z.faction || f.x === undefined) continue; const d = dist2(z.x, z.y, f.x, f.y); if (d < bd) { bd = d; best = f; } }
+    if (best) { z.raidRival = best; z.mission = 'raidRival'; }
+  }
+}
+/* nearest living enemy-faction troop within R (rival faction, or the main host vs a rival, etc.) */
+function nearestRivalZed(z, R) {
+  if (z.faction == null) return null;
+  const list = G.hZeds.near(z.x, z.y, R, _q); let best = null, bd = R * R;
+  for (let i = 0; i < list.length; i++) { const o = list[i]; if (o === z || o.dead || o.remote || o.faction == null || o.faction === z.faction || o.def.struct || o.def.worker) continue; const d = dist2(o.x, o.y, z.x, z.y); if (d < bd) { bd = d; best = o; } }
+  return best;
 }
 function spawnInvaderContact(t) {
   const p = invaderSpawnPoint();
@@ -9831,6 +9927,33 @@ function updateZeds(dt) {
         }
       }
     }
+    /* ---- INTER-FACTION WAR: a faction troop fights rival-faction troops it runs into, and (on a raidRival mission) marches
+       on the rival's pavilion. A player unit/HQ in sight still takes priority when it's genuinely closer. ---- */
+    if (z.faction != null && !z.def.struct && !z.def.worker && G.factions && G.factions.length > 1) {
+      if ((z._rivScan = (z._rivScan || 0) - dtz) <= 0) { z._rivScan = .4; z._rival = nearestRivalZed(z, zedSense(z) * .7); }
+      const rv = z._rival;
+      if (rv && !rv.dead && rv.faction !== z.faction && (!z.target || z.target.kind !== 'unit' || dist2(rv.x, rv.y, z.x, z.y) < dist2(z.target.x, z.target.y, z.x, z.y))) {
+        const rr = z.r + rv.r + 4, d = dist(z.x, z.y, rv.x, rv.y); z.spd = z.def.spd * nightSpd;
+        if (z.def.ranged && d < z.def.ranged && d > rr) { z.ang = angLerp(z.ang, angTo(z.x, z.y, rv.x, rv.y), .12); if (z.cd <= 0) { zedFire(z, rv); z.cd = z.def.rate; } }
+        else if (d <= rr) { z.ang = angLerp(z.ang, angTo(z.x, z.y, rv.x, rv.y), .2); if (z.cd <= 0) { z.cd = z.def.rate; z.lunge = .18; const dm = z.def.dmg * ((G.diff && G.diff.dmgMul) || 1) * (z.def.vsInf || 1); if (z.def.ranged) zedFire(z, rv); else { damage(rv, dm, angTo(z.x, z.y, rv.x, rv.y)); AU.splat && AU.splat(z.x, z.y); } } }
+        else steerZ(z, dtz, rv.x, rv.y, rr * .8);
+        z.lunge = Math.max(0, z.lunge - dtz); z.bob += dtz * 7; z.step += dtz * 7;
+        if (solidAt(z.x, z.y, false)) unstick(z, false);
+        continue;
+      }
+      if (z.mission === 'raidRival' && z.raidRival && !z.raidRival.dead && z.raidRival.S && z.raidRival.S.hq && !z.raidRival.S.hq.dead) {
+        const pt = pickZedTarget(z);
+        if (!pt || pt.kind === 'build') {                                               // no player troops about → grind on the rival's pavilion
+          const hq = z.raidRival.S.hq, rr = z.r + Math.max(hq.def.w, hq.def.h) * TS * .48 + 4, d = dist(z.x, z.y, hq.x, hq.y); z.spd = z.def.spd * nightSpd;
+          if (d <= rr) { z.ang = angLerp(z.ang, angTo(z.x, z.y, hq.x, hq.y), .2); if (z.cd <= 0) { z.cd = z.def.rate; z.lunge = .18; damage(hq, z.def.dmg * ((G.diff && G.diff.dmgMul) || 1), angTo(z.x, z.y, hq.x, hq.y)); } }
+          else steerZ(z, dtz, hq.x, hq.y, rr * .8);
+          z.lunge = Math.max(0, z.lunge - dtz); z.bob += dtz * 6; z.step += dtz * 7;
+          if (solidAt(z.x, z.y, false)) unstick(z, false);
+          continue;
+        }
+      } else if (z.mission === 'raidRival') { z.mission = 'raid'; z.raidRival = null; }
+    }
+
     if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside)) z.target = pickZedTarget(z);
     else if (z.target.kind === 'build' && ((i + G.frame) % 20) === 0) {                 // marching on a structure: troops that come into sight take priority — twice a second, look for one
       const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
@@ -15659,6 +15782,7 @@ function ctrlHudTick(dt) {
     let cx = Math.cos(ang), cz = Math.sin(ang), px = -cz, pz = cx, ry = -ang;
     const setFrame = a => { cx = Math.cos(a); cz = Math.sin(a); px = -cz; pz = cx; ry = -a; };   // legs keep the body heading; torso / head / arms turn toward the aim
     const legL = (S.legLen || 10) * sc, legW = (S.legW || 4.5) * sc, armL = (S.armLen || 11) * sc, armW = (S.armW || 4) * sc, torsoW = (S.wid || 15) * sc * .95, torsoD = (S.len || 18) * sc * .42, torsoH = 13 * sc * Math.sqrt((S.len || 18) / 18), headR = (S.head || 3.8) * sc * 1.05;
+    const fc = o.fcol;   // a rival faction is marked by its SHIELD colour (and its leaders' + buildings' flags), not its tunic
     const uni = col3(S.uni || '#4a6344'), sleeve = col3(S.sleeve || S.uni || '#4a6344'), trou = col3(S.trouser || S.uni || '#3a3a3a'), gear = col3(S.gear || '#33482f'), skin = zed ? col3(S.helm || '#9a9184') : SKIN, blood = col3(S.blood || '#6f1414');
     const STUMP = zed ? (() => 0) : put;                                    // zombies show a bare missing limb — no blob at the joint (was the 'green ball')
     const bodyPool = zed || med ? P.cloth : P.cam, bodyCap = CAP_OF.get(bodyPool) || bodyPool;   // every body part is a rounded capsule now — soldiers, villagers and the dead alike
@@ -15892,7 +16016,7 @@ function ctrlHudTick(dt) {
           else { put(P.cyl, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, HPI + up, .9 * sc, L, .9 * sc, WOOD); put(P.box, X(grip.f + Math.cos(up) * L, grip.r), grip.y + Math.sin(up) * L, Z(grip.f + Math.cos(up) * L, grip.r), 0, ry, up, 3 * sc, 3.5 * sc, 3.5 * sc, col3('#4a3a2a')); }
         } else if (gun === 'spear') { const L = wl * 2.2, gf = grip.f + L * .3, gy = grip.y + L * .3 * .12; put(P.cyl, X(gf, grip.r), gy, Z(gf, grip.r), 0, ry, HPI + .12, 1.1 * sc, L, 1.1 * sc, WOOD); put(P.box, X(grip.f + L * .8, grip.r), grip.y + L * .8 * .12, Z(grip.f + L * .8, grip.r), 0, ry, .12, 5 * sc, 1 * sc, 2.5 * sc, STEEL); if (med) { put(P.cyl, X(grip.f + L * .69, grip.r), grip.y + L * .69 * .12, Z(grip.f + L * .69, grip.r), 0, ry, HPI + .12, 1.6 * sc, 1.2 * sc, 1.6 * sc, GOLD); put(P.cloth, X(grip.f + L * .64, grip.r), grip.y + L * .64 * .12 - 1.5 * sc, Z(grip.f + L * .64, grip.r), 0, ry, .12, 1.2 * sc, 3 * sc, 1.2 * sc, col3('#8a1f1f')); } }   // gold socket + red horsehair tassel
         else if (gun === 'bow' && lh) { put(P.box, X(lh.f + 1 * sc, lh.r), lh.y, Z(lh.f + 1 * sc, lh.r), 0, ry, 0, 2 * sc, 26 * sc, 1.6 * sc, WOOD); put(P.box, X(lh.f - 2 * sc, lh.r), lh.y, Z(lh.f - 2 * sc, lh.r), 0, ry, 0, .4 * sc, 25 * sc, .4 * sc, STEEL); if (rh) { const af = (lh.f + rh.f) * .5 + 2 * sc; put(P.box, X(af, lh.r * .5 + rh.r * .5), (lh.y + rh.y) * .5, Z(af, lh.r * .5 + rh.r * .5), 0, ry, 0, Math.max(6 * sc, lh.f - rh.f + 8 * sc), .7 * sc, .7 * sc, WOOD); } }
-        if (o.mk === 'infantry' && lh) { put(P.cloth, X(lh.f + 1.5 * sc, lh.r - 1.6 * sc), lh.y + 1.5 * sc, Z(lh.f + 1.5 * sc, lh.r - 1.6 * sc), 0, ry, 0, 1.2 * sc, 15 * sc, 6.5 * sc, HIDE);   // tall hide shield
+        if (o.mk === 'infantry' && lh) { put(P.cloth, X(lh.f + 1.5 * sc, lh.r - 1.6 * sc), lh.y + 1.5 * sc, Z(lh.f + 1.5 * sc, lh.r - 1.6 * sc), 0, ry, 0, 1.2 * sc, 15 * sc, 6.5 * sc, fc ? col3(fc) : HIDE);   // tall shield — painted the faction's colour
           put(P.box, X(lh.f + 2.2 * sc, lh.r - 1.6 * sc), lh.y + 1.5 * sc, Z(lh.f + 2.2 * sc, lh.r - 1.6 * sc), 0, ry, 0, .3 * sc, 13 * sc, .5 * sc, GOLD); for (const dy of [-4, 0, 4]) put(P.box, X(lh.f + 2.2 * sc, lh.r - 1.6 * sc), lh.y + (1.5 + dy) * sc, Z(lh.f + 2.2 * sc, lh.r - 1.6 * sc), 0, ry, 0, .3 * sc, .6 * sc, 3.6 * sc, GOLD); }   // gold spine + studs
         else if (o.mk === 'cavalry' && lh) { put(P.cyl, X(lh.f + 1.6 * sc, lh.r - 1.4 * sc), lh.y + 1 * sc, Z(lh.f + 1.6 * sc, lh.r - 1.4 * sc), 0, ry, HPI, 5 * sc, .9 * sc, 5 * sc, GOLD); put(P.cyl, X(lh.f + 2.2 * sc, lh.r - 1.4 * sc), lh.y + 1 * sc, Z(lh.f + 2.2 * sc, lh.r - 1.4 * sc), 0, ry, HPI, 3.2 * sc, .6 * sc, 3.2 * sc, HIDE); }   // round embossed buckler
       } else if (o.pistol && rh) {
@@ -17118,8 +17242,28 @@ function ctrlHudTick(dt) {
   }
   /* the rig for a unit at its current upgrade tier (Mk2 / Mk3 rigs are brighter with extra kit) */
   function rigFor(u) { const t = tierOf(u); return (t > 1 && MODEL[u.t + '_t' + t]) || MODEL[u.t]; }
+  // a rival faction's buildings are tinted its colour (the red cloth, roof tiles and thatch shift toward the faction hue).
+  // faction 0 (the main host) is left in its original red-and-gold Thai look.
+  const _ebTint = new Map();
+  function tintEB(g, hex) {
+    const tint = new THREE.Color(hex);
+    const tintMat = mat => {
+      if (!mat || mat.__tinted) return mat;
+      const c = mat.color; if (!c) return mat;
+      // tint the "coloured" surfaces (reds, roof tiles, thatch, straw) toward the faction hue; leave gold / cream / bare timber
+      const gold = c.r > .72 && c.g > .58 && c.b < .55, cream = c.r > .78 && c.g > .74 && c.b > .62;
+      const colorful = (c.r > .24 || c.g > .24) && (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) > .08);
+      if (gold || cream || !colorful) return mat;
+      const m = mat.clone(); m.color = c.clone().lerp(tint, .6); m.__tinted = true; return m;
+    };
+    g.traverse(o => {
+      if (!o.isMesh || !o.material) return;
+      if (Array.isArray(o.material)) o.material = o.material.map(tintMat);
+      else o.material = tintMat(o.material);
+    });
+  }
   function drawEB(zz, x, gy, z) {
-    let g = ebMeshes.get(zz.id); if (!g) { g = mkEB(zz.t, zz.def); ebMeshes.set(zz.id, g); }
+    let g = ebMeshes.get(zz.id); if (!g) { g = mkEB(zz.t, zz.def); ebMeshes.set(zz.id, g); }   // building roofs keep their own look; the faction is shown by its FLAG (below) + its troops' shields
     g.visible = true; g.position.set(x, gy, z); g.userData.body.scale.y = zz.done ? 1 : .1 + .9 * zz.prog; g.userData.scaf.visible = !zz.done; g.userData.live = G.frame;
     if (zz.wdir !== undefined) g.rotation.y = zz.wdir ? HPI : 0; else if (zz.def.hq || zz.t === 'mShrine') g.rotation.y = 0;
     g.userData.body.position.x = zz.hurt > 0 ? rnd(-.02, .02) * zz.hurt * 5 : 0;
@@ -17836,19 +17980,34 @@ function ctrlHudTick(dt) {
       if (zz._mk === undefined) { const n = (typeof ZVARS !== 'undefined' && ZVARS[zz.t]) || 1; const v = (hash2(zz.id, 5) * n) | 0; zz._mk = v ? zz.t + v : zz.t; }
       const M = MODEL[zz._mk] || MODEL[zz.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' };
       const push = zz.lunge > 0 ? zz.lunge * .5 : 0, x = (zz.x + Math.cos(zz.ang) * push * TS) * K, z = (zz.y + Math.sin(zz.ang) * push * TS) * K, gy = groundY(zz.x, zz.y);
-      if (zz.def.struct) { drawEB(zz, x, gy, z); continue; }
+      if (zz.def.struct) { drawEB(zz, x, gy, z);
+        // every faction building flies its colours: a tall flag on the pavilion, a smaller pennant on the army buildings
+        if (zz.faction != null && G.factions && G.factions[zz.faction] && (zz.def.hq || zz.def.troop)) {
+          // a large faction flag on a tall pole — the building's colours, clear from across the map
+          const fcol = col3(G.factions[zz.faction].col), tall = !!zz.def.hq;
+          const bx = x, bz = z, poleY = gy + (tall ? 4.2 : 1.5), poleH = tall ? 2.6 : 1.5;
+          put(P.cyl, bx, poleY + poleH * .5, bz, 0, 0, 0, .035, poleH, .035, WOOD);
+          put(P.head, bx, poleY + poleH + .07, bz, 0, 0, 0, .07, .1, .07, GOLD);
+          const w = G.wind || { x: 1, y: 0 }, wa = Math.atan2(w.y, w.x), tt = G.t * 2.4 + zz.id, ripple = Math.sin(tt) * .12, fa = wa + ripple * .6;
+          const fl = tall ? 1.5 : 1.0, fh = tall ? 1.0 : .68, fx = bx + Math.cos(fa) * fl * .5, fz = bz + Math.sin(fa) * fl * .5, fy = poleY + poleH - fh * .5;
+          put(P.cloth, fx, fy, fz, 0, -fa, ripple * .5, fl, fh, .02, fcol);
+          put(P.cloth, fx, fy + fh * .4, fz, 0, -fa, ripple * .5, fl, fh * .16, .022, GOLD);
+          put(P.cloth, fx, fy - fh * .4, fz, 0, -fa, ripple * .5, fl, fh * .16, .022, GOLD);
+        }
+        continue; }
       if (zz.def.worker) { drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: 'worker', gun: 'mallet', scale: .88, limbs: 15, id: zz.id, work: zz.work || 0 }); continue; }
       if (zz.med) {
-        if (zz.banner) drawBanner(x, gy + (zz.def.mount ? HORSE_SEAT * .6 : 0), z, zz.ang, (zz.def.mount ? 1.9 : 1.75) * FS, col3('#b8151e'), GOLD, zz.id);   // the host's standard
-        if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(S.pack || '#6a2f2f')); drawFigureC(x, gy + HORSE_SEAT + .055, z, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id, ride: true }); }   // seated in the saddle, legs round the horse
+        const fcol = (zz.faction > 0 && G.factions && G.factions[zz.faction]) ? G.factions[zz.faction].col : null;   // rival factions wear their own colour
+        if (zz.banner) drawBanner(x, gy + (zz.def.mount ? HORSE_SEAT * .6 : 0), z, zz.ang, (zz.def.mount ? 1.9 : 1.75) * FS, col3(fcol || '#b8151e'), GOLD, zz.id);   // the host's standard
+        if (zz.def.mount) { drawHorse(x, gy, z, zz.ang, zz.step || 0, col3(fcol || S.pack || '#6a2f2f')); drawFigureC(x, gy + HORSE_SEAT + .055, z, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'cavalry', gun: 'spear', scale: .85, limbs: zz.limbs, id: zz.id, ride: true, fcol }); }   // seated in the saddle, legs round the horse
         else if (zz.def.siege) {
           drawElephant(x, gy, z, zz.ang, zz.step || 0, zz.id);
           const ecx = Math.cos(zz.ang) * ELE_U, ecz = Math.sin(zz.ang) * ELE_U;
-          drawFigureC(x + ecx * .52, gy + ELE_NECK + .05, z + ecz * .52, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'none', scale: .78, limbs: 15, id: zz.id, ride: true });                                                   // mahout astride the neck
-          drawFigureC(x - ecx * .12, gy + ELE_HOWDAH, z - ecz * .12, zz.ang, 0, S, { ck: zz._rider || (zz._rider = { id: zz.id + 7 }), kind: 'med', mk: 'cavalry', gun: 'spear', scale: .82, limbs: zz.limbs, id: zz.id + 7 });   // spearman in the howdah
+          drawFigureC(x + ecx * .52, gy + ELE_NECK + .05, z + ecz * .52, zz.ang, 0, S, { ck: zz, kind: 'med', mk: 'siege', gun: 'none', scale: .78, limbs: 15, id: zz.id, ride: true, fcol });                                                   // mahout astride the neck
+          drawFigureC(x - ecx * .12, gy + ELE_HOWDAH, z - ecz * .12, zz.ang, 0, S, { ck: zz._rider || (zz._rider = { id: zz.id + 7 }), kind: 'med', mk: 'cavalry', gun: 'spear', scale: .82, limbs: zz.limbs, id: zz.id + 7, fcol });   // spearman in the howdah
         }
-        else if (zz.fin) { const q = finKiller(zz.fin); drawFigureC(x, gy, z, zz.ang, q.o.walk || 0, S, { ck: zz, kind: 'med', mk: zz.def.militia ? 'villager' : 'infantry', gun: zz.def.dual ? 'dual' : (zz.id & 1) ? 'spear' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id, crouch: !!q.o.crouch, fx: q.fx }); }   // finishing a man
-        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : zz.def.militia ? 'villager' : 'infantry', gun: zz.def.arrow ? 'bow' : zz.def.dual ? 'dual' : ((zz.id & 1) ? 'spear' : 'sword'), scale: zz.def.militia ? .9 : .92, limbs: zz.limbs, id: zz.id, mv: zedMv(zz) });   // spearmen and dha-and-shield men mixed; militia with no hat or shield; raiders with twin blades
+        else if (zz.fin) { const q = finKiller(zz.fin); drawFigureC(x, gy, z, zz.ang, q.o.walk || 0, S, { ck: zz, kind: 'med', mk: zz.def.militia ? 'villager' : 'infantry', gun: zz.def.dual ? 'dual' : (zz.id & 1) ? 'spear' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id, crouch: !!q.o.crouch, fx: q.fx, fcol }); }   // finishing a man
+        else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : zz.def.militia ? 'villager' : 'infantry', gun: zz.def.arrow ? 'bow' : zz.def.dual ? 'dual' : ((zz.id & 1) ? 'spear' : 'sword'), scale: zz.def.militia ? .9 : .92, limbs: zz.limbs, id: zz.id, mv: zedMv(zz), fcol });   // spearmen and dha-and-shield men mixed; militia with no hat or shield; raiders with twin blades
       } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
       else if (zz.def.predator) {
         // airborne vault / pounce (elevated on its arc), a tight crouch on the branch, or hunched over a pinned man striking at him
@@ -19008,7 +19167,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b186';
+const BUILD_TAG = 'b187';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
