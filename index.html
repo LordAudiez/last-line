@@ -12366,8 +12366,47 @@ function drawMinimap() {
       mctx.fillStyle = '#fff0c0'; mctx.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
     } else { mctx.fillStyle = '#ffd05a'; mctx.fillRect(p[0] - 2, p[1] - 2, 4, 4); }
   }
-  // capture points (villages): a diamond in the holding team's colour (gold neutral, red if the horde holds it)
-  if (G.villages) for (const vg of G.villages) { const p = px(vg.x, vg.y); const col = (vg.owner && vg.owner.length === 1) ? (TEAM_COL[vg.owner] || '#c9b45a') : vg.owner === 'invader' ? '#d24545' : '#c9b45a'; mctx.save(); mctx.translate(p[0], p[1]); mctx.rotate(Math.PI / 4); mctx.fillStyle = 'rgba(0,0,0,.6)'; mctx.fillRect(-3.4, -3.4, 6.8, 6.8); mctx.fillStyle = col; mctx.fillRect(-2.4, -2.4, 4.8, 4.8); mctx.restore(); }
+  /* ---- minimap icons: HQ, capturable villages, faction strongholds/camps, and the moving horde ---- */
+  const _pulse = .5 + .5 * Math.sin(G.t * 6);
+  // a small crest (shield) — used for enemy factions: a stronghold gets a bigger one, field camps a smaller
+  const drawCrest = (x, y, r, col) => { mctx.save(); mctx.translate(x, y);
+    mctx.fillStyle = 'rgba(0,0,0,.65)'; mctx.beginPath(); mctx.moveTo(0, -r - 1); mctx.lineTo(r + 1, -r * .3); mctx.lineTo(0, r + 1); mctx.lineTo(-r - 1, -r * .3); mctx.closePath(); mctx.fill();
+    mctx.fillStyle = col; mctx.beginPath(); mctx.moveTo(0, -r); mctx.lineTo(r, -r * .3); mctx.lineTo(0, r); mctx.lineTo(-r, -r * .3); mctx.closePath(); mctx.fill();
+    mctx.fillStyle = 'rgba(255,255,255,.75)'; mctx.fillRect(-r * .18, -r * .55, r * .36, r * 1.1); mctx.restore(); };
+  // a little flag on a pole — capture points (villages)
+  const drawFlag = (x, y, col, contested) => { mctx.save(); mctx.translate(x, y);
+    if (contested) { mctx.strokeStyle = 'rgba(255,235,150,' + (.4 + .5 * _pulse) + ')'; mctx.lineWidth = 1.4; mctx.beginPath(); mctx.arc(0, 0, 6, 0, TAU); mctx.stroke(); }
+    mctx.fillStyle = 'rgba(0,0,0,.7)'; mctx.fillRect(-1, -8, 2.4, 12);   // pole
+    mctx.fillStyle = 'rgba(230,235,240,.9)'; mctx.fillRect(-.6, -8, 1.4, 12);
+    mctx.fillStyle = col; mctx.beginPath(); mctx.moveTo(.8, -8); mctx.lineTo(7.5, -6); mctx.lineTo(.8, -3.5); mctx.closePath(); mctx.fill(); mctx.restore(); };
+  // a five-point star — the player's own command post
+  const drawStar = (x, y, ro, ri, col) => { mctx.save(); mctx.translate(x, y); mctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i & 1 ? ri : ro; mctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); } mctx.closePath(); mctx.fillStyle = 'rgba(0,0,0,.7)'; mctx.lineWidth = 2.4; mctx.strokeStyle = 'rgba(0,0,0,.7)'; mctx.stroke(); mctx.fillStyle = col; mctx.fill(); mctx.restore(); };
+
+  // enemy factions — from a G.factions list when the multi-faction system is live, otherwise the single invader host + its camps
+  const FCOL = ['#d24545', '#d98a2b', '#b45ad2', '#3fa0d2', '#5ac26a', '#d2c33f', '#c96a8a', '#8a8f96'];
+  if (G.factions && G.factions.length) {
+    for (let i = 0; i < G.factions.length; i++) { const f = G.factions[i]; if (f.dead || f.x === undefined) continue; const p = px(f.x, f.y); drawCrest(p[0], p[1], 5.5, f.col || FCOL[i % FCOL.length]); }
+  } else if (G.stronghold) { const p = px(G.stronghold.x, G.stronghold.y); drawCrest(p[0], p[1], 6, '#d24545'); }
+  if (G.camps) for (const c of G.camps) { if (c.dead || c.x === undefined) continue; const p = px(c.x, c.y); drawCrest(p[0], p[1], 3.6, '#c86a4a'); }
+
+  // capture points (villages): a flag in the holding team's colour, ringed + pulsing while it is being taken
+  if (G.villages) for (const vg of G.villages) { const p = px(vg.x, vg.y); const col = (vg.owner && vg.owner.length === 1) ? (TEAM_COL[vg.owner] || '#c9b45a') : vg.owner === 'invader' ? '#d24545' : '#c9b45a'; drawFlag(p[0], p[1], col, Math.abs(vg.cap || 0) > .02 && Math.abs(vg.cap || 0) < .98); }
+
+  // the moving horde: a pulsing red diamond at the mass of horde bodies, with an arrow showing its heading toward the base
+  if (G.hordeAlert || G.hordeEv) {
+    let hx = 0, hy = 0, hn = 0; for (const z of G.zeds) if (!z.dead && z.horde) { hx += z.x; hy += z.y; hn++; }
+    if (!hn && G.hordeEv && G.hordeEv.origin) { hx = G.hordeEv.origin.x; hy = G.hordeEv.origin.y; hn = 1; }
+    if (hn) { hx /= hn; hy /= hn; const p = px(hx, hy);
+      mctx.save(); mctx.translate(p[0], p[1]);
+      mctx.fillStyle = 'rgba(255,60,60,' + (.35 + .45 * _pulse) + ')'; mctx.beginPath(); mctx.arc(0, 0, 5 + _pulse * 2.5, 0, TAU); mctx.fill();
+      mctx.fillStyle = '#ff3a3a'; mctx.beginPath(); mctx.moveTo(0, -4); mctx.lineTo(3.4, 0); mctx.lineTo(0, 4); mctx.lineTo(-3.4, 0); mctx.closePath(); mctx.fill();
+      const tgt = G.hq && !G.hq.dead ? G.hq : null; if (tgt) { const a = Math.atan2(tgt.y - hy, tgt.x - hx); mctx.rotate(a); mctx.fillStyle = '#ffd0d0'; mctx.beginPath(); mctx.moveTo(6, 0); mctx.lineTo(1.5, -3); mctx.lineTo(1.5, 3); mctx.closePath(); mctx.fill(); }
+      mctx.restore();
+    }
+  }
+  // the player's command posts — a bright star so your own base is unmistakable
+  for (const b of G.builds) { if (b.dead || b.t !== 'hq') continue; if (G.mp && typeof plyOf === 'function' && plyOf(b).team !== myTeam()) continue; const p = px(b.x, b.y); drawStar(p[0], p[1], 6, 2.7, '#9fe8ff'); }
+
   const v = px(CAM.x, CAM.y);
   mctx.strokeStyle = 'rgba(255,255,255,.85)'; mctx.lineWidth = 1.5;
   if (CAM.rot) { const c = px(CAM.x + CAM.vw / 2, CAM.y + CAM.vh / 2); mctx.save(); mctx.translate(c[0], c[1]); mctx.rotate(-CAM.rot); mctx.strokeRect(-CAM.vw * sc / 2 + .5, -CAM.vh * sc / 2 + .5, CAM.vw * sc, CAM.vh * sc); mctx.restore(); }   // the view turns with the camera
@@ -18563,7 +18602,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b177';
+const BUILD_TAG = 'b178';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
