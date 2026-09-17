@@ -24,6 +24,21 @@ html,body{width:100%;height:100%;height:100dvh;position:relative;overflow:hidden
   height:52px;font-size:13px;letter-spacing:.4px}
 #topbar .cell{display:flex;align-items:center;gap:10px;padding:0 18px;border-right:1px solid #1d3029;white-space:nowrap}
 #topbar .cell:last-child{border-right:0}
+/* the two resource cells are clickable — they open the converter */
+#topbar .cell.conv{cursor:pointer;border-radius:12px;transition:background .18s ease,box-shadow .18s ease}
+#topbar .cell.conv:hover{background:rgba(120,220,170,.12);box-shadow:inset 0 0 0 1px rgba(120,220,170,.35)}
+#convpop{position:absolute;top:74px;left:50%;transform:translateX(-50%) scale(.94);transform-origin:top center;
+  display:flex;flex-direction:column;gap:9px;padding:12px 14px;min-width:230px;z-index:40;
+  opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s cubic-bezier(.22,1,.36,1)}
+#convpop.show{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1)}
+#convTitle{font-weight:800;font-size:13px;letter-spacing:.4px;color:#dfe6ea;text-align:center}
+#convpop input[type=range]{width:100%;accent-color:#8dffbe;cursor:pointer}
+#convOut{text-align:center;font-weight:800;font-variant-numeric:tabular-nums;font-size:16px}
+#convSpend{color:#8dffbe}#convGet{color:#ffbe63}#convpop.toScrap #convSpend{color:#8dffbe}#convpop.toScrap #convGet{color:#ffbe63}#convpop.toSupply #convSpend{color:#ffbe63}#convpop.toSupply #convGet{color:#8dffbe}
+#convBtns{display:flex;gap:8px}
+#convBtns button{flex:1;padding:7px 0;border-radius:9px;border:1px solid #2f4a41;background:#12211c;color:#bfeecf;font:inherit;font-weight:700;cursor:pointer;transition:background .14s ease,transform .1s ease}
+#convBtns button:hover{background:#1a2f28}#convBtns button:active{transform:scale(.96)}
+#convDo{border-color:#4f8a72!important;color:#dfffee!important}
 .res{font-weight:800;font-variant-numeric:tabular-nums;font-size:21px;line-height:1}
 .res.sup{color:#8dffbe}.res.scr{color:#ffbe63}
 .ico{width:16px;height:16px;border-radius:3px;box-shadow:0 0 10px currentColor;flex:none}
@@ -125,6 +140,18 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 .uico *{shape-rendering:geometricPrecision}
 #sel,#cmd,#miniwrap{animation:panIn .22s cubic-bezier(.22,1,.36,1)}
 @keyframes panIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+/* smooth menu swaps: when the command card changes screen, its buttons flip in with a light stagger */
+.btn.in{animation:btnIn .24s cubic-bezier(.22,1,.36,1) both}
+@keyframes btnIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
+/* the Map Adjust toggle wears a decorated, softly animated border so it reads as a special mode */
+.btn.mapadj{border-color:#5a8f74}
+.btn.mapadj::after{content:"";position:absolute;inset:-1px;border-radius:5px;padding:1px;pointer-events:none;
+  background:linear-gradient(120deg,#8dffbe,#63c8e0,#d0b45a,#8dffbe);background-size:300% 100%;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:.55;animation:mapadjEdge 3.5s linear infinite}
+.btn.mapadj.act::after{opacity:.95}
+.btn.mapadj.act{box-shadow:0 0 12px rgba(141,255,190,.35)}
+@keyframes mapadjEdge{to{background-position:300% 0}}
 .sbtn,#selall button,#mzoom button,.cbtn{transition:transform .14s cubic-bezier(.22,1,.36,1),background .14s ease,border-color .14s ease,color .14s ease}
 .sbtn:active,#selall button:active,.cbtn:active{transform:scale(.92)}
 .port .uico{width:24px;height:24px}
@@ -1040,11 +1067,17 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     </div>
   </div>
   <div id="topbar" class="pan">
-    <div class="cell"><span class="ico sup"></span><div><div class="res sup" id="rSup">0</div><div class="lbl">supply</div></div></div>
-    <div class="cell"><span class="ico scr"></span><div><div class="res scr" id="rScr">0</div><div class="lbl">scrap</div></div></div>
+    <div class="cell conv" id="cellSup" title="Convert scrap → supply"><span class="ico sup"></span><div><div class="res sup" id="rSup">0</div><div class="lbl">supply ⇄</div></div></div>
+    <div class="cell conv" id="cellScr" title="Convert supply → scrap"><span class="ico scr"></span><div><div class="res scr" id="rScr">0</div><div class="lbl">scrap ⇄</div></div></div>
     <div class="cell"><div id="sun"></div><div><div id="clock">06:00</div><div class="lbl" id="phase">day</div></div></div>
     <div class="cell" id="wavebox"><div><div class="lbl">wave <span id="wavenum">0</span></div><div id="wavebar"><div id="wavefill"></div></div></div><div id="wavetxt">scouting</div></div>
     <div class="cell"><div><div id="rPop">0/0</div><div class="lbl">pop</div></div></div>
+  </div>
+  <div id="convpop" class="pan" style="display:none">
+    <div id="convTitle">Convert</div>
+    <input type="range" id="convAmt" min="0" max="100" value="50">
+    <div id="convOut"><span id="convSpend">0</span> <span id="convArrow">→</span> <span id="convGet">0</span></div>
+    <div id="convBtns"><button id="convDo">Convert</button><button id="convX">✕</button></div>
   </div>
   <div id="speed" class="pan">
     <button class="sbtn spdtog" id="spdtog" title="Hide / show speed bar">⏱</button>
@@ -1342,7 +1375,7 @@ const MAP_PRESETS = {
 function setMapSize(w, h) { MW = w; MH = h; WW = MW * TS; WH = MH * TS; }
 const SEA = 96, SHORE = 104, MOUNT = 198, SNOW = 232;   // elevation thresholds
 let BASE_TX = 90, BASE_TY = 225;                        // chosen at generation time
-let MINI = { zoom: 1, cx: 0, cy: 0 };                   // minimap zoom (1 = whole world) + tracked centre
+let MINI = { zoom: 1, cx: 0, cy: 0, bias: 1 };                   // minimap zoom (1 = whole world) + tracked centre
 let BASE_X = BASE_TX * TS, BASE_Y = BASE_TY * TS;
 
 /* Embedded weapon SFX (user-chosen real samples, trimmed + normalized MP3). */
@@ -5655,6 +5688,21 @@ function clearTerrainAt(wx, wy, rTiles) {
 }
 /* the engineer's tuft brush: paint grass tufts onto any ground, or brush them away — held in two tile sets the grass
    renderer honours (G.forceTuft / G.noTuft), with G.tuftStamp bumped so the affected grass chunks rebuild. */
+/* the engineer's ground brush: repaint the tile type — grass, sand or concrete (a road tile) — under the brush, then
+   flag the covered terrain chunks and grass to rebuild. Water and building footprints are left alone. */
+function paintGround(wx, wy, rTiles, type) {
+  const tt = type === 'sand' ? T_SAND : type === 'concrete' ? T_ROAD : T_GRASS;
+  const r = rTiles * TS, r2 = r * r; let changed = 0, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (let ty = Math.floor((wy - r) / TS); ty <= Math.floor((wy + r) / TS); ty++)
+    for (let tx = Math.floor((wx - r) / TS); tx <= Math.floor((wx + r) / TS); tx++) {
+      if (!inMap(tx, ty)) continue; const ti = tileIdx(tx, ty);
+      if (WATER(MAP.t[ti]) || (G.gridB && G.gridB[ti])) continue;
+      const cxp = tx * TS + TS * .5, cyp = ty * TS + TS * .5; if (dist2(cxp, cyp, wx, wy) > r2) continue;
+      if (MAP.t[ti] !== tt) { MAP.t[ti] = tt; changed++; if (tx < x0) x0 = tx; if (ty < y0) y0 = ty; if (tx > x1) x1 = tx; if (ty > y1) y1 = ty; }
+    }
+  if (changed) { G.tuftStamp = (G.tuftStamp || 0) + 1; if (typeof dirtyTerrain === 'function') dirtyTerrain(x0, y0, x1, y1); }
+  return changed;
+}
 function paintTuft(wx, wy, rTiles, add) {
   const r = rTiles * TS, r2 = r * r; let changed = 0;
   if (!G.forceTuft) G.forceTuft = new Set(); if (!G.noTuft) G.noTuft = new Set();
@@ -7302,7 +7350,9 @@ function updateTime(dt) {
   // the clock advances on the host (and in single player); a co-op client takes the time from the host, and "Hold" freezes it for everyone
   const netFollowTime = (typeof NP !== 'undefined' && NP.on && !NP.host);
   if (!G.dayHold && !netFollowTime) {
-    G.day += dt / G.dayLen * ((G.day < .22 || G.day > .76) ? .5 : 1);   // night runs at half speed, so darkness lasts about twice as long as daylight
+    // day is longer than night, 2.5 : 1.75. The day phase spans 0.54 of the cycle, night 0.46; running night ~1.22× faster
+    // makes their real-time lengths land on that ratio (day 2.5 : night 1.75).
+    G.day += dt / G.dayLen * ((G.day < .22 || G.day > .76) ? 1.217 : 1);
     if (G.day >= 1) { G.day -= 1; G.days = (G.days || 0) + 1; if (G.days === (G.rainDay || 7)) alertMsg('Day ' + G.days + ' — the weather is turning; rain is coming', 'info'); }
   }
   const wasNight = G.night;
@@ -12369,10 +12419,11 @@ function drawMinimap() {
   /* ---- minimap icons: big, crisp vector-style markers that loop-animate so the eye is drawn straight to them ----
      HQ (player command post) · capturable villages · enemy faction strongholds/camps · the moving horde. */
   const T = G.t, _pl = .5 + .5 * Math.sin(T * 3.4);
+  const IK = clamp(.72 + ((MINI.zoom || 1) - 1) / 5 * 1.05, .72, 1.85);   // icons grow as the minimap zooms in, shrink when it shows the whole world
   const _glow = (col, blur) => { mctx.shadowColor = col; mctx.shadowBlur = blur; mctx.shadowOffsetX = 0; mctx.shadowOffsetY = 0; };
   const _noGlow = () => { mctx.shadowBlur = 0; };
   // enemy faction crest — a shield with a looping shine sweep and a slow bob; a stronghold gets a bigger one than a camp
-  const drawCrest = (x, y, r, col) => { mctx.save(); mctx.translate(x, y + Math.sin(T * 2 + x * .05) * 1.0);
+  const drawCrest = (x, y, r, col) => { mctx.save(); mctx.translate(x, y + Math.sin(T * 2 + x * .05) * 1.0); mctx.scale(IK, IK);
     _glow('rgba(0,0,0,.6)', 3);
     mctx.beginPath(); mctx.moveTo(0, -r - 1.5); mctx.lineTo(r + 1.5, -r * .38); mctx.quadraticCurveTo(r, r * .75, 0, r + 2.2); mctx.quadraticCurveTo(-r, r * .75, -(r + 1.5), -r * .38); mctx.closePath();
     mctx.fillStyle = 'rgba(10,10,12,.95)'; mctx.fill(); _noGlow();
@@ -12382,7 +12433,7 @@ function drawMinimap() {
     mctx.fillStyle = 'rgba(255,255,255,.9)'; mctx.fillRect(-r * .17, -r * .5, r * .34, r * 1.0);
     mctx.restore(); };
   // capture point (village) — a flag whose pennant waves; while it is being taken it throws expanding "ping" rings
-  const drawFlag = (x, y, col, contested) => { mctx.save(); mctx.translate(x, y);
+  const drawFlag = (x, y, col, contested) => { mctx.save(); mctx.translate(x, y); mctx.scale(IK, IK);
     if (contested) for (let i = 0; i < 2; i++) { const t = (T * 1.2 + i * .5) % 1; mctx.strokeStyle = 'rgba(255,232,140,' + ((1 - t) * .8) + ')'; mctx.lineWidth = 1.8; mctx.beginPath(); mctx.arc(0, -3, 4 + t * 10, 0, TAU); mctx.stroke(); }
     _glow('rgba(0,0,0,.55)', 2);
     mctx.fillStyle = 'rgba(232,238,244,.96)'; mctx.fillRect(-1.1, -13, 2.2, 17); _noGlow();
@@ -12392,7 +12443,7 @@ function drawMinimap() {
     mctx.fillStyle = 'rgba(18,22,26,.9)'; mctx.beginPath(); mctx.arc(0, 4, 2, 0, TAU); mctx.fill();
     mctx.restore(); };
   // the player's command post — a bold star inside a rotating sweep ring, with a soft cyan glow and a gentle pulse
-  const drawHQ = (x, y) => { mctx.save(); mctx.translate(x, y);
+  const drawHQ = (x, y) => { mctx.save(); mctx.translate(x, y); mctx.scale(IK, IK);
     _glow('#5fd8ff', 9); mctx.strokeStyle = 'rgba(150,235,255,.95)'; mctx.lineWidth = 2.2;
     const a0 = (T * 1.7) % TAU; mctx.beginPath(); mctx.arc(0, 0, 11, a0, a0 + Math.PI * 1.35); mctx.stroke();
     mctx.beginPath(); mctx.arc(0, 0, 11, a0 + Math.PI, a0 + Math.PI + Math.PI * .5); mctx.stroke(); _noGlow();
@@ -12417,7 +12468,7 @@ function drawMinimap() {
     let hx = 0, hy = 0, hn = 0; for (const z of G.zeds) if (!z.dead && z.horde) { hx += z.x; hy += z.y; hn++; }
     if (!hn && G.hordeEv && G.hordeEv.origin) { hx = G.hordeEv.origin.x; hy = G.hordeEv.origin.y; hn = 1; }
     if (hn) { hx /= hn; hy /= hn; const p = px(hx, hy);
-      mctx.save(); mctx.translate(p[0], p[1]);
+      mctx.save(); mctx.translate(p[0], p[1]); mctx.scale(IK, IK);
       _glow('#ff4040', 6);
       for (let i = 0; i < 3; i++) { const t = (T * 1.3 + i / 3) % 1; mctx.strokeStyle = 'rgba(255,70,70,' + ((1 - t) * .8) + ')'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(0, 0, 4 + t * 13, 0, TAU); mctx.stroke(); }
       const pl = .5 + .5 * Math.sin(T * 7); mctx.fillStyle = 'rgba(255,55,55,' + (.5 + .4 * pl) + ')'; mctx.beginPath(); mctx.arc(0, 0, 5.5 + pl * 1.8, 0, TAU); mctx.fill(); _noGlow();
@@ -12897,7 +12948,7 @@ function gameOver(reason) {
 
 /* ---------------- selection ---------------- */
 function clearSel() { for (const e of G.sel) e.sel = false; G.sel.length = 0; }
-function setSel(arr) { clearSel(); for (const e of arr) { e.sel = true; G.sel.push(e); } UI.tab = null; UI.bcat = null; UI.clearMode = false; refreshCard(true); }   // a fresh selection resets the command panel to its root menu
+function setSel(arr) { clearSel(); for (const e of arr) { e.sel = true; G.sel.push(e); } UI.tab = null; UI.bcat = null; UI.clearMode = false; if (UI.brush) UI.brush.on = false; refreshCard(true); }   // a fresh selection resets the command panel to its root menu
 /* select-all row above the minimap: every unit you own, or just the infantry / ground vehicles / aircraft */
 function selectAllOf(f) {
   const list = G.units.filter(u => !u.dead && !u.inside && isMine(u) && (f === 'all' || (f === 'inf' ? !u.def.veh : f === 'veh' ? (u.def.veh && !u.def.fly) : f === 'eng' ? !!u.def.builder : !!u.def.fly)));
@@ -12966,6 +13017,12 @@ function formationOffsets(shape, n, sp) {
   return out;
 }
 
+/* the Map Adjust brush: run whichever terraform tool is armed under the cursor */
+function applyBrush(wx, wy) { const B = UI.brush; if (!B || !B.on) return; const sz = B.size || 2;
+  if (B.tool === 'clearTrees') { if (typeof clearTerrainAt === 'function') clearTerrainAt(wx, wy, sz); }
+  else if (B.tool === 'tuftAdd') { if (typeof paintTuft === 'function') paintTuft(wx, wy, sz, true); }
+  else if (B.tool === 'tuftClear') { if (typeof paintTuft === 'function') paintTuft(wx, wy, sz, false); }
+  else if (typeof paintGround === 'function') paintGround(wx, wy, sz, B.tool); }
 /* ---------------- orders ---------------- */
 function issueOrder(wx, wy, shift, fast) {
   const units = G.sel.filter(e => e.kind === 'unit');
@@ -13340,11 +13397,7 @@ function cardFor() {
     }
     if (bld.t === 'hq') {
       const me = G.players[G.me];
-      btns.push({
-        g: '⇄', n: 'Refine 50▲ → 10◆', k: 'C', tip: 'Trade 50 supply for 10 scrap (5 : 1).',
-        dis: !me.unlim.sup && me.sup < 50,
-        fn: () => { if (!me.unlim.sup && me.sup < 50) { AU.ui('no'); return; } if (!me.unlim.sup) me.sup -= 50; me.scr += 10; popText((G.hq || bld).x, (G.hq || bld).y - 18, '+10 ◆', '#9fe6c0'); AU.ui('ok'); refreshCard(true); }
-      });
+      // resource conversion moved to the top bar — click a resource total to open the converter
       btns.push({
         g: '📣', n: bld.alarmRally ? 'Stand Down' : 'Alarm: Rally', k: 'R', act: !!bld.alarmRally,
         tip: 'Sound the siren and recall every unit you own to a defensive ring 5 tiles around the command post; they hold there facing outward. Press again to stand down.',
@@ -13365,11 +13418,26 @@ function cardFor() {
 
   if (units.length) {
     const hasEng = units.some(u => u.def.builder);
+    if (UI.tab === 'mapadj' && hasEng) {
+      UI.brush = UI.brush || { on: false, tool: 'clearTrees', size: 2 };
+      btns.title = 'map adjust · brush ' + (UI.brush.size || 2) + '  (Alt+scroll)';
+      const TOOLS = [
+        { id: 'clearTrees', g: '🪓', n: 'Clear Trees', k: '1', tip: 'Permanently clear trees from the brushed ground.' },
+        { id: 'tuftAdd', g: '🌱', n: 'Tuft +', k: '2', tip: 'Paint grass tufts onto any ground.' },
+        { id: 'tuftClear', g: '🍂', n: 'Tuft −', k: '3', tip: 'Brush grass tufts away.' },
+        { id: 'grass', g: '🟩', n: 'Ground: Grass', k: '4', tip: 'Repaint the ground as grass.' },
+        { id: 'sand', g: '🟨', n: 'Ground: Sand', k: '5', tip: 'Repaint the ground as sand.' },
+        { id: 'concrete', g: '⬜', n: 'Ground: Concrete', k: '6', tip: 'Repaint the ground as concrete.' }];
+      for (const t of TOOLS) btns.push({ g: t.g, n: t.n, k: t.k, tip: t.tip + '\nDrag to paint · Alt+scroll resizes · right-click stops.', act: !!(UI.brush.on && UI.brush.tool === t.id), cls: 'cat cat-' + t.id, fn: () => { UI.brush = { on: true, tool: t.id, size: UI.brush.size || 2 }; UI.place = null; UI.attackMove = false; AU.ui('ok'); refreshCard(true); } });
+      btns.push({ g: '⭕', n: 'Brush ' + (UI.brush.size || 2), k: 'Z', tip: 'Cycle the brush radius (1–8 tiles). Alt+scroll on the map does the same.', fn: () => { UI.brush.size = ((UI.brush.size || 2) % 8) + 1; AU.ui('ok'); refreshCard(true); } });
+      btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.tab = null; UI.brush.on = false; refreshCard(true); } });
+      return btns;
+    }
     if (UI.tab === 'build' && hasEng) {
       // construction is split by purpose: pick a category first, then the structure
       const CATS = [
-        { id: 'unit', n: 'Unit Buildings', k: '1', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Vehicle Bay, Airbase.' },
-        { id: 'infra', n: 'Infrastructure', k: '2', g: '🏭', tip: 'Economy and tech: Research Lab, Scrap Refinery, Scrap Factory, Supply Warehouse.' },
+        { id: 'infra', n: 'Infrastructure', k: '1', g: '🏭', tip: 'Economy and tech: Research Lab, Scrap Refinery, Scrap Factory, Supply Warehouse.' },
+        { id: 'unit', n: 'Unit Buildings', k: '2', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Vehicle Bay, Airbase.' },
         { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, Floodlights, walls, fences, gates, traps and the Culvert bunker.' }];
       if (!UI.bcat) {
         btns.title = 'construction';
@@ -13393,13 +13461,7 @@ function cardFor() {
     btns.title = units.length > 1 ? units.length + ' units selected' : units[0].def.name;
     if (hasEng) btns.push({ g: '🏗️', n: 'Build', k: 'B', tip: 'Open the construction menu.', cls: 'blink', fn: () => { UI.tab = 'build'; refreshCard(true); } });
     if (hasEng) {
-      btns.push({ g: '🪓', n: UI.clearMode ? 'Clearing…' : 'Clear Terrain', k: 'X', act: !!UI.clearMode, tip: 'Paint the ground to permanently clear trees and keep the area from growing back. Drag to paint; use Brush to resize; right-click to stop.', fn: () => { UI.clearMode = !UI.clearMode; if (UI.clearMode) { UI.place = null; UI.attackMove = false; } AU.ui('ok'); refreshCard(true); } });
-      if (UI.clearMode) btns.push({ g: '⭕', n: 'Brush ' + (UI.clearSize || 2), k: 'Z', tip: 'Cycle the clearing brush radius (1–6 tiles).', fn: () => { UI.clearSize = ((UI.clearSize || 2) % 6) + 1; AU.ui('ok'); refreshCard(true); } });
-      btns.push({ g: '🌱', n: UI.tuftBrush ? (UI.tuftAdd ? 'Adding…' : 'Clearing…') : 'Tuft Brush', k: 'V', act: !!UI.tuftBrush, tip: 'Paint grass tufts onto any ground, or brush them away. Drag to paint; toggle Add/Clear; use Brush to resize; right-click to stop.', fn: () => { UI.tuftBrush = !UI.tuftBrush; if (UI.tuftBrush) { UI.clearMode = false; UI.place = null; UI.attackMove = false; if (UI.tuftAdd === undefined) UI.tuftAdd = true; } AU.ui('ok'); refreshCard(true); } });
-      if (UI.tuftBrush) {
-        btns.push({ g: UI.tuftAdd ? '➕' : '➖', n: UI.tuftAdd ? 'Add' : 'Clear', k: 'G', tip: 'Switch the tuft brush between adding and clearing.', fn: () => { UI.tuftAdd = !UI.tuftAdd; AU.ui('ok'); refreshCard(true); } });
-        btns.push({ g: '⭕', n: 'Brush ' + (UI.tuftSize || 2), k: 'Z', tip: 'Cycle the tuft brush radius (1–6 tiles).', fn: () => { UI.tuftSize = ((UI.tuftSize || 2) % 6) + 1; AU.ui('ok'); refreshCard(true); } });
-      }
+      btns.push({ g: '🗺️', n: 'Map Adjust', k: 'X', cls: 'mapadj', act: !!(UI.brush && UI.brush.on), tip: 'Terraform tools: clear trees, paint or clear grass tufts, and repaint the ground as grass, sand or concrete. Alt + scroll resizes the brush.', fn: () => { UI.tab = 'mapadj'; AU.ui('ok'); refreshCard(true); } });
     }
     btns.push({ g: '⚔️', n: 'Attack Move', k: 'A', tip: 'Advance and engage anything on the way.', act: UI.attackMove, fn: () => { UI.attackMove = !UI.attackMove; refreshCard(true); } });
     btns.push({ g: '✋', n: 'Stop', k: 'S', tip: 'Cancel current orders.', fn: () => { for (const u of units) u.order = null; AU.ui('ok'); } });
@@ -13530,6 +13592,8 @@ function refreshCard(force) {
   if (paged) { host.innerHTML = ''; const t = document.createElement('div'); t.id = 'cmdtitle'; t.textContent = 'structure menu → at cursor'; elCmd.appendChild(t); const pg = $('bpoppg'); if (pg) pg.remove(); }
   else { const t = document.createElement('div'); t.id = 'cmdtitle'; t.textContent = btns.title || ''; elCmd.appendChild(t); $('bpopcmd').innerHTML = ''; }
   UI.cardBtns = []; UI.allBtns = btns;
+  const _screen = (paged ? 'bld' : '') + '|' + (UI.tab || '') + '|' + (UI.bcat || '') + '|' + (UI.brush && UI.brush.on ? UI.brush.tool : '');
+  const _swap = _screen !== UI._screen; UI._screen = _screen;   // only replay the entry animation when the menu actually switches screen
   const shown = paged ? btns.slice(UI.page * 10, UI.page * 10 + 10) : btns;
   shown.forEach((b, i) => { if (paged) b.k = String((i + 1) % 10); });
   for (const b of shown) {
@@ -13543,6 +13607,7 @@ function refreshCard(force) {
     el.onclick = e => { e.stopPropagation(); if (!b.dis && b.fn) b.fn(); };
     el.onmouseenter = () => showTip(el, b);
     el.onmouseleave = hideTip;
+    if (_swap) { el.classList.add('in'); el.style.animationDelay = (UI.cardBtns.length * 0.02) + 's'; }
     host.appendChild(el); UI.cardBtns.push({ el, b });
   }
   if (paged && pages > 1) { const pg = document.createElement('div'); pg.className = 'pg'; pg.id = 'bpoppg'; pg.textContent = 'page ' + (UI.page + 1) + '/' + pages + '  ·  + / − to turn'; $('bpop').appendChild(pg); }
@@ -13707,7 +13772,15 @@ function updateHint() {
 function focusHQ() { if (G.hq && !G.hq.dead) centerOn(G.hq.x, G.hq.y); }
 function centerOn(x, y) { CAM.x = x - CAM.vw / 2; CAM.y = y - CAM.vh / 2; clampCam(); }
 /* ---- minimap zoom: MINI.zoom 1 = whole world; when zoomed in, the minimap follows the camera ---- */
+function miniStep() {
+  // the minimap zoom tracks the camera zoom (further in on the map = further in on the minimap), eased for a smooth glide,
+  // with a manual bias the +/- buttons and the minimap scroll wheel still nudge
+  const camN = clamp(((CAM.zoom || 1) - .55) / (7.5 - .55), 0, 1);
+  const target = clamp((1 + camN * 4) * (MINI.bias || 1), 1, 6);
+  MINI.zoom = MINI.zoom || 1; MINI.zoom += (target - MINI.zoom) * .12; if (Math.abs(target - MINI.zoom) < .01) MINI.zoom = target;
+}
 function miniXform() {
+  miniStep();
   const mw = mini.width, mh = mini.height, z = clamp(MINI.zoom || 1, 1, 6), sc = (mw / WW) * z;
   const halfW = mw / 2 / sc, halfH = mh / 2 / sc;
   let cx = z > 1 ? (CAM.x + CAM.vw / 2) : WW / 2, cy = z > 1 ? (CAM.y + CAM.vh / 2) : WH / 2;
@@ -13717,7 +13790,7 @@ function miniXform() {
   return { sc, cx, cy, mw, mh };
 }
 function miniToWorld(mx, my) { const X = miniXform(); return [X.cx + (mx - X.mw / 2) / X.sc, X.cy + (my - X.mh / 2) / X.sc]; }
-function setMiniZoom(z) { MINI.zoom = clamp(z, 1, 6); }
+function setMiniZoom(z) { MINI.bias = clamp((MINI.bias || 1) * (z / Math.max(.5, MINI.zoom || 1)), .5, 2.5); }
 function clampCam() {
   CAM.x = clamp(CAM.x, -80, WW - CAM.vw + 80);
   CAM.y = clamp(CAM.y, -60, WH - CAM.vh + 60);
@@ -13782,16 +13855,14 @@ cv.addEventListener('mousedown', e => {
       return;
     }
     if (UI.moving) { finishRelocate(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
-    if (UI.clearMode) { clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2); IN.down = true; return; }
-    if (UI.tuftBrush && typeof paintTuft === 'function') { paintTuft(s2wx(x, y), s2wy(y, x), UI.tuftSize || 2, !!UI.tuftAdd); IN.down = true; return; }
+    if (UI.brush && UI.brush.on) { applyBrush(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
     if (UI.place) { tryPlace(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
     IN.down = true; IN.dragging = true; IN.dx0 = x; IN.dy0 = y; IN.dragDist = 0;
   } else if (e.button === 2) {
     if (UI.spawnDrop) { cancelSpawnDrop(); return; }
     if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); alertMsg('Spawn placement cancelled', ''); return; }
     if (UI.moving) { cancelRelocate(); return; }
-    if (UI.clearMode) { UI.clearMode = false; refreshCard(true); AU.ui('no'); return; }
-    if (UI.tuftBrush) { UI.tuftBrush = false; refreshCard(true); AU.ui('no'); return; }
+    if (UI.brush && UI.brush.on) { UI.brush.on = false; refreshCard(true); AU.ui('no'); return; }
     if (UI.pending) { cancelPending(); return; }
     if (UI.queue.length) { cancelQueue(); return; }
     if (UI.place) { UI.place = null; UI.tab = null; refreshCard(true); return; }   // un-arm placement (deploy stays; the Place HQ button re-arms)
@@ -13810,8 +13881,7 @@ window.addEventListener('mousemove', e => {
   if (x > 2 && y > 2 && x < cv.width - 2 && y < cv.height - 2) IN.hasMouse = true;
   if (IN.dragging) IN.dragDist = Math.hypot(x - IN.dx0, y - IN.dy0);
   if (UI.artyDrag) artyDragMove(s2wx(x, y), s2wy(y, x));
-  if (IN.down && UI.clearMode) clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2);
-  if (IN.down && UI.tuftBrush && typeof paintTuft === 'function') paintTuft(s2wx(x, y), s2wy(y, x), UI.tuftSize || 2, !!UI.tuftAdd);
+  if (IN.down && UI.brush && UI.brush.on) applyBrush(s2wx(x, y), s2wy(y, x));
   if (IN.down && UI.place && BDEF[UI.place] && (BDEF[UI.place].wall || BDEF[UI.place].trap || BDEF[UI.place].row)) tryPlace(s2wx(x, y), s2wy(y, x));
   if (IN.miniDrag) miniJump(e);
 });
@@ -13845,6 +13915,11 @@ window.addEventListener('mouseup', e => {
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
+  if (e.altKey && UI.brush && UI.brush.on) {   // Alt + wheel: resize the Map Adjust brush
+    UI.brush.size = clamp((UI.brush.size || 2) + (e.deltaY < 0 ? 1 : -1), 1, 8);
+    if (typeof refreshCard === 'function') refreshCard(true);
+    return;
+  }
   if (IN.keys.r && (UI.place || UI.pending || (UI.queue && UI.queue.length))) {   // hold R + wheel: spin the building before you place it (15 deg a click)
     UI.placeRot = (((UI.placeRot || 0) - Math.sign(e.deltaY || 0) * (Math.PI / 12)) % TAU + TAU) % TAU;
     if (typeof refreshConfirm === 'function') refreshConfirm();
@@ -13904,7 +13979,7 @@ window.addEventListener('keydown', e => {
   if (UI.ctrl && typeof ctrlKey === 'function' && ctrlKey(e)) return;   // direct control: 1/2/3 pick the gun, W A S D drive, Esc releases — nothing else reaches the RTS bindings
 
   if (e.code === 'Space') { focusHQ(); e.preventDefault(); return; }
-  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.pending = null; UI.place = null; UI.tab = null; UI.attackMove = false; refreshConfirm(); refreshCard(true); return; }
+  if (k === 'escape') { if (UI.spawnDrop) cancelSpawnDrop(); if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); } cancelRelocate(); cancelQueue(); UI.pending = null; UI.place = null; UI.tab = null; UI.attackMove = false; if (UI.brush) UI.brush.on = false; refreshConfirm(); refreshCard(true); return; }
   if (k === 'enter') { if (UI.pending) commitPending(); else commitQueue(); return; }
   if (k === 'p') { if (G.mp) { alertMsg('No pause in multiplayer', 'info'); return; } setSpeed(G.speed === 0 ? 1 : 0); alertMsg(G.speed === 0 ? 'PAUSED' : 'RESUMED', 'info'); return; }
   const bSel = G.sel.some(x => x.kind === 'build' && !x.dead);
@@ -14809,6 +14884,8 @@ function ctrlHudTick(dt) {
     if (chunks3.size > 520) { for (const [k, m] of chunks3) { const cx = k % 4096, cy = (k / 4096) | 0; if (cx < cx0 - 6 || cx > cx1 + 6 || cy < cy0 - 6 || cy > cy1 + 6) { scene3.remove(m); m.geometry.dispose(); chunks3.delete(k); if (chunks3.size < 440) break; } } }
   }
   function dropChunk(cx, cy) { const key = cy * 4096 + cx, m = chunks3.get(key); if (m) { scene3.remove(m); m.geometry.dispose(); chunks3.delete(key); } }
+  // let the engineer's ground brush force a rebuild of the terrain chunks it repainted (they rebuild from MAP.t next frame)
+  window.dirtyTerrain = (tx0, ty0, tx1, ty1) => { if (tx1 < tx0) return; for (let cy = Math.floor(ty0 / CT3) - 1; cy <= Math.floor(ty1 / CT3) + 1; cy++) for (let cx = Math.floor(tx0 / CT3) - 1; cx <= Math.floor(tx1 / CT3) + 1; cx++) dropChunk(cx, cy); };
   /* explosions dig into the ground: a bowl with a raised rim, the floor turned to churned earth */
   function ensureCrat() { if (!CRAT || cratMW !== MW || VH !== MH * RES + 1) { cratMW = MW; VW = MW * RES + 1; VH = MH * RES + 1; CRAT = new Float32Array(VW * VH); CRW = new Float32Array(VW * VH); } }
   /* a culvert is dug into the ground: sink the terrain vertices inside its footprint to the trench floor (flat, with a short ramp at the edge) */
@@ -17730,7 +17807,12 @@ function ctrlHudTick(dt) {
     for (let i = decalList.length - 1; i >= 0; i--) { const dl = decalList[i]; if (dl.life) { const age = G.t - dl.t0; if (age > dl.life) { decalList.splice(i, 1); continue; } } if (dl.x < vx0 * K || dl.x > vx1 * K || dl.y < vy0 * K || dl.y > vy1 * K) continue; const gy = groundY(dl.x / K, dl.y / K) + .02; if (dl.k < 0) { const fk = dl.life ? Math.min(1, (dl.life - (G.t - dl.t0)) / (dl.life * .5)) : 1; put(P.scorch, dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2 * fk, dl.r * 2 * fk, 1, WHITE); } else put(P.splat[dl.k], dl.x, gy, dl.y, -HPI, dl.rot, 0, dl.r * 2, dl.r * 2, 1, dl.c); }
     PF('decals');
     /* ---- placement ghosts ---- */
-    if (UI.clearMode && IN.hasMouse) { const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.clearSize || 2) * TS * K; put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3('#ff8a5a')); }
+    if (UI.brush && UI.brush.on && IN.hasMouse) {   // the Map Adjust brush: a ground ring at the cursor, tinted by the active tool
+      const wx = s2wx(IN.mx, IN.my), wy = s2wy(IN.my, IN.mx), rr = (UI.brush.size || 2) * TS * K;
+      const bc = { clearTrees: '#ff8a5a', tuftAdd: '#7dffb2', tuftClear: '#c98a4a', grass: '#5fbf4a', sand: '#e6cf8a', concrete: '#b8bcc0' }[UI.brush.tool] || '#8dffbe';
+      put(P.sel, wx * K, groundY(wx, wy) + .05, wy * K, -HPI, 0, 0, rr * 2, rr * 2, 1, col3(bc));
+      put(P.ring, wx * K, groundY(wx, wy) + .06, wy * K, -HPI, 0, 0, rr * 2 * (.9 + .1 * Math.sin(G.t * 5)), rr * 2 * (.9 + .1 * Math.sin(G.t * 5)), 1, col3(bc));
+    }
     ghostBegin();
     if (UI.pending) { const d = BDEF[UI.pending.t] || BDEF.hq; const ok = UI.pending.t === 'hq' ? (typeof deployHQOk === 'function' ? deployHQOk(UI.pending.tx, UI.pending.ty) : canPlace('hq', UI.pending.tx, UI.pending.ty)) : (canPlace(UI.pending.t, UI.pending.tx, UI.pending.ty) && affordable(d.cost)); ghost3(UI.pending.tx, UI.pending.ty, d, ok); }   // the tapped-down blueprint sits fixed until Confirm — RED if invalid or too close to another post
     else if (UI.place && BDEF[UI.place]) { const d = BDEF[UI.place], gx = Math.floor(s2wx(IN.mx, IN.my) / TS - (d.w - 1) / 2), gy2 = Math.floor(s2wy(IN.my, IN.mx) / TS - (d.h - 1) / 2); const ok = UI.place === 'hq' ? (typeof deployHQOk === 'function' ? deployHQOk(gx, gy2) : canPlace('hq', gx, gy2)) : (canPlace(UI.place, gx, gy2) && (UI.deploy || UI.queue.length ? true : affordable(d.cost))); ghost3(gx, gy2, d, ok); }
@@ -18464,6 +18546,38 @@ $('miniHead').addEventListener('click', () => $('miniwrap').classList.toggle('co
 for (const b of document.querySelectorAll('#selall button')) { const h = e => { e.preventDefault(); e.stopPropagation(); selectAllOf(b.dataset.f); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
 for (const b of document.querySelectorAll('#mzoom button[data-mz]')) { const h = e => { e.preventDefault(); e.stopPropagation(); setMiniZoom((MINI.zoom || 1) * (b.dataset.mz === 'up' ? 1.4 : 1 / 1.4)); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
 { const b = document.getElementById('camReset'); if (b) { const h = e => { e.preventDefault(); e.stopPropagation(); resetCamera(); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); } }
+/* ---- top-bar resource converter: click a resource total to trade between supply and scrap, choosing the amount on a drag slider ---- */
+(function () {
+  const pop = document.getElementById('convpop'); if (!pop) return;
+  const RATE = 5;                                            // 5 supply : 1 scrap, both ways
+  const amt = document.getElementById('convAmt'), spendEl = document.getElementById('convSpend'), getEl = document.getElementById('convGet'), arrow = document.getElementById('convArrow'), title = document.getElementById('convTitle');
+  const me = () => (G.players && G.players[G.me]) || { unlim: {} };
+  const srcMax = () => UI.convMode === 'toScrap' ? Math.floor(G.sup) : Math.floor(G.scr);
+  function readout() {
+    const frac = (+amt.value) / 100, max = srcMax(), spend = Math.floor(max * frac);
+    let give;
+    if (UI.convMode === 'toScrap') { const s = Math.floor(spend / RATE) * RATE; spendEl.textContent = s + ' ▲'; give = s / RATE; getEl.textContent = '+' + give + ' ◆'; UI._convSpend = s; UI._convGive = give; }
+    else { spendEl.textContent = spend + ' ◆'; give = spend * RATE; getEl.textContent = '+' + give + ' ▲'; UI._convSpend = spend; UI._convGive = give; }
+  }
+  function open(mode) {
+    UI.convMode = mode; pop.classList.remove('toScrap', 'toSupply'); pop.classList.add(mode);
+    title.textContent = mode === 'toScrap' ? 'Supply → Scrap  (5 : 1)' : 'Scrap → Supply  (1 : 5)';
+    amt.value = 50; readout(); pop.classList.add('show'); pop.style.display = 'flex';
+  }
+  function close() { pop.classList.remove('show'); setTimeout(() => { if (!pop.classList.contains('show')) pop.style.display = 'none'; }, 200); }
+  amt.addEventListener('input', readout);
+  document.getElementById('convDo').addEventListener('click', e => { e.stopPropagation();
+    const spend = UI._convSpend || 0, give = UI._convGive || 0; if (spend <= 0) { AU.ui('no'); return; }
+    if (UI.convMode === 'toScrap') { if (G.sup < spend && !me().unlim.sup) { AU.ui('no'); return; } if (!me().unlim.sup) G.sup -= spend; G.scr += give; }
+    else { if (G.scr < spend && !me().unlim.scr) { AU.ui('no'); return; } if (!me().unlim.scr) G.scr -= spend; G.sup += give; }
+    if (G.hq) popText(G.hq.x, G.hq.y - 18, (UI.convMode === 'toScrap' ? '+' + give + ' ◆' : '+' + give + ' ▲'), '#9fe6c0');
+    AU.ui('ok'); readout();
+  });
+  document.getElementById('convX').addEventListener('click', e => { e.stopPropagation(); close(); });
+  document.getElementById('cellSup').addEventListener('click', e => { e.stopPropagation(); if (pop.classList.contains('show') && UI.convMode === 'toSupply') close(); else open('toSupply'); });
+  document.getElementById('cellScr').addEventListener('click', e => { e.stopPropagation(); if (pop.classList.contains('show') && UI.convMode === 'toScrap') close(); else open('toScrap'); });
+  addEventListener('pointerdown', e => { if (pop.classList.contains('show') && !e.target.closest('#convpop') && !e.target.closest('.cell.conv')) close(); }, true);
+})();
 $('cmd').addEventListener('click', e => { if (e.target.closest('#cmdtitle')) $('cmd').classList.toggle('collapsed'); });
 
 boot();
@@ -18625,7 +18739,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b179';
+const BUILD_TAG = 'b180';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
