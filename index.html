@@ -5783,8 +5783,7 @@ function addBuilding(t, tx, ty, done) {
   const idx = G.builds.length;
   for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) G.gridB[tileIdx(x, y)] = idx;
   if (!d.flat && typeof levelToAverage === 'function') b.plat = levelToAverage(tx, ty, d.w, d.h);   // grade the site flat to the footprint's average height (traps stay on natural ground)
-  b._dropT0 = G.t;                          // the structure drops onto its platform: the renderer eases it down from above over ~0.5s
-  buildingDropFx(b);                        // dust kicked up in a ring, bumping outward around the footprint as it lands
+  if (!G.noDropFx) { b._dropT0 = G.t; buildingDropFx(b); }   // the structure drops onto its platform (renderer eases it down over ~0.5s) — suppressed for the menu showcase so its base just stands built
   clearTreesAround(b, 1.5);   // the site is cleared: every tree on the footprint and a strip around it comes down for good
   if (d.light) G.lamps.push(b);
   if (d.vision) G.towers.push(b);
@@ -9428,6 +9427,13 @@ function startFinisher(z, t) {
 /* ==================== ZOMBIES ==================== */
 const zedSense = z => (G.night ? 540 : 400);
 
+/* is this soldier already the quarry of ANOTHER predator? — pinned under one, or actively being stalked/pounced by one
+   whose claim is still fresh (refreshed every frame it pursues him). Predators avoid piling onto the same man. */
+function predTaken(u, self) {
+  if (u.pinnedBy && u.pinnedBy !== self) return true;
+  const c = u._predClaimBy;
+  return !!(c && c !== self && !c.dead && c.pin !== self && (G.t - (u._predClaimT || 0)) < 1.2);
+}
 function pickZedTarget(z) {
   // siege engines march on structures from clear across the map
   if (z.def && z.def.siege) {
@@ -9437,9 +9443,11 @@ function pickZedTarget(z) {
   const R = zedSense(z);
   let best = null, bd = R * R;
   const list = G.hUnits.near(z.x, z.y, R, _q);
+  const pred = z.def && z.def.predator;
   for (let i = 0; i < list.length; i++) {
     const u = list[i];
     if (u.dead || u.inside || u.def.fly) continue;
+    if (pred && predTaken(u, z)) continue;                    // another predator already has this man — hunt someone else
     const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u);
     if (d < bd && d < sr * sr) { bd = d; best = u; }
   }
@@ -10015,7 +10023,7 @@ function updateZeds(dt) {
       } else if (z.mission === 'raidRival') { z.mission = 'raid'; z.raidRival = null; }
     }
 
-    if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside)) z.target = pickZedTarget(z);
+    if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside) || (z.def.predator && z.target.kind === 'unit' && !z.pin && predTaken(z.target, z))) z.target = pickZedTarget(z);
     else if (z.target.kind === 'build' && ((i + G.frame) % 20) === 0) {                 // marching on a structure: troops that come into sight take priority — twice a second, look for one
       const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
       for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
@@ -10031,7 +10039,7 @@ function updateZeds(dt) {
        foot soldiers, and gnaws weakly at a building if that's all there is. ---- */
     if (z.def.predator && !z.def.worker && !z.def.struct) {
       let gx, gy, foot = null, rch = z.r + 4;
-      if (t) { gx = t.x; gy = t.y; rch = z.r + (t.kind === 'build' ? Math.max(t.w, t.h) * TS * .48 : t.r) + 4; if (t.kind === 'unit' && !t.def.veh && !t.def.fly) foot = t; }
+      if (t) { gx = t.x; gy = t.y; rch = z.r + (t.kind === 'build' ? Math.max(t.w, t.h) * TS * .48 : t.r) + 4; if (t.kind === 'unit' && !t.def.veh && !t.def.fly) { foot = t; t._predClaimBy = z; t._predClaimT = G.t; } }   // stake a claim on this man so no other predator goes for him
       else { z.wT -= dtz; if (z.wT <= 0 || (z.wx === 0 && z.wy === 0)) { const pnt = randomLandPoint(z.x, z.y, 400, 1800); if (pnt) { z.wx = pnt.x; z.wy = pnt.y; } z.wT = rnd(9, 22); } gx = z.wx; gy = z.wy; }
       if (t && t.kind === 'build' && (z.climb || 0) < 6 && dist(z.x, z.y, gx, gy) <= rch) {
         z.ang = angLerp(z.ang, angTo(z.x, z.y, gx, gy), .2);
@@ -11105,6 +11113,58 @@ function strikePreview() {
   return null;
 }
 
+/* ======================= player barracks parade guard =======================
+   The recruits on a barracks parade ground are no longer pure decoration: each post is a soldier who, when the enemy
+   comes within pistol range, stops drilling, stands his ground (he never leaves his spot on the square) and answers
+   with his 9mm sidearm. He can be cut down — and a fresh recruit falls in on the same spot within a minute. The render
+   reads each post's { alive, engaged, aimAng, flashT } to draw him drilling, shooting or gone. The post layout here
+   MUST match drawTrainingGround in 08b_render3d.js (16 push-up recruits + sergeant + 4 drill figures = 21 posts). */
+const PARADE_HP = 30, PARADE_ENGAGE = 172, PARADE_FIRE = [.45, .8], PARADE_MAUL = 20, PARADE_RESP = [30, 52];
+function paradePosts(b) {
+  if (b._pposts) return b._pposts;
+  const dirA = Math.PI / 2 + (b.facing || 0);
+  const fdx = Math.cos(dirA), fdy = Math.sin(dirA), rdx = -fdy, rdy = fdx;
+  const halfPx = (b.def ? b.def.w : 3) * TS * .55;
+  const at = (fwd, lat) => ({ x: b.x + fdx * fwd + rdx * lat, y: b.y + fdy * fwd + rdy * lat, face: dirA });
+  const list = [];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) list[r * 4 + c] = at(halfPx + (2.0 + r * 1.35) * TS, (c - 1.5) * 1.4 * TS);           // push-up ranks 0..15
+  { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.4) * TS, -2.2 * TS); list[16] = { x: p.x, y: p.y, face: dirA + Math.PI }; }                          // sergeant
+  for (let d2 = 0; d2 < 2; d2++) { const gap = 1.25 * TS, fwd = halfPx + 3.2 * TS, lat = (3.2 + d2 * 1.7) * TS; const a = at(fwd, lat), bb = at(fwd + gap, lat); list[17 + d2 * 2] = a; list[18 + d2 * 2] = { x: bb.x, y: bb.y, face: dirA + Math.PI }; }   // drill pairs 17..20
+  b._pposts = { dirA, list };
+  return b._pposts;
+}
+function guardFire(g, tgt, b) {
+  const src = b._guardSrc || (b._guardSrc = { r: 6, def: { wep: PISTOL }, ammo: 99, vx: 0, vy: 0, bDmg: 1, tier: b.tier || 1, owner: (typeof b.owner === 'number' ? b.owner : 0) });
+  src.x = g.x; src.y = g.y; src.ang = g.aimAng; src.aimT = g.aimAng;
+  fire(src, tgt, PISTOL, { x: g.x + Math.cos(g.aimAng) * 8, y: g.y + Math.sin(g.aimAng) * 8, a: g.aimAng, z: 9 });
+}
+function updateParade(dt) {
+  if (!G.builds) return;
+  for (const b of G.builds) {
+    if (b.dead || b.t !== 'barracks' || !b.done || b.owner === 'invader') continue;
+    const pp = paradePosts(b), posts = pp.list;
+    if (!b.guards || b.guards.length !== posts.length) { b.guards = []; for (let i = 0; i < posts.length; i++) b.guards[i] = { hp: PARADE_HP, alive: true, respT: 0, fireCd: rnd(0, PARADE_FIRE[1]), aimAng: posts[i].face, engaged: false, flashT: 0 }; }
+    // one cheap scan first: is any zombie near the parade at all? if not, everyone just drills (and dead men count down)
+    const anyNear = findEnemy(b.x + Math.cos(pp.dirA) * 5 * TS, b.y + Math.sin(pp.dirA) * 5 * TS, PARADE_ENGAGE + 6 * TS, 0);
+    G.cur = (typeof b.owner === 'number' ? b.owner : 0);
+    for (let i = 0; i < posts.length; i++) {
+      const g = b.guards[i], po = posts[i];
+      g.flashT = Math.max(0, g.flashT - dt * 6);
+      if (!g.alive) { g.respT -= dt; if (g.respT <= 0) { g.alive = true; g.hp = PARADE_HP; g.engaged = false; g.aimAng = po.face; } continue; }
+      let tgt = anyNear ? findEnemy(po.x, po.y, PARADE_ENGAGE, 0) : null;
+      if (tgt) {
+        g.engaged = true; g.aimAng = angTo(po.x, po.y, tgt.x, tgt.y); g.fireCd -= dt;
+        if (g.fireCd <= 0) { g.fireCd = rnd(PARADE_FIRE[0], PARADE_FIRE[1]); guardFire(g, tgt, b); g.flashT = 1; }
+      } else g.engaged = false;
+      // mauled where he stands: a zombie on top of the post chews through him
+      const zl = G.hZeds.near(po.x, po.y, 18, _q2);
+      for (let k = 0; k < zl.length; k++) { const z = zl[k]; if (z.dead) continue; const rr = z.r + 7; if (dist2(z.x, z.y, po.x, po.y) < rr * rr) { g.hp -= PARADE_MAUL * dt; break; } }
+      if (g.hp <= 0) { g.alive = false; g.respT = rnd(PARADE_RESP[0], PARADE_RESP[1]); g.engaged = false; if (typeof bloodJet === 'function') bloodJet(po.x, po.y, g.aimAng + Math.PI); }
+    }
+    G.cur = G.me;
+  }
+}
+
 function step(dt) {
   if (G.deploy && G.deploy.active) { G.frame++; if (typeof updateDeploy === 'function') updateDeploy(dt); return; }   // deployment phase: the world is frozen while the commanders site their posts
   G.t += dt; G.frame++; G.pathBudget = 4;                 // route plans the horde may run this frame
@@ -11120,6 +11180,7 @@ function step(dt) {
   deOverlapUnits(dt); if (SP) SP('deoverlap');
   updateZeds(dt); if (SP) SP('zeds');
   updateBuildings(dt);
+  updateParade(dt);
   updateCamps(dt); if (SP) SP('buildings_camps');
   updateBullets(dt); if (SP) SP('bullets');
   updateItems(dt);
@@ -17388,29 +17449,53 @@ function ctrlHudTick(dt) {
       drawFigureC(wx * K, gy2, wy * K, ang, opts.walk || 0, S, Object.assign(base, opts));
     };
     const t = G.t;
+    // each post may be a drilling recruit, a pistol-firing defender (when the enemy is in range), or empty (cut down and
+    // respawning). The combat state lives on ent.guards[idx] (set by updateParade); idx MUST match paradePosts in 07_sim.js.
+    const guards = ent.guards;
+    const post = (idx, wx, wy, faceA, trainOpts) => {
+      const gd = guards ? guards[idx] : null;
+      if (gd && !gd.alive) return;                                                          // fallen — his spot stands empty until a fresh recruit falls in
+      if (gd && gd.engaged) { fig(wx, wy, gd.aimAng, { id: trainOpts.id, gun: 'pistol', pistol: true, tac: 1, aimD: 0, rc: gd.flashT || 0, cap: trainOpts.cap, scale: trainOpts.scale || .84 }); return; }
+      fig(wx, wy, faceA, trainOpts);
+    };
     // four ranks of four recruits doing push-ups, facing out, bobbing on the sergeant's count
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
       const p = at(halfPx + (2.0 + r * 1.35) * TS, (c - 1.5) * 1.4 * TS);
       const up = Math.sin(t * 2.0 + r * 0.5) * .5 + .5;
-      fig(p.x, p.y, dirA, { prone: true, pushup: up, id: idb + r * 4 + c, gun: 'none' });
+      post(r * 4 + c, p.x, p.y, dirA, { prone: true, pushup: up, id: idb + r * 4 + c, gun: 'none' });
     }
     // the commander stands off to one side of the flag, facing the ranks in a peaked cap, right arm thrust out sweeping the line
-    { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.4) * TS, -2.2 * TS); fig(p.x, p.y, dirA + Math.PI, { id: idb + 60, gun: 'none', cap: true, command: true, scale: .98 }); }
-    // a flag on a pole at the FRONT of the parade ground
+    { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.4) * TS, -2.2 * TS); post(16, p.x, p.y, dirA + Math.PI, { id: idb + 60, gun: 'none', cap: true, command: true, scale: .98 }); }
+    // a flag on a pole at the FRONT of the parade ground — a segmented cloth that FLOWS with the wind:
+    // it streams out flat and flutters hard in a gale, and hangs limp when the air is calm
     { const fp = at(halfPx + (2.0 + 4 * 1.35 + 3.3) * TS, 0), fgy = groundY(fp.x, fp.y), fcolFlag = col3(cfg.flagCol || '#3fa64a');
       const bx = fp.x * K, bz = fp.y * K, poleY = fgy + .1, poleH = 2.5;
       put(P.cyl, bx, poleY + poleH * .5, bz, 0, 0, 0, .045, poleH, .045, WOOD);
       put(P.head, bx, poleY + poleH + .08, bz, 0, 0, 0, .075, .11, .075, GOLD);
-      const w = G.wind || { x: 1, y: 0 }, wa = Math.atan2(w.y, w.x), tt = G.t * 2.4, ripple = Math.sin(tt) * .12, fa = wa + ripple * .6;
-      const fl = 1.15, fh = .74, fx = bx + Math.cos(fa) * fl * .5, fz = bz + Math.sin(fa) * fl * .5, fy = poleY + poleH - fh * .5;
-      put(P.cloth, fx, fy, fz, 0, -fa, ripple * .5, fl, fh, .02, fcolFlag);
-      put(P.cloth, fx, fy + fh * .4, fz, 0, -fa, ripple * .5, fl, fh * .16, .022, GOLD); }
+      const w = G.wind || { x: 1, y: 0 }, ws = Math.hypot(w.x || 0, w.y || 0), wa = Math.atan2(w.y || 0, w.x || 0);
+      const lift = Math.min(1, ws / 110);                            // 0 = limp/hanging, 1 = streaming flat
+      const N = 5, segL = 1.15 / N, fh = .74;
+      const amp = .05 + lift * .5, freq = 1.5 + ws * .045;           // ripple grows and quickens with the wind
+      const droop = (1 - lift) * 1.15;                               // each segment sags this much when the air is calm
+      let cx = bx, cy = poleY + poleH - .12, cz = bz;               // hoisted just under the finial
+      for (let i = 0; i < N; i++) {
+        const ph = G.t * freq - i * 1.1, wave = Math.sin(ph);
+        const yaw = -wa + wave * amp * .7;                           // side-to-side sway in the horizontal plane
+        const rz = -droop + Math.sin(ph + .6) * amp;                // vertical ripple + gravity sag
+        _e.set(0, yaw, rz, 'YXZ'); _qq.setFromEuler(_e);
+        _p.set(segL, 0, 0).applyQuaternion(_qq); const ax = _p.x, ay = _p.y, az = _p.z;
+        _p.set(0, 1, 0).applyQuaternion(_qq); const ux = _p.x, uy = _p.y, uz = _p.z;
+        const mx = cx + ax * .5, my = cy + ay * .5, mz = cz + az * .5;
+        put(P.cloth, mx, my, mz, 0, yaw, rz, segL, fh, .02, fcolFlag);
+        put(P.cloth, mx + ux * fh * .42, my + uy * fh * .42, mz + uz * fh * .42, 0, yaw, rz, segL, fh * .16, .022, GOLD);
+        cx += ax; cy += ay; cz += az;
+      } }
     // two drilling pairs off to one side (bayonet drill for the player, sword/spear sparring for the ancient host)
     for (let d2 = 0; d2 < 2; d2++) {
       const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = 1.25 * TS, beat = Math.sin(t * 3 + d2 * 1.3);
       const a1 = at(fwd, lat), b2 = at(fwd + gap, lat);
-      fig(a1.x, a1.y, dirA, { id: idb + 70 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'spear' : 'sword'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, beat) * .7 });
-      fig(b2.x, b2.y, dirA + Math.PI, { id: idb + 71 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'sword' : 'spear'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, -beat) * .7 });
+      post(17 + d2 * 2, a1.x, a1.y, dirA, { id: idb + 70 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'spear' : 'sword'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, beat) * .7 });
+      post(18 + d2 * 2, b2.x, b2.y, dirA + Math.PI, { id: idb + 71 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'sword' : 'spear'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, -beat) * .7 });
     }
   }
   /* ======================= screen → world: raycast against the heightfield ======================= */
@@ -18549,6 +18634,7 @@ const DIFFS = {
 };
 function newGame(opts) {
   opts = opts || {};
+  G.noDropFx = false;   // default: real construction drops in cinematically (only the menu showcase suppresses it)
   if (opts.size) setMapSize(opts.size.w, opts.size.h);
   if (opts.seed != null) WSEED = opts.seed;
   G.diff = DIFFS[opts.diff] || DIFFS.normal; G.diffName = opts.diff || 'normal';
@@ -18604,6 +18690,7 @@ function newGame(opts) {
 
   // --- immediate build (menu showcase / any non-deploy start): every player gets a levelled compound right away ---
   G.deploy = null;
+  G.noDropFx = !opts.deploy;   // the menu showcase shows its base already standing — no cinematic drop-in on any construction
   let myHQ = null;
   const sites = G.mp ? G.players.map(p => { const sp = SPAWN_SITES[p.spawn % SPAWN_SITES.length]; return findSpawn(sp[0], sp[1]); }) : [[BASE_TX, BASE_TY, MAP.h[BASE_TY * MW + BASE_TX]]];
   for (let pi = 0; pi < G.players.length; pi++) {
@@ -18615,6 +18702,7 @@ function newGame(opts) {
     place('flood', 6, -5); place('flood', 6, 5); place('tower', 12, 0);
     startingSquad(tx, ty);
   }
+  G.noDropFx = false;   // done seeding the menu base — any later construction drops in normally
   G.cur = G.me; const hq = myHQ;
   BASE_TX = sites[G.me][0]; BASE_TY = sites[G.me][1]; BASE_X = BASE_TX * TS; BASE_Y = BASE_TY * TS;
   if (G.mp) makeMiniBase();
@@ -18750,7 +18838,7 @@ function tickShowcase(dt) {
   G.showSpawnT -= dt;
   if (G.showSpawnT <= 0 && G.zeds.length < 340) { G.showSpawnT = rnd(1.7, 3.1); showcaseHorde(4 + (Math.random() * 5 | 0)); }
   for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (!u.dead) u.hp = u.maxHp; }   // defenders never fall
-  if (typeof showcaseDrops === 'function') showcaseDrops(dt);   // a construction keeps dropping in behind the menu so the drop animation is always visible
+  // (the base behind the menu just stands built — no construction drops in, per design)
 }
 function cinematicCam(dt) {
   G.showTime += dt;
@@ -19313,7 +19401,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b192';
+const BUILD_TAG = 'b193';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
