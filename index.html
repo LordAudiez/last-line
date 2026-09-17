@@ -1680,6 +1680,7 @@ const AU = {
   place(x, y, vol, reach, dest) {
     // silence the menu showcase firefight — only music/ambience play on the menu
     if (typeof G !== 'undefined' && G.showcase && !G.started) return null;
+    if (!(isFinite(x) && isFinite(y) && isFinite(vol))) return null;   // never feed a WebAudio param a NaN — one bad value throws and freezes the render loop
     const c = this.ctx, d = this.distTo(x, y);
     vol *= (this.sfxVol == null ? 1 : this.sfxVol);   // SFX volume (Settings)
     const fall = 1 / (1 + Math.pow(d / (reach * .55), 1.7));
@@ -11133,10 +11134,10 @@ function paradePosts(b) {
   b._pposts = { dirA, list };
   return b._pposts;
 }
-function guardFire(g, tgt, b) {
+function guardFire(po, g, tgt, b) {
   const src = b._guardSrc || (b._guardSrc = { r: 6, def: { wep: PISTOL }, ammo: 99, vx: 0, vy: 0, bDmg: 1, tier: b.tier || 1, owner: (typeof b.owner === 'number' ? b.owner : 0) });
-  src.x = g.x; src.y = g.y; src.ang = g.aimAng; src.aimT = g.aimAng;
-  fire(src, tgt, PISTOL, { x: g.x + Math.cos(g.aimAng) * 8, y: g.y + Math.sin(g.aimAng) * 8, a: g.aimAng, z: 9 });
+  src.x = po.x; src.y = po.y; src.ang = g.aimAng; src.aimT = g.aimAng;   // the post holds the position; the guard state holds the aim
+  fire(src, tgt, PISTOL, { x: po.x + Math.cos(g.aimAng) * 8, y: po.y + Math.sin(g.aimAng) * 8, a: g.aimAng, z: 9 });
 }
 function updateParade(dt) {
   if (!G.builds) return;
@@ -11154,7 +11155,7 @@ function updateParade(dt) {
       let tgt = anyNear ? findEnemy(po.x, po.y, PARADE_ENGAGE, 0) : null;
       if (tgt) {
         g.engaged = true; g.aimAng = angTo(po.x, po.y, tgt.x, tgt.y); g.fireCd -= dt;
-        if (g.fireCd <= 0) { g.fireCd = rnd(PARADE_FIRE[0], PARADE_FIRE[1]); guardFire(g, tgt, b); g.flashT = 1; }
+        if (g.fireCd <= 0) { g.fireCd = rnd(PARADE_FIRE[0], PARADE_FIRE[1]); guardFire(po, g, tgt, b); g.flashT = 1; }
       } else g.engaged = false;
       // mauled where he stands: a zombie on top of the post chews through him
       const zl = G.hZeds.near(po.x, po.y, 18, _q2);
@@ -19401,7 +19402,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b193';
+const BUILD_TAG = 'b194';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
