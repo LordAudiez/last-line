@@ -196,15 +196,19 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 .btn .c{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:10px;color:#8dffbe;font-weight:700}
 .btn .c em{color:#ffbe63;font-style:normal;margin-left:5px}
 .btn .fill{position:absolute;inset:auto 0 0 0;height:4px;background:#3ea0ff}
-/* per-unit upgrade pill: rides on the buy tile, slides out on hover; glows and invites a click when you can afford it */
-.btn .upb{position:absolute;left:4px;right:4px;bottom:3px;height:16px;display:flex;align-items:center;justify-content:center;gap:3px;
-  border-radius:8px;font-size:9px;font-weight:800;letter-spacing:.2px;line-height:1;cursor:pointer;white-space:nowrap;overflow:hidden;
-  opacity:0;transform:translateY(7px) scale(.92);pointer-events:none;
-  transition:opacity .15s ease,transform .18s cubic-bezier(.22,1.4,.4,1),box-shadow .2s ease;z-index:4}
+/* per-unit upgrade pill: rides on the buy tile and EXTENDS UPWARD above it on hover, an up-arrow pointing the way;
+   glows and invites a click when you can afford it, with a little tail pointing down to its tile */
+.btn.has-up{overflow:visible}
+.btn .upb{position:absolute;left:1px;right:1px;bottom:calc(100% + 5px);height:17px;display:flex;align-items:center;justify-content:center;gap:3px;
+  border-radius:8px;font-size:9px;font-weight:800;letter-spacing:.2px;line-height:1;cursor:pointer;white-space:nowrap;
+  opacity:0;transform:translateY(9px) scale(.9);pointer-events:none;
+  transition:opacity .15s ease,transform .2s cubic-bezier(.22,1.5,.4,1),box-shadow .2s ease;z-index:6}
 .btn:hover .upb{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
-.btn .upb .ug{font-size:10px;line-height:1}
+.btn .upb .ug{font-size:11px;line-height:1;font-weight:900}
 .btn .upb .uc{margin-left:2px}.btn .upb .uc em{font-style:normal}
+.btn .upb::after{content:"";position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid #12a457}
 .btn .upb.can{background:linear-gradient(180deg,#37e084,#12a457);color:#04180d;border:1px solid #9dffc4;box-shadow:0 0 10px rgba(70,255,150,.55);animation:upglow 1.25s ease-in-out infinite}
+.btn .upb.can::after{border-top-color:#12a457}.btn .upb.no::after{border-top-color:#16241d}.btn .upb.max::after{border-top-color:#241f12}
 .btn .upb.can .uc{color:#063d22}.btn .upb.can .uc em{color:#7a2a00}
 .btn .upb.can:hover{background:linear-gradient(180deg,#5affab,#1cc471);transform:translateY(-1px) scale(1.04);box-shadow:0 0 18px rgba(90,255,170,.85)}
 .btn .upb.no{background:linear-gradient(180deg,#25392f,#16241d);color:#78a08d;border:1px solid #315345;cursor:not-allowed}
@@ -14238,14 +14242,14 @@ function refreshCard(force) {
       (b.cost ? '<span class="c">' + (b.cost.s ? b.cost.s : '') + (b.cost.c ? '<em>' + b.cost.c + '</em>' : '') + '</span>' : '') +
       (b.badge ? '<span class="c">' + b.badge + '</span>' : '');
     if (b.prog !== undefined) { const f = document.createElement('div'); f.className = 'fill'; f.style.width = (b.prog * 100) + '%'; el.appendChild(f); }
-    if (b.up && !b.up.maxed) {   // the unit's own upgrade, riding on its buy tile — slides out on hover, lit up when affordable
+    if (b.up && !b.up.maxed) {   // the unit's own upgrade, extending UP above its buy tile on hover, lit up when affordable
       const can = !b.up.dis, up = document.createElement('div');
-      up.className = 'upb ' + (can ? 'can' : 'no');
-      up.innerHTML = '<span class="ug">⬆</span> Mk' + (b.up.cur + 1) + '<span class="uc">' + (b.up.cost.s ? b.up.cost.s : '') + (b.up.cost.c ? (b.up.cost.s ? ' ' : '') + '<em>' + b.up.cost.c + '</em>' : '') + '</span>';
+      up.className = 'upb ' + (can ? 'can' : 'no'); el.classList.add('has-up');
+      up.innerHTML = '<span class="ug">▲</span> Mk' + (b.up.cur + 1) + '<span class="uc">' + (b.up.cost.s ? b.up.cost.s : '') + (b.up.cost.c ? (b.up.cost.s ? ' ' : '') + '<em>' + b.up.cost.c + '</em>' : '') + '</span>';
       up.onclick = e => { e.stopPropagation(); if (can && b.up.fn) b.up.fn(); else AU.ui('no'); };
       up.onmouseenter = e => { e.stopPropagation(); };
       el.appendChild(up);
-    } else if (b.up && b.up.maxed) { const mk = document.createElement('div'); mk.className = 'upb max'; mk.innerHTML = '★ Mk3'; el.appendChild(mk); }
+    } else if (b.up && b.up.maxed) { const mk = document.createElement('div'); mk.className = 'upb max'; el.classList.add('has-up'); mk.innerHTML = '★ Mk3'; el.appendChild(mk); }
     el.onclick = e => { e.stopPropagation(); if (!b.dis && b.fn) b.fn(); };
     el.onmouseenter = () => showTip(el, b);
     el.onmouseleave = hideTip;
@@ -19628,7 +19632,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b202';
+const BUILD_TAG = 'b203';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
