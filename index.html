@@ -676,6 +676,13 @@ body:fullscreen #fsbtn,body:-webkit-full-screen #fsbtn{color:#ffd27a}
   background:linear-gradient(180deg,#16261f,#0c1713);color:#a9cdbd;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
 #uihide:hover{border-color:#8dffbe;color:#eafff4;background:linear-gradient(180deg,#1d3429,#12201a)}
 html.touch #uihide{top:calc(100px + env(safe-area-inset-top,0px))}
+/* placement tips: a small hint card that appears just below the eye button only while a building is being placed */
+#placetips{position:absolute;top:146px;right:10px;pointer-events:none;z-index:61;display:none;max-width:150px;
+  padding:5px 7px;border:1px solid #2b4339;border-radius:4px;background:linear-gradient(180deg,rgba(18,32,26,.92),rgba(10,20,16,.92));
+  color:#a9cdbd;font-size:10px;line-height:1.45;text-align:right;letter-spacing:.2px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+#placetips b{color:#8dffbe;font-weight:600}
+html.place-active #placetips{display:block}
+html.touch #placetips,html.uihide #placetips{display:none!important}
 /* hide-all-UI: every HUD element goes, the 3D view stays; only the eye button remains (faded) to bring it back */
 html.uihide #hud > *:not(#uihide),html.uihide #fsbtn,html.uihide #devtoggle,html.uihide #devbadge,html.uihide #dev{display:none!important}
 html.uihide #uihide{opacity:.35}html.uihide #uihide:hover{opacity:1}
@@ -1092,6 +1099,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   </div>
   <button id="setbtn" title="Settings (Esc)">⚙</button>
   <button id="uihide" title="Hide all UI (press again to show)">👁</button>
+  <div id="placetips"><b>Shift-click</b> place multiple<br><b>Alt + scroll</b> rotate</div>
   <button id="hudtog" title="Hide / show the minimap and control panels">▣</button>
   <div id="rallyPill"><span class="rp-dot"></span><span class="rp-txt">ALARM · RALLY TO COMMAND POST</span><span class="rp-n" id="rallyN"></span></div>
   <div id="alerts"></div>
@@ -14180,6 +14188,8 @@ function unloadOne(u) {
 }
 
 function refreshCard(force) {
+  // the placement tip card (bottom-right, under the eye button) shows only while a building is being placed / queued
+  try { document.documentElement.classList.toggle('place-active', !!(UI.place || UI.pending || (UI.queue && UI.queue.length))); } catch (e) {}
   const btns = cardFor();
   const sig = btns.title + '|' + btns.map(b => b.n + (b.dis ? 1 : 0) + (b.act ? 'a' : '') + (b.badge || '')).join(',');
   if (!force && sig === UI.lastCard) { updateCardProgress(); return; }
@@ -14522,7 +14532,7 @@ cv.addEventListener('wheel', e => {
     if (typeof refreshCard === 'function') refreshCard(true);
     return;
   }
-  if (IN.keys.r && (UI.place || UI.pending || (UI.queue && UI.queue.length))) {   // hold R + wheel: spin the building before you place it (15 deg a click)
+  if (e.altKey && (UI.place || UI.pending || (UI.queue && UI.queue.length))) {   // hold Alt + wheel: spin the building before you place it (15 deg a click)
     UI.placeRot = (((UI.placeRot || 0) - Math.sign(e.deltaY || 0) * (Math.PI / 12)) % TAU + TAU) % TAU;
     if (typeof refreshConfirm === 'function') refreshConfirm();
     return;
@@ -19584,7 +19594,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b199';
+const BUILD_TAG = 'b200';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
