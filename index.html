@@ -11181,7 +11181,7 @@ function strikePreview() {
    MUST match drawTrainingGround in 08b_render3d.js (16 push-up recruits + sergeant + 4 drill figures = 21 posts). */
 /* close-quarters combat timing (shared with the renderer's cqbMove): the move length, which forms end with the enemy on the
    ground (finished there) vs knocked back, and when in each form the strike lands and the finisher/shove happens */
-const CQB_DUR = 2.3, CQB_DOWN = [0, 0, 1, 1, 0, 1], CQB_HIT = [.5, .75, .5, .8, .4, .85], CQB_FIN = [1.65, 1.0, 1.1, 1.35, 1.15, 1.05];
+const CQB_DUR = 2.3, CQB_DOWN = [0, 0, 1, 1, 0, 1], CQB_HIT = [.35, .6, .45, .75, .35, .95], CQB_FIN = [.78, .65, 1.08, 1.32, 1.02, 1.1];
 const PARADE_HP = 30, PARADE_ENGAGE = 172, PARADE_FIRE = [.45, .8], PARADE_RESP = [30, 52], CMD_IDX = 16;
 const PARADE_RIFLE = { dmg: 9, rng: 265, cd: .075, spread: .028, spd: 1080, kind: 'bullet', sfx: 'auto', casings: 1, sustain: true };   // the sergeant/commander answers with a spec-ops auto carbine, not a sidearm
 function paradePosts(b) {
@@ -11193,7 +11193,7 @@ function paradePosts(b) {
   const list = [];
   for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) list[r * 4 + c] = at(halfPx + (2.0 + r * 1.35) * TS, (c - 1.5) * 1.4 * TS);           // push-up ranks 0..15
   { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.4) * TS, -2.2 * TS); list[16] = { x: p.x, y: p.y, face: dirA + Math.PI }; }                          // sergeant
-  for (let d2 = 0; d2 < 2; d2++) { const gap = .95 * TS, fwd = halfPx + 3.2 * TS, lat = (3.2 + d2 * 1.7) * TS; const a = at(fwd, lat), bb = at(fwd + gap, lat); list[17 + d2 * 2] = a; list[18 + d2 * 2] = { x: bb.x, y: bb.y, face: dirA + Math.PI }; }   // drill pairs 17..20
+  for (let d2 = 0; d2 < 2; d2++) { const gap = .72 * TS, fwd = halfPx + 3.2 * TS, lat = (3.2 + d2 * 1.7) * TS; const a = at(fwd, lat), bb = at(fwd + gap, lat); list[17 + d2 * 2] = a; list[18 + d2 * 2] = { x: bb.x, y: bb.y, face: dirA + Math.PI }; }   // drill pairs 17..20
   b._pposts = { dirA, list };
   return b._pposts;
 }
@@ -16439,32 +16439,48 @@ function ctrlHudTick(dt) {
   /* ---- close-quarters combat choreography: six forms, CQB_DUR seconds each. Drives the parade sparring pairs (taking
      turns as attacker) and any foot soldier taking down a zombie that got inside arm's reach (the zombie plays the
      defender). Forms: 0 jab-cross · 1 front kick · 2 rising elbow + knee · 3 leg-sweep takedown · 4 clinch and shove ·
-     5 hip throw. Returns { A, D }: each { o: stance flags, fx: whole-body transform } at time T. ---- */
-  function cqbMove(kind, T) {
-    const F = FS * 1.9, seg = (a, b) => sm((T - a) / (b - a)), pulse = (a, b) => Math.sin(Math.PI * clamp((T - a) / (b - a), 0, 1));
+     5 hip throw. CONTACT-DRIVEN: `gap` is the real distance between the two (world units); the attacker closes exactly far
+     enough for the fist / boot / hip to land ON the other body, and every reaction is a damped ragdoll response to that
+     contact — the head snaps, the torso rocks and rolls, the arms flail loose, a fall lands with a bounce and settles.
+     Returns { A, D }: each { o: stance flags, fx: whole-body transform } at time T. ---- */
+  const CQ_ARM = .30, CQ_LEG = .24, CQ_ELB = .17, CQ_BODY = .13;   // how far in front of a figure's centre its fist / boot / elbow / chest lands (scale ~.9)
+  function cqbMove(kind, T, gap) {
+    gap = gap === undefined ? .7 : gap;
+    const seg = (a, b) => sm((T - a) / (b - a)), pulse = (a, b) => Math.sin(Math.PI * clamp((T - a) / (b - a), 0, 1));
+    const rag = (t0, amp, k, w) => T > t0 ? amp * Math.exp(-(k || 6) * (T - t0)) * Math.sin((w || 12) * (T - t0)) : 0;          // damped wobble from a contact impulse
+    const fall = (t0, dur) => { const q = clamp((T - t0) / dur, 0, 1), s0 = sm(q); const tb = T - t0 - dur; return s0 - (tb > 0 ? Math.exp(-7 * tb) * Math.sin(16 * tb) * .14 : 0); };   // topple, land, bounce, settle
     const A = { o: { gun: 'none', tac: 1, arms: { la: .55, ra: .55 } }, fx: { pv: .2 } }, D = { o: { gun: 'none', tac: 1, arms: { la: .55, ra: .55 } }, fx: { pv: .2 } };
     const a = A.o.arms, d = D.o.arms, k = ((kind % 6) + 6) % 6;
-    if (k === 0) {            // JAB-CROSS: left jab, right cross stepping in; D slips the jab, covers, then answers with a jab of his own that A covers
-      a.la += 1.25 * pulse(.15, .5); a.ra += 1.35 * pulse(.55, .95); A.fx.fwd = .1 * F * pulse(.1, 1.0); A.fx.pitch = .12 * pulse(.5, .95);
-      D.fx.yaw = -.35 * pulse(.2, .6); d.la += .5 * pulse(.5, 1.0); d.ra += .5 * pulse(.5, 1.0);
-      d.ra += 1.25 * pulse(1.4, 1.8); D.fx.fwd = .1 * F * pulse(1.35, 1.9); a.la += .5 * pulse(1.5, 1.9); A.fx.pitch -= .1 * pulse(1.5, 1.9);
-    } else if (k === 1) {     // FRONT KICK: A chambers and snaps a kick into the guard; D absorbs it and staggers back a step, then squares up
-      A.o.kick = pulse(.3, 1.0); A.fx.pitch = -.1 * pulse(.3, 1.0); a.la = .9; a.ra = .3;
-      d.la = d.ra = .55 + .6 * pulse(.5, .9); D.fx.fwd = -.22 * F * seg(.6, 1.0) * (1 - seg(1.5, 2.1)); D.fx.pitch = -.18 * pulse(.6, 1.3); D.o.walk = T > .6 && T < 1.4 ? 1 : 0;
-    } else if (k === 2) {     // ELBOW + KNEE: a rising elbow stepping in, then a knee driven into the body; D covers high, then doubles over
-      a.ra += 1.7 * pulse(.2, .65); A.fx.fwd = .14 * F * seg(.1, .5); A.fx.pitch = .15 * pulse(.2, .65); A.o.kickL = pulse(.8, 1.25); A.fx.pitch += .12 * pulse(.8, 1.25);
-      d.la = d.ra = .55 + .9 * pulse(.25, .7); D.fx.pitch = .45 * seg(.9, 1.2) * (1 - seg(1.6, 2.2)); D.o.crouch = T > .95 && T < 2.0; D.fx.fwd = -.08 * F * pulse(.9, 1.6);
-    } else if (k === 3) {     // LEG-SWEEP TAKEDOWN: A drops low and spins a sweep through D's legs; D lands flat on his back; A stands over him, fist cocked, then D climbs back up
-      A.o.crouch = T > .15 && T < .95; A.fx.yaw = -TAU * seg(.3, .9); A.fx.pv = .1; A.o.walk = 1.05; a.ra += 1.0 * pulse(1.1, 1.5); A.fx.pitch = .25 * pulse(1.1, 1.5);
-      D.fx.pitch = -HPI * seg(.55, .9) + HPI * seg(1.5, 2.1); D.fx.pv = 0; D.fx.fwd = -.15 * F * seg(.55, .9); D.o.crouch = T > 1.5 && T < 2.2;
-    } else if (k === 4) {     // CLINCH AND SHOVE: both grab at the collar and push; A wins the tie-up and shoves D stumbling backward
-      a.la = a.ra = 1.45; d.la = d.ra = 1.45; A.fx.fwd = .12 * F * seg(.15, .4) - .05 * F * pulse(.5, .9); D.fx.fwd = -.1 * F * seg(.15, .4);
-      A.fx.pitch = .12 * seg(.15, .4); D.fx.pitch = -.06 * seg(.15, .4); A.fx.fwd += .2 * F * pulse(1.0, 1.3); D.fx.fwd -= .35 * F * seg(1.0, 1.35) * (1 - seg(1.7, 2.2)); D.fx.pitch -= .2 * pulse(1.0, 1.6); D.o.walk = T > 1.0 && T < 1.8 ? 1 : 0;
-      if (T > 1.05) { d.la = d.ra = .9; a.la = a.ra = .55; }
-    } else {                  // HIP THROW: A steps in and turns his hip under; D goes up and clean over onto his back, then climbs back to his feet
-      A.fx.fwd = .12 * F * seg(.1, .35); A.fx.yaw = -HPI * seg(.3, .65) * (1 - seg(1.3, 1.7)); A.fx.pitch = .35 * pulse(.5, 1.0); A.o.crouch = T > .5 && T < 1.0; a.la = a.ra = 1.3 * (1 - seg(1.0, 1.3)) + .55 * seg(1.0, 1.3);
-      D.fx.lift = .45 * F * pulse(.55, 1.05); D.fx.fwd = .3 * F * seg(.55, 1.05); D.fx.pitch = Math.PI * seg(.55, 1.1) - Math.PI * seg(1.6, 2.2); D.fx.pv = .3;
-      D.o.crouch = T > 1.6 && T < 2.3; d.la = d.ra = 1.2 * (1 - seg(1.0, 1.2)) + .55 * seg(1.0, 1.2);
+    const close = reach => Math.max(0, gap - reach - CQ_BODY * .4);                // forward travel that puts a strike of that reach on the other's chest
+    const loose = (t0, amp) => { d.la += rag(t0, amp, 5, 13); d.ra += rag(t0 + .04, amp, 5, 11); D.fx.roll = (D.fx.roll || 0) + rag(t0, amp * .22, 5, 10); };   // arms go loose and the body rolls after a hit
+    if (k === 0) {            // JAB-CROSS: step in so the jab lands (T .35) and the cross (T .75); D's head snaps back on each, he rocks, then answers with a jab that A rides
+      const c = close(CQ_ARM); A.fx.fwd = c * seg(.12, .35) * (1 - seg(1.0, 1.3)); a.la += 1.3 * pulse(.2, .5); a.ra += 1.4 * pulse(.6, .9); A.fx.pitch = .1 * pulse(.6, .9) + .06 * pulse(.2, .5);
+      D.fx.pitch = -rag(.35, .35, 7, 14) - rag(.75, .55, 6, 12); D.fx.yaw = rag(.35, .25, 6, 13) - rag(.75, .4, 5, 11); D.fx.fwd = -rag(.75, .12, 4, 8) - .05 * seg(.75, .95); loose(.35, .5); loose(.75, .9);
+      d.ra += 1.3 * pulse(1.45, 1.85); D.fx.fwd += c * seg(1.35, 1.6) * (1 - seg(1.9, 2.2)); A.fx.pitch -= rag(1.6, .3, 6, 12); a.la += .6 * pulse(1.5, 1.9);
+    } else if (k === 1) {     // FRONT KICK: chamber, drive in and the boot lands on the chest (T .6); D folds around it and is thrown back off his feet a step, arms flung
+      const c = close(CQ_LEG); A.o.kick = pulse(.3, .95); A.fx.fwd = c * seg(.4, .6) * (1 - seg(.95, 1.25)); A.fx.pitch = -.12 * pulse(.3, .95); a.la = .9; a.ra = .3;
+      D.fx.pitch = .25 * pulse(.58, .75) - rag(.6, .7, 4.5, 9) - .1 * seg(.6, .8) * (1 - seg(1.4, 2.0)); D.fx.fwd = -(.22 + gap * .1) * seg(.6, .85) * (1 - seg(1.6, 2.1)); D.fx.lift = .05 * pulse(.6, .8);
+      loose(.6, 1.1); D.o.walk = T > .6 && T < 1.5 ? 1 : 0; d.la = .55 + .6 * pulse(.45, .6); d.ra = .55 + .6 * pulse(.45, .6);
+    } else if (k === 2) {     // ELBOW + KNEE: step chest-to-chest and the elbow cracks the jaw (T .45), then the knee drives into the body (T 1.05): D's head snaps, then he doubles over it
+      const c = close(CQ_ELB), c2 = close(CQ_LEG * .8); A.fx.fwd = c * seg(.15, .42) + (c2 - c) * seg(.85, 1.02) - (c2) * seg(1.5, 1.9); a.ra += 1.75 * pulse(.25, .6); A.fx.pitch = .15 * pulse(.25, .6) + .14 * pulse(.85, 1.2); A.o.kickL = pulse(.85, 1.25);
+      D.fx.yaw = rag(.45, .5, 6, 12); D.fx.pitch = -rag(.45, .35, 6, 13) + .55 * seg(1.02, 1.2) * (1 - seg(1.65, 2.2)) + rag(1.05, .2, 5, 9); D.o.crouch = T > 1.05 && T < 2.05; D.fx.fwd = -.06 * seg(1.02, 1.3);
+      loose(.45, .7); d.la = d.ra = .55 + .8 * pulse(.3, .55) + (T > 1.05 ? .3 : 0);
+    } else if (k === 3) {     // LEG-SWEEP TAKEDOWN: A drops in low, the sweeping shin takes both legs (T .75): D's feet fly, he goes over onto his back, bounces and lies stunned; A steps over him, drives a fist down, then D crawls up
+      const c = close(CQ_LEG * .9); A.o.crouch = T > .15 && T < 1.0; A.fx.fwd = c * seg(.15, .4) + .12 * seg(1.05, 1.3) - (c + .12) * seg(1.9, 2.25); A.fx.yaw = -TAU * seg(.35, .95); A.fx.pv = .1; A.o.walk = 1.05;
+      a.ra += 1.1 * pulse(1.15, 1.5); A.fx.pitch = .35 * pulse(1.15, 1.5);
+      D.fx.pitch = -HPI * fall(.72, .38) + HPI * seg(1.55, 2.15); D.fx.pv = 0; D.fx.lift = .06 * pulse(.72, .9); D.fx.fwd = -.18 * seg(.72, 1.0); D.fx.roll = rag(1.1, .18, 4, 8); loose(.72, 1.2);
+      D.o.crouch = T > 1.55 && T < 2.25; if (T > 1.3 && T < 1.55) { d.la = 1.3; d.ra = 1.2; }   // hands up, covering, on the ground
+    } else if (k === 4) {     // CLINCH AND SHOVE: both step into the collar tie (T .35), lean and push, A wins and shoves (T 1.0): D is flung backward stumbling, arms wide
+      const c = close(CQ_ARM * .55); a.la = a.ra = 1.4; d.la = d.ra = 1.4; A.fx.fwd = c * .55 * seg(.1, .35) + .06 * Math.sin(T * 9) * pulse(.4, 1.0) + c * .45 * pulse(.95, 1.2); D.fx.fwd = -c * .45 * seg(.1, .35) + .06 * Math.sin(T * 9) * pulse(.4, 1.0);
+      A.fx.pitch = .14 * seg(.1, .35); D.fx.pitch = .1 * seg(.1, .35);
+      D.fx.fwd -= (.42 + gap * .15) * seg(1.0, 1.3) * (1 - seg(1.75, 2.2)); D.fx.pitch -= .3 * pulse(1.0, 1.35) + rag(1.0, .3, 4, 8); loose(1.0, 1.3); D.o.walk = T > 1.0 && T < 1.8 ? 1 : 0;
+      if (T > 1.05) { d.la = 1.2 + rag(1.0, .6, 4, 9); d.ra = 1.2 - rag(1.0, .6, 4, 9); a.la = a.ra = .55; }
+    } else {                  // HIP THROW: A steps in to the body, turns his hip under (T .5) and D is hauled up over it, flips head-over-heels and lands flat beyond him with a bounce, arms loose, then climbs up
+      const c = close(CQ_BODY); A.fx.fwd = c * seg(.1, .4) - c * seg(1.4, 1.8); A.fx.yaw = -HPI * seg(.35, .65) * (1 - seg(1.3, 1.65)); A.fx.pitch = .4 * pulse(.55, 1.05); A.o.crouch = T > .5 && T < 1.05; a.la = a.ra = 1.35 * (1 - seg(1.0, 1.3)) + .55 * seg(1.0, 1.3);
+      const over = seg(.55, 1.05);                                                                     // ride: pulled onto the hip, up and over, down onto the far side
+      D.fx.fwd = (gap - CQ_BODY) * seg(.35, .55) + (gap * .55 + .2) * over; D.fx.lift = .42 * Math.sin(Math.PI * over) * (1 + .3 * seg(.55, .8)) + .03 * Math.max(0, -rag(1.05, 1, 6, 14));
+      D.fx.pitch = Math.PI * fall(.55, .5) - Math.PI * seg(1.65, 2.2); D.fx.pv = .28; D.fx.roll = rag(1.05, .22, 4, 8); loose(.6, 1.3);
+      D.o.crouch = T > 1.65 && T < 2.3; if (T > 1.05 && T < 1.6) { d.la = 1.1 + rag(1.05, .5, 4, 8); d.ra = 1.1 - rag(1.05, .5, 4, 8); }
     }
     return { A, D };
   }
@@ -17617,26 +17633,35 @@ function ctrlHudTick(dt) {
       put(P.head, bx, poleY + poleH + .08, bz, 0, 0, 0, .075, .11, .075, GOLD);
       const w = G.wind || { x: 1, y: 0 }, ws = Math.hypot(w.x || 0, w.y || 0), wa = Math.atan2(w.y || 0, w.x || 0);
       const lift = Math.min(1, ws / 110);                            // 0 = limp/hanging, 1 = streaming flat
-      const fl = 1.15, fh = .74;
-      const flap = Math.sin(G.t * (1.4 + ws * .03)) * (.03 + lift * .17);   // one cloth, rippling — the flap grows and quickens with the wind
-      const yaw = -wa + flap * .5;                                   // streams downwind, swaying a touch side to side
-      const rz = -(1 - lift) * 1.15 + flap;                         // hangs limp when calm (edge sags), snaps out flat in a gale
-      _e.set(0, yaw, rz, 'YXZ'); _qq.setFromEuler(_e);
-      _p.set(fl, 0, 0).applyQuaternion(_qq); const ax = _p.x, ay = _p.y, az = _p.z;
-      _p.set(0, 1, 0).applyQuaternion(_qq); const ux = _p.x, uy = _p.y, uz = _p.z;
-      const cx = bx + ax * .5, cy = (poleY + poleH - .12) + ay * .5, cz = bz + az * .5;   // one single piece of cloth, hoisted at the pole top
-      put(P.cloth, cx, cy, cz, 0, yaw, rz, fl, fh, .02, fcolFlag);
-      put(P.cloth, cx + ux * fh * .42, cy + uy * fh * .42, cz + uz * fh * .42, 0, yaw, rz, fl, fh * .16, .022, GOLD); }
+      const fl = 1.15, fh = .74, N = 12, segL = fl / N;
+      // ONE continuous cloth: twelve narrow strips hinged edge to edge (each overlapping the last a little so no seam
+      // shows), with only a small bend between neighbours — a travelling ripple runs down the length, the bends
+      // grow toward the free end, the whole sheet sags toward the tip in a lull and snaps out flat in a gale
+      const freq = 2.2 + ws * .05, amp = .035 + lift * .13, sway = Math.sin(G.t * .9) * .05 * lift;
+      let cx = bx, cy = poleY + poleH - .12, cz = bz;
+      for (let i = 0; i < N; i++) {
+        const q = (i + .5) / N, ph = G.t * freq - i * .62;
+        const ripple = Math.sin(ph) * amp * (.35 + q * .9);            // the wave amplitude builds along the cloth toward the free edge
+        const yaw = -wa + sway + Math.sin(ph * .5 + 1.0) * amp * .35 * q;   // a gentle in-plane flutter so the edge isn't ruler-straight
+        const rz = -(1 - lift) * 1.35 * q * q * 1.6 + ripple;          // catenary sag: hardly any at the hoist, most at the tip
+        _e.set(0, yaw, rz, 'YXZ'); _qq.setFromEuler(_e);
+        _p.set(segL, 0, 0).applyQuaternion(_qq); const ax = _p.x, ay = _p.y, az = _p.z;
+        _p.set(0, 1, 0).applyQuaternion(_qq); const ux = _p.x, uy = _p.y, uz = _p.z;
+        const mx = cx + ax * .5, my = cy + ay * .5, mz = cz + az * .5, hh = fh * (1 - q * .06);   // tapers a hair toward the fly
+        put(P.cloth, mx, my, mz, 0, yaw, rz, segL * 1.22, hh, .02, fcolFlag);
+        put(P.cloth, mx + ux * hh * .42, my + uy * hh * .42, mz + uz * hh * .42, 0, yaw, rz, segL * 1.22, hh * .16, .022, GOLD);
+        cx += ax; cy += ay; cz += az;
+      } }
     // two sparring pairs off to one side: the player's recruits drill hand-to-hand CQB (unarmed, trading jabs and
     // blocks), the ancient host spars with sword/spear
     for (let d2 = 0; d2 < 2; d2++) {
-      const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = (player ? .95 : 1.25) * TS, beat = Math.sin(t * 3 + d2 * 1.3);
+      const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = (player ? .72 : 1.25) * TS, beat = Math.sin(t * 3 + d2 * 1.3);
       const a1 = at(fwd, lat), b2 = at(fwd + gap, lat);
       if (player) {
         // tactical close-combat drill: one of six forms (jab-cross, front kick, elbow + knee, leg-sweep takedown, clinch
         // and shove, hip throw) chosen at random each cycle, the two recruits taking turns as the attacker
         const pid = idb + 70 + d2 * 2, tt = t + d2 * 1.1, cyc = Math.floor(tt / CQB_DUR), T = tt - cyc * CQB_DUR;
-        const mvq = cqbMove(cqbForm(pid, cyc), T), swap = (cyc & 1) === 1, PA = swap ? mvq.D : mvq.A, PB = swap ? mvq.A : mvq.D;
+        const mvq = cqbMove(cqbForm(pid, cyc), T, gap * K), swap = (cyc & 1) === 1, PA = swap ? mvq.D : mvq.A, PB = swap ? mvq.A : mvq.D;
         post(17 + d2 * 2, a1.x, a1.y, dirA, Object.assign({ id: pid, scale: .9, fx: PA.fx }, PA.o));
         post(18 + d2 * 2, b2.x, b2.y, dirA + Math.PI, Object.assign({ id: pid + 1, scale: .9, fx: PB.fx }, PB.o));
       } else {
@@ -18310,7 +18335,7 @@ function ctrlHudTick(dt) {
           const hasTgt = !!(u.tgts && u.tgts[0] && !u.tgts[0].dead && !u.def.veh);
           let aimD = 0; if (hasTgt && u.aims && u.aims[0] !== undefined) { aimD = u.aims[0] - u.ang; while (aimD > Math.PI) aimD -= TAU; while (aimD < -Math.PI) aimD += TAU; }   // torso / head / arms turn toward the target, ahead of the feet
           const spd = Math.hypot(u.vx || 0, u.vy || 0); u._mv = (u._mv === undefined ? 1 : u._mv) + (Math.min(1, spd / 28) - (u._mv === undefined ? 1 : u._mv)) * .22;   // eased stride blend: the walk cycle fades to a neutral stance when he stops
-          if (u.cqb && !u.def.veh) { const q = cqbMove(u.cqb.kind, u.cqb.t); drawFigureC(x, gy, z, u.ang, q.A.o.walk || 0, S, Object.assign({ ck: u, kind: 'mil', scale: .92, limbs: u.limbs, id: u.id, ut: u.t, fx: q.A.fx }, q.A.o)); }   // hand-to-hand: taking a zombie down (rifle slung, fists up)
+          if (u.cqb && !u.def.veh) { const q = cqbMove(u.cqb.kind, u.cqb.t, Math.hypot(u.cqb.z.x - u.x, u.cqb.z.y - u.y) * K); drawFigureC(x, gy, z, u.ang, q.A.o.walk || 0, S, Object.assign({ ck: u, kind: 'mil', scale: .92, limbs: u.limbs, id: u.id, ut: u.t, fx: q.A.fx }, q.A.o)); }   // hand-to-hand: taking a zombie down (rifle slung, fists up)
           else drawFigureC(x, gy, z, u.aimT !== undefined && u.def.veh ? u.aimT : u.ang, u.step || 0, S, { ck: u, kind: 'mil', gun: gunOf(u.t), scale: .92, limbs: u.limbs, id: u.id, ut: u.mgOut ? 'support' : u.t, mg: !!u.mgOut, rc: u.rc || 0, rcSide: !!u.rcSide, reload: relT, draw: u.gunSwapT > 0 ? 1 - u.gunSwapT / .5 : 1, pistol: !!u.pistolOut, buddy: bud, crouch: dodgeCrouch || !!u.coverCrouch || (u.pose === 'crouch' && !u.def.veh) || (u.deploy > 0 && !u.def.veh), prone: dodgeProne || (u.pose === 'prone' && !u.def.veh && !u.sitting), crawl: u.pose === 'prone' && spd > 3, turn: u.pose === 'prone' && u._pang !== undefined && Math.abs(Math.atan2(Math.sin(u.ang - u._pang), Math.cos(u.ang - u._pang))) > .02, sit: !!u.sitting, idle: idleO, tac: hasTgt, aimD, mv: u._mv, fx: rollFx });
           u._pang = u.ang;   // last facing, for the prone pivot animation
           if (u.deploy > 0 && d.wep && d.wep.deploy) {   // the portable mortar being set up beside him: baseplate down first, then the tube swings up onto its bipod and lays onto the target
@@ -18386,13 +18411,13 @@ function ctrlHudTick(dt) {
           drawFigureC(x - ecx * .12, gy + ELE_HOWDAH, z - ecz * .12, zz.ang, 0, S, { ck: zz._rider || (zz._rider = { id: zz.id + 7 }), kind: 'med', mk: 'cavalry', gun: 'spear', scale: .82, limbs: zz.limbs, id: zz.id + 7, fcol });   // spearman in the howdah
         }
         else if (zz.cqbBy && zz.cqbBy.cqb && zz.cqbBy.cqb.z === zz && !zz.cqbBy.dead) {   // being taken down hand-to-hand by a soldier: thrown, swept, kicked or shoved by the choreography
-          const C = zz.cqbBy.cqb, q = cqbMove(C.kind, C.t), oD = Object.assign({}, q.D.o), medZ = !!zz.def.med;
+          const C = zz.cqbBy.cqb, q = cqbMove(C.kind, C.t, Math.hypot(zz.x - zz.cqbBy.x, zz.y - zz.cqbBy.y) * K), oD = Object.assign({}, q.D.o), medZ = !!zz.def.med;
           if (medZ) oD.gun = zz.def.dual ? 'dual' : (zz.id & 1) ? 'spear' : 'sword';
           drawFigureC(x, gy, z, zz.ang, q.D.o.walk || 0, S, Object.assign(medZ ? { ck: zz, kind: 'med', mk: zz.def.militia ? 'villager' : 'infantry', scale: .92, limbs: zz.limbs, id: zz.id, fcol, fx: q.D.fx } : { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, fx: q.D.fx }, oD)); }
         else if (zz.fin) { const q = finKiller(zz.fin); drawFigureC(x, gy, z, zz.ang, q.o.walk || 0, S, { ck: zz, kind: 'med', mk: zz.def.militia ? 'villager' : 'infantry', gun: zz.def.dual ? 'dual' : (zz.id & 1) ? 'spear' : 'sword', scale: .92, limbs: zz.limbs, id: zz.id, crouch: !!q.o.crouch, fx: q.fx, fcol }); }   // finishing a man
         else drawFigureC(x, gy, z, zz.ang, zz.step || 0, S, { ck: zz, kind: 'med', mk: zz.def.arrow ? 'archer' : zz.def.militia ? 'villager' : 'infantry', gun: zz.def.arrow ? 'bow' : zz.def.dual ? 'dual' : ((zz.id & 1) ? 'spear' : 'sword'), scale: zz.def.militia ? .9 : .92, limbs: zz.limbs, id: zz.id, mv: zedMv(zz), fcol });   // spearmen and dha-and-shield men mixed; militia with no hat or shield; raiders with twin blades
       } else if (zz.cqbBy && zz.cqbBy.cqb && zz.cqbBy.cqb.z === zz && !zz.cqbBy.dead) {   // being taken down hand-to-hand by a soldier: swept, kicked, thrown or shoved by the choreography
-        const C = zz.cqbBy.cqb, q = cqbMove(C.kind, C.t);
+        const C = zz.cqbBy.cqb, q = cqbMove(C.kind, C.t, Math.hypot(zz.x - zz.cqbBy.x, zz.y - zz.cqbBy.y) * K);
         drawFigureC(x, gy, z, zz.ang, q.D.o.walk || 0, S, Object.assign({ ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, fx: q.D.fx }, q.D.o));
       } else if (zz.down > 0) { drawFigureC(x, gy, z, zz.ang, 0, S, { ck: zz, kind: 'zed', zt: zz.t, scale: .9, limbs: zz.limbs, id: zz.id, dead: 1, tilt: .12 }); }   // knocked flat by buckshot
       else if (zz.def.predator) {
@@ -19559,7 +19584,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b197';
+const BUILD_TAG = 'b198';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
