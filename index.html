@@ -226,6 +226,39 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 #mzoom button#camReset{width:auto;padding:0 6px;font-size:10px;letter-spacing:.02em}
 #mzoom button{width:20px;height:18px;font:700 12px/1 inherit;border:1px solid #2f4a41;border-radius:4px;background:#0f1a17;color:#9fd6c0;cursor:pointer;padding:0;font-family:inherit}
 #mzoom button:hover{background:#17302a;color:#dfffee;border-color:#4f8a72}
+#mzoom button#scoreBtn.on{background:#1f3830;color:#8dffbe;border-color:#8dffbe;box-shadow:0 0 8px rgba(141,255,190,.35)}
+/* scoreboard: kills by player, toggled from the button beside Reset camera; floats above the minimap */
+#scoreboard{position:absolute;left:0;bottom:calc(100% + 8px);width:322px;max-width:82vw;display:none;pointer-events:auto;
+  background:linear-gradient(180deg,rgba(16,26,22,.97),rgba(9,16,13,.97));border:1px solid #2f4a41;border-radius:6px;padding:8px 9px;
+  box-shadow:0 8px 26px rgba(0,0,0,.55);z-index:42;font-size:11px}
+#miniwrap.showscore #scoreboard{display:block;animation:panIn .16s ease}
+#scoreboard .sbhead{display:flex;justify-content:space-between;align-items:center;font-size:9px;letter-spacing:1.5px;color:#7ea294;text-transform:uppercase;margin-bottom:5px;padding:0 5px}
+#scoreboard .sbhead .hk i{display:inline-block;width:44px;text-align:right;font-style:normal;font-size:11px}
+#scoreboard .sbrow{position:relative;display:flex;align-items:center;gap:6px;padding:4px 5px;border-radius:4px}
+#scoreboard .sbrow:hover{background:#17302a}
+#scoreboard .sbrow.me{background:rgba(141,255,190,.08)}
+#scoreboard .sbrow .nm{flex:1;display:flex;align-items:center;gap:6px;color:#e6f5ee;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#scoreboard .sbrow .nm i{width:9px;height:9px;border-radius:2px;flex:none}
+#scoreboard .sbrow .col{width:44px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+#scoreboard .sbrow .col.z{color:#9be89b}#scoreboard .sbrow .col.f{color:#e8c07a}#scoreboard .sbrow .col.p{color:#8fd0ff}
+#scoreboard .brk{display:none;position:absolute;right:calc(100% + 8px);top:-4px;min-width:150px;max-height:220px;overflow-y:auto;
+  background:linear-gradient(180deg,rgba(18,30,25,.99),rgba(10,20,16,.99));border:1px solid #315345;border-radius:6px;padding:6px 9px;z-index:6;box-shadow:0 6px 20px rgba(0,0,0,.6)}
+#scoreboard .sbrow:hover .brk{display:block}
+#scoreboard .brk .bh{font-size:9px;letter-spacing:.5px;color:#7ea294;text-transform:uppercase;margin-bottom:4px;white-space:nowrap}
+#scoreboard .brk .bt{display:flex;justify-content:space-between;gap:14px;font-size:10.5px;color:#c3d5cb;padding:1.5px 0;white-space:nowrap}
+#scoreboard .brk .bt b{color:#8dffbe;font-variant-numeric:tabular-nums}
+/* multiplayer deploy status: who has placed their HQ, who we're still waiting on — floats above the minimap during deploy */
+#depstatus{position:absolute;left:0;bottom:calc(100% + 8px);width:300px;max-width:82vw;display:none;pointer-events:none;
+  background:linear-gradient(180deg,rgba(20,16,10,.96),rgba(14,11,7,.96));border:1px solid #6a5a2a;border-radius:6px;padding:8px 10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:41;font-size:11px}
+#depstatus .dsh{font-size:10px;letter-spacing:1px;color:#ffce6a;text-transform:uppercase;font-weight:800;margin-bottom:5px}
+#depstatus .dsr{display:flex;align-items:center;gap:7px;padding:2.5px 2px}
+#depstatus .dsr i{width:9px;height:9px;border-radius:2px;flex:none}
+#depstatus .dsr .dn{flex:1;color:#eadfce;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#depstatus .dsr .dv{font-weight:800;font-size:10px}
+#depstatus .dsr .dv.ok{color:#8dffbe}#depstatus .dsr .dv.wait{color:#ffb04a;animation:dswait 1s ease-in-out infinite}
+#depstatus .dsf{margin-top:5px;font-size:9.5px;color:#b79a6a;line-height:1.3}#depstatus .dsf.ok{color:#8dffbe}
+@keyframes dswait{0%,100%{opacity:.5}50%{opacity:1}}
 #selall button:hover{background:#17302a;color:#dfffee;border-color:#4f8a72}
 #selall button:active{background:#1f4a3c}
 #selall button[data-f="eng"]{animation:engBlink 1.1s ease-in-out infinite}
@@ -1128,7 +1161,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     <button class="cbtn go" id="qok">CONFIRM ⏎</button>
     <button class="cbtn no" id="qno">CANCEL ESC</button>
   </div>
-  <div id="miniwrap" class="pan"><div class="phead" id="miniHead">MAP<span id="mzoom"><button data-mz="up" title="Zoom the minimap in (scroll / pinch on the map too)">＋</button><button data-mz="dn" title="Zoom the minimap out">－</button><button id="camReset" title="Reset the camera angle (Shift + scroll turns the camera)">Reset camera</button></span><span class="cv">⌄</span></div><div id="selall"><span class="lab">SELECT ALL</span><button data-f="all" title="Select every unit you own (Ctrl+A)">ALL</button><button data-f="inf" title="Select all infantry">INFANTRY</button><button data-f="veh" title="Select all ground vehicles">VEHICLE</button><button data-f="air" title="Select all aircraft">AIR</button><button data-f="eng" title="Select all engineers">ENG</button></div><canvas id="mini" width="680" height="208"></canvas></div>
+  <div id="miniwrap" class="pan"><div class="phead" id="miniHead">MAP<span id="mzoom"><button data-mz="up" title="Zoom the minimap in (scroll / pinch on the map too)">＋</button><button data-mz="dn" title="Zoom the minimap out">－</button><button id="camReset" title="Reset the camera angle (Shift + scroll turns the camera)">Reset camera</button><button id="scoreBtn" title="Scoreboard — kills by player (hover a row for the breakdown)">📊</button></span><span class="cv">⌄</span></div><div id="scoreboard"></div><div id="depstatus"></div><div id="selall"><span class="lab">SELECT ALL</span><button data-f="all" title="Select every unit you own (Ctrl+A)">ALL</button><button data-f="inf" title="Select all infantry">INFANTRY</button><button data-f="veh" title="Select all ground vehicles">VEHICLE</button><button data-f="air" title="Select all aircraft">AIR</button><button data-f="eng" title="Select all engineers">ENG</button></div><canvas id="mini" width="680" height="208"></canvas></div>
   <div id="sel" class="pan"></div>
   <div id="cmd" class="pan"></div>
   <div id="placebar"><button id="pbConfirm" class="go" hidden>✓ Confirm</button><button id="pbCancel">✕ Cancel</button></div>
@@ -5919,6 +5952,8 @@ function killZed(z, ang) {
     alertMsg('Invader ' + z.def.name.toLowerCase() + ' destroyed', 'good');
     return;
   }
+  // scoreboard: credit the kill to whoever's fire brought it down (G.cur, the same owner scrap is credited to)
+  { const pl = G.players && G.players[G.cur] || (G.players && G.players[0]); if (pl && pl.kills && !z.def.worker) { const fac = !!(z.def.med || (z.faction || 0) > 0); if (fac) pl.kills.faction++; else pl.kills.zed++; pl.kills.byType[z.t] = (pl.kills.byType[z.t] || 0) + 1; } }
   const M = MODEL[z.t];
   bloodDecal(z.x, z.y, 8, '#4d0c0c');
   fxGore(z.x, z.y, ang, 8, M ? M.blood : '#8f1414');
@@ -5959,6 +5994,8 @@ function killZed(z, ang) {
 function killUnit(u) {
   if (u.dead) return;
   u.dead = true; G.lost++;
+  // scoreboard: a unit downed by ANOTHER player's fire (PvP) is credited to that player (G.cur is the shooter's owner)
+  if (G.players && G.players.length > 1) { const kp = G.players[G.cur]; if (kp && kp.kills && (u.owner || 0) !== G.cur && plyOf(u).team !== kp.team) { kp.kills.pvp++; kp.kills.byType[u.t] = (kp.kills.byType[u.t] || 0) + 1; } }
   if (u.pinnedBy) { if (u.pinnedBy.pin === u) u.pinnedBy.pin = null; u.pinnedBy = null; }   // its captor is freed to hunt the next man
   // co-op: tell the other players one of my units just fell, with how it fell so everyone hears the right sound
   //   1 = vehicle brew-up · 3 = felled by an archer's arrow · 4 = finished by an ancient blade · 0 = ordinary foot soldier
@@ -6875,7 +6912,9 @@ function mkPlayer(i, o) {
   o = o || {};
   return {
     i, name: o.name || ('Player ' + (i + 1)), team: o.team || 'A', color: o.color || PLAYER_COL[i % 6], spawn: o.spawn || 0,
-    sup: 0, scr: 0, pop: 0, cap: 0, up: { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }, tier: { inf: 1, veh: 1, air: 1 }, utier: {},
+    sup: 0, scr: 0, pop: 0, cap: 0, up: { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }, tier: { inf: 1, veh: 1, air: 1 },
+    kills: { zed: 0, faction: 0, pvp: 0, byType: {} },   // scoreboard: zombies, rival-faction troops, and other players' units this commander has downed, plus a per-type tally
+utier: {},
     dropT: 22, hq: null, bonus: 0, alive: true, unlim: o.unlim || { sup: false, scr: false, cap: false }, maxCap: o.maxCap || 0
   };
 }
@@ -14275,6 +14314,44 @@ function showTip(el, b) {
 }
 function hideTip() { elTip.style.display = 'none'; }
 
+/* ---------------- scoreboard: kills by player ---------------- */
+function scoreTypeName(t) { const d = (typeof ZDEF !== 'undefined' && ZDEF[t]) || (typeof MDEF !== 'undefined' && MDEF[t]) || (typeof UDEF !== 'undefined' && UDEF[t]) || null; return (d && d.name) || t; }
+function renderScoreboard() {
+  const el = document.getElementById('scoreboard'); if (!el) return;
+  const players = (G.players || []).filter(Boolean);
+  let h = '<div class="sbhead"><span>Commander</span><span class="hk"><i>🧟</i><i>⚔️</i><i>🎯</i></span></div>';
+  const rank = players.map((p, i) => ({ p, i, total: p.kills ? (p.kills.zed + p.kills.faction + p.kills.pvp) : 0 })).sort((a, b) => b.total - a.total);
+  for (const { p, i } of rank) {
+    const k = p.kills || { zed: 0, faction: 0, pvp: 0, byType: {} }, col = p.color || '#8dffbe', me = (i === G.me) ? ' me' : '';
+    const bt = Object.keys(k.byType).sort((a, b) => k.byType[b] - k.byType[a]);
+    let brk = '<div class="brk"><div class="bh">' + (p.name || ('Player ' + (i + 1))) + ' — kills by type</div>';
+    if (bt.length) for (const t of bt) brk += '<div class="bt"><span>' + scoreTypeName(t) + '</span><b>' + k.byType[t] + '</b></div>';
+    else brk += '<div class="bt"><span>no kills yet</span><b>0</b></div>';
+    brk += '</div>';
+    h += '<div class="sbrow' + me + '"><span class="nm"><i style="background:' + col + '"></i>' + (p.name || ('Player ' + (i + 1))) + '</span>'
+      + '<span class="col z">' + k.zed + '</span><span class="col f">' + k.faction + '</span><span class="col p">' + k.pvp + '</span>' + brk + '</div>';
+  }
+  el.innerHTML = h;
+}
+/* ---------------- multiplayer deploy status: who has planted their Command Post, who we're still waiting on ---------------- */
+function updateDeployStatus() {
+  const el = document.getElementById('depstatus'); if (!el) return;
+  const D = G.deploy, mp = (typeof NP !== 'undefined' && NP.on) || (G.players && G.players.length > 1);
+  const show = !!(D && D.active && mp);
+  if (el._show !== show) { el._show = show; el.style.display = show ? 'block' : 'none'; }
+  if (!show) return;
+  const seats = (typeof LOBBY !== 'undefined' && LOBBY.room && LOBBY.room.seats) ? LOBBY.room.seats : null;
+  let placed = 0, rows = '';
+  const n = seats ? seats.length : (G.players ? G.players.length : 1);
+  for (let i = 0; i < n; i++) {
+    const nm = seats ? (seats[i].name || ('Player ' + (i + 1))) : ((G.players[i] && G.players[i].name) || ('Player ' + (i + 1)));
+    const col = (G.players[i] && G.players[i].color) || PLAYER_COL[i % 6];
+    const has = !!(D.hqPos && D.hqPos[i]) || (i === G.me && G.hq);   // that commander has sited their post
+    if (has) placed++;
+    rows += '<div class="dsr"><i style="background:' + col + '"></i><span class="dn">' + nm + (i === G.me ? ' (you)' : '') + '</span><span class="dv ' + (has ? 'ok' : 'wait') + '">' + (has ? '✓ placed' : '… waiting') + '</span></div>';
+  }
+  el.innerHTML = '<div class="dsh">DEPLOY — ' + placed + '/' + n + ' posts placed</div>' + rows + (placed < n ? '<div class="dsf">waiting on every commander to place their Command Post…</div>' : '<div class="dsf ok">all set — the battle begins</div>');
+}
 /* ---------------- selection panel ---------------- */
 function updateSelPanel() {
   const sel = G.sel.filter(e => !e.dead);
@@ -14391,6 +14468,8 @@ function updateHUD(dt) {
   if ((wb.dataset.horde | 0) !== hz) { wb.dataset.horde = hz; wb.classList.toggle('horde', !!hz); let ha = $('hordeAlert'); if (hz && !ha) { ha = document.createElement('div'); ha.id = 'hordeAlert'; ha.textContent = '⚠ HORDE ALERT'; wb.appendChild(ha); } else if (!hz && ha) ha.remove(); }
   if (hz) { let n = 0; for (const z of G.zeds) if (!z.dead && z.horde) n++; const ha = $('hordeAlert'); if (ha) ha.textContent = '⚠ HORDE ALERT · ' + n + ' left'; }
   updateSelPanel(); refreshCard(false); refreshConfirm();
+  { const mw = $('miniwrap'); if (mw && mw.classList.contains('showscore') && typeof renderScoreboard === 'function') renderScoreboard(); }
+  if (typeof updateDeployStatus === 'function') updateDeployStatus();
   if (G.mode === 'invaders') updateIntel();
   if (flashT > 0) { flashT -= .1; if (flashT <= 0) $('dmgflash').style.opacity = '0'; }
   updateHint();
@@ -19439,6 +19518,7 @@ $('miniHead').addEventListener('click', () => $('miniwrap').classList.toggle('co
 for (const b of document.querySelectorAll('#selall button')) { const h = e => { e.preventDefault(); e.stopPropagation(); selectAllOf(b.dataset.f); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
 for (const b of document.querySelectorAll('#mzoom button[data-mz]')) { const h = e => { e.preventDefault(); e.stopPropagation(); setMiniZoom((MINI.zoom || 1) * (b.dataset.mz === 'up' ? 1.4 : 1 / 1.4)); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); }
 { const b = document.getElementById('camReset'); if (b) { const h = e => { e.preventDefault(); e.stopPropagation(); resetCamera(); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); } }
+{ const b = document.getElementById('scoreBtn'); if (b) { const h = e => { e.preventDefault(); e.stopPropagation(); const mw = document.getElementById('miniwrap'); const on = !mw.classList.toggle('showscore'); b.classList.toggle('on', !on); if (typeof renderScoreboard === 'function') renderScoreboard(); }; b.addEventListener('click', h); b.addEventListener('touchstart', h, { passive: false }); } }
 /* ---- top-bar resource converter: click a resource total to trade between supply and scrap, choosing the amount on a drag slider ---- */
 (function () {
   const pop = document.getElementById('convpop'); if (!pop) return;
@@ -19632,7 +19712,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b203';
+const BUILD_TAG = 'b204';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
