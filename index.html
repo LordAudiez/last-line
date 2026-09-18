@@ -7492,14 +7492,25 @@ function blockedBy(e, x, y, friendly, heavy) {
 }
 
 /* ==================== TIME, WAVES, AIRDROPS, WEATHER ==================== */
+// real-time day cycle: 2 min of daylight (clock span 0.54) + 1 min of night (clock span 0.46)
+const DAY_LIGHT_SECS = 120, DAY_NIGHT_SECS = 60, DAY_LIGHT_RATE = 0.54 / DAY_LIGHT_SECS, DAY_NIGHT_RATE = 0.46 / DAY_NIGHT_SECS;
 function updateTime(dt) {
   // the clock advances on the host (and in single player); a co-op client takes the time from the host, and "Hold" freezes it for everyone
   const netFollowTime = (typeof NP !== 'undefined' && NP.on && !NP.host);
   if (!G.dayHold && !netFollowTime) {
-    // day is longer than night, 2.5 : 1.75. The day phase spans 0.54 of the cycle, night 0.46; running night ~1.22× faster
-    // makes their real-time lengths land on that ratio (day 2.5 : night 1.75).
-    G.day += dt / G.dayLen * ((G.day < .22 || G.day > .76) ? 1.217 : 1);
-    if (G.day >= 1) { G.day -= 1; G.days = (G.days || 0) + 1; if (G.days === (G.rainDay || 7)) alertMsg('Day ' + G.days + ' — the weather is turning; rain is coming', 'info'); }
+    // real-time day cycle: ~2 minutes of daylight, ~1 minute of night. Daylight spans 0.54 of the [0,1] clock (0.22..0.76)
+    // and night the other 0.46, so we advance each phase at the rate that makes it take its target real-time length.
+    const isNight = (G.day < .22 || G.day > .76);
+    G.day += dt * (isNight ? DAY_NIGHT_RATE : DAY_LIGHT_RATE);
+    if (G.day >= 1) {
+      G.day -= 1; G.days = (G.days || 0) + 1;
+      if (G.days === (G.rainDay || 7)) alertMsg('Day ' + G.days + ' — the weather is turning; rain is coming', 'info');
+      // waves are on the calendar now: a fresh wave every 2 days, and every 15th day is a horde
+      if (G.started && !G.over && !(typeof NP !== 'undefined' && NP.on && !NP.host)) {
+        if (G.days % 15 === 0) startWave(true);
+        else if (G.days % 2 === 0) startWave();
+      }
+    }
   }
   const wasNight = G.night;
   G.night = (G.day < .22 || G.day > .76);
@@ -7515,10 +7526,8 @@ function updateTime(dt) {
     }
   }
   if (!(typeof NP !== 'undefined' && NP.on && !NP.host)) {   // in co-op only the host spawns the shared horde; clients receive it over the wire
-    if (!G.waveQueue) {
-      G.waveT -= dt;
-      if (G.waveT <= 0) startWave();
-    } else {
+    // waves are TRIGGERED by the calendar (see the day-cross above); here we just pour out the contacts of the current one
+    if (G.waveQueue) {
       G.waveQueue.t -= dt;
       while (G.waveQueue.list.length && G.waveQueue.t <= 0) {
         const zc = spawnWaveContact(G.waveQueue.list.pop());
@@ -7686,7 +7695,7 @@ function startInvaderWave(w) {
   alertMsg('WAVE ' + w + ' — ' + list.length + ' invaders' + (surge ? ' — THE HOST MARCHES' : ' advancing'), surge ? 'bad' : '');
   AU.ui('alarm');
 }
-function startWave() {
+function startWave(forceHorde) {
   G.wave++; G.peace = false;
   const w = G.wave;
   if (G.mode === 'invaders') return startInvaderWave(w);
@@ -7699,7 +7708,7 @@ function startWave() {
                       where the specials come in heavier (brutes + bloaters double weighted).
      Horde (every 15th wave): 40 seconds of normal zombies streaming in at 3 per second (5 per second once
      past wave 100) — 180 / 300 bodies — on top of a half-strength regular column. */
-  const horde = w % 15 === 0 && w > (G.hordeCancelUntil || 0) && !G.hordeAlert;   // once a horde begins, no new horde for the next 10 waves, and never while the last horde is still unbroken
+  const horde = (forceHorde || w % 15 === 0) && !G.hordeAlert;   // every 15th day is a horde (the calendar drives it now); never stack a new horde while the last is still unbroken
   if (horde) G.hordeCancelUntil = w + 10;
   let count, spec;
   if (w <= 10) { count = 5 * w; spec = 0; }
@@ -14363,9 +14372,13 @@ function updateHUD(dt) {
   $('phase').textContent = 'day ' + ((G.days || 0) + 1) + ' · ' + (G.night ? 'night' : (G.day < .3 ? 'dawn' : G.day > .68 ? 'dusk' : 'noon'));
   $('sun').className = G.night ? 'night' : '';
   $('wavenum').textContent = G.wave;
-  const f = G.waveQueue ? 1 : clamp(1 - G.waveT / (G.waveTMax || 60), 0, 1);
+  // waves march on the calendar: a fresh wave every 2 days, a horde every 15th day. Find the next such day and count down to it.
+  const cur = (G.days || 0) + G.day;
+  let nwd = (G.days || 0) + 1, guard = 0; while (guard++ < 90 && !(nwd % 15 === 0 || nwd % 2 === 0)) nwd++;
+  const nextHorde = nwd % 15 === 0, rem = nwd - cur;
+  const f = G.waveQueue ? 1 : clamp((cur - (nwd - 2)) / 2, 0, 1);
   $('wavefill').style.width = (f * 100) + '%';
-  { const main = G.waveAlive > 0 ? G.waveAlive + ' hostiles' : (G.waveT < 12 ? 'imminent' : Math.ceil(G.waveT) + 's');
+  { const main = G.waveAlive > 0 ? G.waveAlive + ' hostiles' : (rem < .08 ? 'imminent' : (nextHorde ? '⚠ HORDE · day ' + nwd : 'wave · day ' + nwd));
     const sub = G.mode === 'invaders' && G.muster && !G.muster.marching ? 'host ' + G.muster.n + '/' + MUSTER_FULL + ' mustering' : '';
     const key = main + '|' + sub; if (key !== G._wtKey) { G._wtKey = key; $('wavetxt').innerHTML = main + (sub ? '<span class="wsub">' + sub + '</span>' : ''); } }
   { const rp = $('rallyPill'); if (rp) { const on = !!(G.hq && !G.hq.dead && G.hq.alarmRally); if (rp.classList.contains('show') !== on) rp.classList.toggle('show', on);
@@ -19615,7 +19628,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b201';
+const BUILD_TAG = 'b202';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
