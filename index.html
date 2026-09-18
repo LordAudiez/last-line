@@ -8270,6 +8270,11 @@ function updateUnits(dt) {
           v.hp = Math.min(v.maxHp, v.hp + v.maxHp * .045); healed++;
           if (Math.random() < .5) part('spark', v.x + rnd(-6, 6), v.y + rnd(-6, 6), 0, -20, .5, 1.2, '#8dffbe', { z: 6, vz: 24, glow: 1 });
         }
+        // the medic also patches up the barracks parade soldiers (recruits, sergeant, sparring pairs) standing near him
+        if (typeof PARADE_HP !== 'undefined' && G.builds) for (const bb of G.builds) {
+          if (bb.dead || bb.t !== 'barracks' || !bb.done || !bb.guards || (bb.owner || 0) !== (u.owner || 0)) continue;
+          for (let gi = 0; gi < bb.guards.length; gi++) { const gd = bb.guards[gi]; if (!gd || !gd.alive || gd.hp >= PARADE_HP) continue; if (dist2(gd.x, gd.y, u.x, u.y) > R * R) continue; gd.hp = Math.min(PARADE_HP, gd.hp + PARADE_HP * .045); healed++; if (Math.random() < .5) part('spark', gd.x + rnd(-6, 6), gd.y + rnd(-6, 6), 0, -20, .5, 1.2, '#8dffbe', { z: 6, vz: 24, glow: 1 }); }
+        }
         if (healed) part('ring', u.x, u.y, 0, 0, .45, R * .5, '#8dffbe', { grow: R * .9, glow: 1 });
       }
     }
@@ -11140,7 +11145,8 @@ function strikePreview() {
    with his 9mm sidearm. He can be cut down — and a fresh recruit falls in on the same spot within a minute. The render
    reads each post's { alive, engaged, aimAng, flashT } to draw him drilling, shooting or gone. The post layout here
    MUST match drawTrainingGround in 08b_render3d.js (16 push-up recruits + sergeant + 4 drill figures = 21 posts). */
-const PARADE_HP = 30, PARADE_ENGAGE = 172, PARADE_FIRE = [.45, .8], PARADE_MAUL = 20, PARADE_RESP = [30, 52];
+const PARADE_HP = 30, PARADE_ENGAGE = 172, PARADE_FIRE = [.45, .8], PARADE_RESP = [30, 52], CMD_IDX = 16;
+const PARADE_RIFLE = { dmg: 9, rng: 265, cd: .075, spread: .028, spd: 1080, kind: 'bullet', sfx: 'auto', casings: 1, sustain: true };   // the sergeant/commander answers with a spec-ops auto carbine, not a sidearm
 function paradePosts(b) {
   if (b._pposts) return b._pposts;
   const dirA = Math.PI / 2 + (b.facing || 0);
@@ -11154,33 +11160,67 @@ function paradePosts(b) {
   b._pposts = { dirA, list };
   return b._pposts;
 }
-function guardFire(po, g, tgt, b) {
+function guardFire(g, tgt, b, wep) {
   const src = b._guardSrc || (b._guardSrc = { r: 6, def: { wep: PISTOL }, ammo: 99, vx: 0, vy: 0, bDmg: 1, tier: b.tier || 1, owner: (typeof b.owner === 'number' ? b.owner : 0) });
-  src.x = po.x; src.y = po.y; src.ang = g.aimAng; src.aimT = g.aimAng;   // the post holds the position; the guard state holds the aim
-  fire(src, tgt, PISTOL, { x: po.x + Math.cos(g.aimAng) * 8, y: po.y + Math.sin(g.aimAng) * 8, a: g.aimAng, z: 9 });
+  src.x = g.x; src.y = g.y; src.ang = g.aimAng; src.aimT = g.aimAng;   // the guard's live position and aim drive the shot
+  fire(src, tgt, wep, { x: g.x + Math.cos(g.aimAng) * 8, y: g.y + Math.sin(g.aimAng) * 8, a: g.aimAng, z: 9 });
 }
 function updateParade(dt) {
   if (!G.builds) return;
+  const drag = Math.pow(.02, dt);
   for (const b of G.builds) {
     if (b.dead || b.t !== 'barracks' || !b.done || b.owner === 'invader') continue;
     const pp = paradePosts(b), posts = pp.list;
-    if (!b.guards || b.guards.length !== posts.length) { b.guards = []; for (let i = 0; i < posts.length; i++) b.guards[i] = { hp: PARADE_HP, alive: true, respT: 0, fireCd: rnd(0, PARADE_FIRE[1]), aimAng: posts[i].face, engaged: false, flashT: 0 }; }
+    if (!b.guards || b.guards.length !== posts.length) { b.guards = []; for (let i = 0; i < posts.length; i++) { const po = posts[i]; b.guards[i] = { hp: PARADE_HP, alive: true, respT: 0, fireCd: rnd(0, PARADE_FIRE[1]), aimAng: po.face, engaged: false, flashT: 0, x: po.x, y: po.y, vx: 0, vy: 0, disp: 0, knock: 0 }; } }
     // one cheap scan first: is any zombie near the parade at all? if not, everyone just drills (and dead men count down)
-    const anyNear = findEnemy(b.x + Math.cos(pp.dirA) * 5 * TS, b.y + Math.sin(pp.dirA) * 5 * TS, PARADE_ENGAGE + 6 * TS, 0);
+    const anyNear = findEnemy(b.x + Math.cos(pp.dirA) * 5 * TS, b.y + Math.sin(pp.dirA) * 5 * TS, PARADE_RIFLE.rng + 6 * TS, 0);
     G.cur = (typeof b.owner === 'number' ? b.owner : 0);
     for (let i = 0; i < posts.length; i++) {
-      const g = b.guards[i], po = posts[i];
+      const g = b.guards[i], po = posts[i], isCmd = (i === CMD_IDX);
       g.flashT = Math.max(0, g.flashT - dt * 6);
-      if (!g.alive) { g.respT -= dt; if (g.respT <= 0) { g.alive = true; g.hp = PARADE_HP; g.engaged = false; g.aimAng = po.face; } continue; }
-      let tgt = anyNear ? findEnemy(po.x, po.y, PARADE_ENGAGE, 0) : null;
-      if (tgt) {
-        g.engaged = true; g.aimAng = angTo(po.x, po.y, tgt.x, tgt.y); g.fireCd -= dt;
-        if (g.fireCd <= 0) { g.fireCd = rnd(PARADE_FIRE[0], PARADE_FIRE[1]); guardFire(po, g, tgt, b); g.flashT = 1; }
+      if (!g.alive) { g.respT -= dt; if (g.respT <= 0) { g.alive = true; g.hp = PARADE_HP; g.engaged = false; g.knock = 0; g.vx = g.vy = 0; g.x = po.x; g.y = po.y; g.aimAng = po.face; g.disp = 0; } continue; }
+
+      // --- position: ride out a Brute's knock-back, then hustle back to his mark on the square (he never abandons it) ---
+      if (g.knock > 0) {
+        g.knock -= dt; g.x += g.vx * dt; g.y += g.vy * dt; g.vx *= drag; g.vy *= drag; g.engaged = false;
+      } else {
+        const dx = po.x - g.x, dy = po.y - g.y, d = Math.hypot(dx, dy); g.disp = d > 3 ? d : 0;
+        if (d > 3) { const sp = Math.min(d, 95 * dt); g.x += dx / d * sp; g.y += dy / d * sp; g.aimAng = Math.atan2(dy, dx); }
+        else { g.x = po.x; g.y = po.y; }
+      }
+
+      // --- fire (only while planted on his mark) ---
+      if (!g.knock && !g.disp) {
+        const engR = isCmd ? PARADE_RIFLE.rng : PARADE_ENGAGE, wep = isCmd ? PARADE_RIFLE : PISTOL;
+        const tgt = anyNear ? findEnemy(g.x, g.y, engR, 0) : null;
+        if (tgt) {
+          g.engaged = true; g.aimAng = angTo(g.x, g.y, tgt.x, tgt.y); g.fireCd -= dt;
+          if (g.fireCd <= 0) { g.fireCd = isCmd ? rnd(.10, .2) : rnd(PARADE_FIRE[0], PARADE_FIRE[1]); guardFire(g, tgt, b, wep); g.flashT = 1; }
+        } else g.engaged = false;
       } else g.engaged = false;
-      // mauled where he stands: a zombie on top of the post chews through him
-      const zl = G.hZeds.near(po.x, po.y, 18, _q2);
-      for (let k = 0; k < zl.length; k++) { const z = zl[k]; if (z.dead) continue; const rr = z.r + 7; if (dist2(z.x, z.y, po.x, po.y) < rr * rr) { g.hp -= PARADE_MAUL * dt; break; } }
-      if (g.hp <= 0) { g.alive = false; g.respT = rnd(PARADE_RESP[0], PARADE_RESP[1]); g.engaged = false; if (typeof bloodJet === 'function') bloodJet(po.x, po.y, g.aimAng + Math.PI); }
+
+      // --- zombies go for the parade soldier exactly as they go for any trooper: the nearest one breaks off, closes, and
+      //     bites him with its normal lunge; a Brute barges him flat instead. He bleeds, and can be cut down where he stands. ---
+      const zl = G.hZeds.near(g.x, g.y, 92, _q2); let za = null, zd = 92 * 92;
+      for (let k = 0; k < zl.length; k++) { const z = zl[k]; if (z.dead || z.inside || (z.def && (z.def.veh || z.def.fly))) continue; if (z._pClaim === G.frame && z._pClaimG !== g) continue; const dd = dist2(z.x, z.y, g.x, g.y); if (dd < zd) { zd = dd; za = z; } }
+      if (za && !g.knock) {
+        const rr = za.r + 11;
+        if (zd < rr * rr) {
+          za.cd = (za.cd || 0) - dt;
+          if (za.cd <= 0) {
+            za.cd = za.def.rate || 1; za.lunge = .2; za.ang = angTo(za.x, za.y, g.x, g.y);
+            if (za.def.charger || za.def.bumpDmg) { const a = za.ang, kv = 230; g.vx = Math.cos(a) * kv; g.vy = Math.sin(a) * kv; g.knock = 1.6; g.hp -= (za.def.bumpDmg || 12); }
+            else g.hp -= (za.def.dmg || 4) * ((G.diff && G.diff.dmgMul) || 1);
+            if (Math.random() < .35 && typeof bloodJet === 'function') bloodJet(g.x, g.y, za.ang + Math.PI);
+          }
+        } else {
+          za._pClaim = G.frame; za._pClaimG = g;                                  // claim it so only one soldier draws each zombie in
+          const a = angTo(za.x, za.y, g.x, g.y), sp = (za.def.spd || 40) * dt * .6;
+          za.x += Math.cos(a) * sp; za.y += Math.sin(a) * sp; za.ang = angLerp(za.ang, a, .3); za.step = (za.step || 0) + dt * 10; za.bob = (za.bob || 0) + dt * 8;
+        }
+      }
+
+      if (g.hp <= 0) { g.alive = false; g.respT = rnd(PARADE_RESP[0], PARADE_RESP[1]); g.engaged = false; g.knock = 0; if (typeof bloodJet === 'function') bloodJet(g.x, g.y, g.aimAng + Math.PI); }
     }
     G.cur = G.me;
   }
@@ -15997,8 +16037,8 @@ function ctrlHudTick(dt) {
     const sw = Math.sin(walk) * mv, bob = Math.abs(Math.cos(walk)) * .55 * sc * mv;
     const legsGone = !(lm & L_LL) && !(lm & L_RL), oneLeg = !(lm & L_LL) || !(lm & L_RL);
     const rc = o.rc || 0, relP = o.reload || 0, relK = relP > 0 ? Math.sin(Math.min(1, relP) * Math.PI) : 0;   // recoil kick 0..1 and reload progress 0..1 (bell-shaped hand travel)
-    const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + idLean;   // tactical stance while engaged: leaning into the gun, knees bent; crouch/idle add more
-    const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.sit ? legL * .82 : 0) - (o.ride ? legL * .3 : 0) + idHip;
+    const lean = (zed ? (o.zt === 'runner' ? .5 + (o.hop || 0) * .3 : o.zt === 'brute' ? .3 : .28) : med ? .04 : .09) - rc * (o.rcSide ? .05 : .11) + relK * .05 + (o.tac ? .07 : 0) + (o.crouch ? .2 : 0) + (o.quad ? 1.15 + Math.sin(walk * 2) * .08 : 0) + idLean;   // predator on the hunt drops onto all fours — the spine goes near-horizontal, bobbing with the gallop
+    const hipY = y + (legsGone ? legL * .25 : oneLeg ? legL * .85 : legL) + (zed ? 0 : bob) - (o.tac ? 1.4 * sc : 0) - (o.crouch ? legL * .42 : 0) - (o.quad ? legL * .34 : 0) - (o.sit ? legL * .82 : 0) - (o.ride ? legL * .3 : 0) + idHip;
     const spread = torsoW * (o.ride ? .56 : .24);                                   // a rider straddles the saddle
     const hipSway = sw * legW * .11, hipRoll = -sw * .05 + (o.roll || 0);          // the pelvis rocks a little from side to side with the stride (o.roll: a heavy lumbering side-bend, e.g. the brute's charge)
     // legs (body heading): thigh + shin. The swinging leg lifts its knee through the middle of the stride, the trailing leg
@@ -16130,7 +16170,8 @@ function ctrlHudTick(dt) {
     const launcher = !med && !o.mg && W.wid >= 6 && !W.muzzle, shoY2 = shoY - 1.5 * sc - drawE * 5 * sc;
     if (o.mg) put(P.cyl, X(tl - torsoD * .5 - 1.6 * sc, -torsoW * .1), tcY + torsoH * .05, Z(tl - torsoD * .5 - 1.6 * sc, -torsoW * .1), .8, ry, .1, 1.5 * sc, 22 * sc, 1.5 * sc, col3('#2f3328'));   // the RPG-7 slung across the back while the machine gun is up
     let la, ra, lrt = -aR, rrt = aR, rifle = false;                             // swing (rz) + right-offset of each arm's pivot
-    if (zed) { const swingArms = o.zt === 'runner' || o.zt === 'brute'; const reach = 1.35 + Math.sin(walk * .7) * .12; la = swingArms ? sw * (o.zt === 'brute' ? 1.15 : .9) : reach; ra = swingArms ? -sw * (o.zt === 'brute' ? 1.15 : .9) : reach - .3; }   // runner + brute pump their arms as they run; the rest reach forward
+    if (zed) { if (o.quad) { const g = Math.sin(walk); la = 1.78 + g * .5; ra = 1.78 - g * .5; }   // predator gallop: the forelimbs reach out and paw the ground, alternating like a big cat bounding
+      else { const swingArms = o.zt === 'runner' || o.zt === 'brute'; const reach = 1.35 + Math.sin(walk * .7) * .12; la = swingArms ? sw * (o.zt === 'brute' ? 1.15 : .9) : reach; ra = swingArms ? -sw * (o.zt === 'brute' ? 1.15 : .9) : reach - .3; } }   // runner + brute pump their arms as they run; the rest reach forward
     else if (armed && med) {
       if (gun === 'bow') { la = 1.5; ra = .8; lrt = -aR * .7; rrt = aR * .5; }
       else if (gun === 'spear') { ra = .95; la = .25; }
@@ -16142,6 +16183,7 @@ function ctrlHudTick(dt) {
     else if (armed && o.pistol) { ra = 1.5 - rc * .25; la = 1.38 - rc * .2; lrt = -aR * .4; rrt = aR * .55; }   // two-handed pistol stance, arms out front
     else if (armed && launcher) { ra = 1.25; la = 1.05; lrt = -aR * .45; }
     else if (armed) { rifle = true; }
+    else if (o.spar !== undefined) { const s = o.spar; ra = 1.2 + Math.sin(s) * .75; la = 1.2 + Math.sin(s + Math.PI) * .75; lrt = -aR * .5; rrt = aR * .5; }   // hand-to-hand sparring: fists jab forward and pull back to guard, alternating
     else if (o.rope) { la = 2.9; ra = 2.9; }
     else { la = -sw * .4; ra = sw * .4; }
     const hand = { };                                                           // hand positions (f = forward, r = right, y = height)
@@ -17475,9 +17517,12 @@ function ctrlHudTick(dt) {
     const guards = ent.guards;
     const post = (idx, wx, wy, faceA, trainOpts) => {
       const gd = guards ? guards[idx] : null;
+      const px = (gd && gd.x !== undefined) ? gd.x : wx, py = (gd && gd.y !== undefined) ? gd.y : wy;   // live position (may be shoved off the post, then walks back)
       if (gd && !gd.alive) return;                                                          // fallen — his spot stands empty until a fresh recruit falls in
-      if (gd && gd.engaged) { fig(wx, wy, gd.aimAng, { id: trainOpts.id, gun: 'pistol', pistol: true, tac: 1, aimD: 0, rc: gd.flashT || 0, cap: trainOpts.cap, scale: trainOpts.scale || .84 }); return; }
-      fig(wx, wy, faceA, trainOpts);
+      if (gd && gd.knock) { fig(px, py, gd.aimAng || faceA, { id: trainOpts.id, gun: 'none', prone: true, scale: trainOpts.scale || .84, cap: trainOpts.cap }); return; }   // knocked flat by a Brute — down on the ground
+      if (gd && gd.engaged) { const rifle = (idx === 16); fig(px, py, gd.aimAng, { id: trainOpts.id, gun: rifle ? 'rifle' : 'pistol', pistol: !rifle, tac: 1, aimD: 0, rc: gd.flashT || 0, cap: trainOpts.cap, scale: trainOpts.scale || .84 }); return; }   // the commander answers with a rifle (spec-ops carbine); the recruits with sidearms
+      if (gd && gd.disp) { fig(px, py, Math.atan2(wy - py, wx - px), { id: trainOpts.id, gun: 'none', scale: trainOpts.scale || .84, cap: trainOpts.cap, mv: 1, walk: gd.disp * 12 }); return; }   // shoved off his mark — hustling back to it
+      fig(px, py, faceA, trainOpts);
     };
     // four ranks of four recruits doing push-ups, facing out, bobbing on the sergeant's count
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
@@ -17495,28 +17540,29 @@ function ctrlHudTick(dt) {
       put(P.head, bx, poleY + poleH + .08, bz, 0, 0, 0, .075, .11, .075, GOLD);
       const w = G.wind || { x: 1, y: 0 }, ws = Math.hypot(w.x || 0, w.y || 0), wa = Math.atan2(w.y || 0, w.x || 0);
       const lift = Math.min(1, ws / 110);                            // 0 = limp/hanging, 1 = streaming flat
-      const N = 5, segL = 1.15 / N, fh = .74;
-      const amp = .05 + lift * .5, freq = 1.5 + ws * .045;           // ripple grows and quickens with the wind
-      const droop = (1 - lift) * 1.15;                               // each segment sags this much when the air is calm
-      let cx = bx, cy = poleY + poleH - .12, cz = bz;               // hoisted just under the finial
-      for (let i = 0; i < N; i++) {
-        const ph = G.t * freq - i * 1.1, wave = Math.sin(ph);
-        const yaw = -wa + wave * amp * .7;                           // side-to-side sway in the horizontal plane
-        const rz = -droop + Math.sin(ph + .6) * amp;                // vertical ripple + gravity sag
-        _e.set(0, yaw, rz, 'YXZ'); _qq.setFromEuler(_e);
-        _p.set(segL, 0, 0).applyQuaternion(_qq); const ax = _p.x, ay = _p.y, az = _p.z;
-        _p.set(0, 1, 0).applyQuaternion(_qq); const ux = _p.x, uy = _p.y, uz = _p.z;
-        const mx = cx + ax * .5, my = cy + ay * .5, mz = cz + az * .5;
-        put(P.cloth, mx, my, mz, 0, yaw, rz, segL, fh, .02, fcolFlag);
-        put(P.cloth, mx + ux * fh * .42, my + uy * fh * .42, mz + uz * fh * .42, 0, yaw, rz, segL, fh * .16, .022, GOLD);
-        cx += ax; cy += ay; cz += az;
-      } }
-    // two drilling pairs off to one side (bayonet drill for the player, sword/spear sparring for the ancient host)
+      const fl = 1.15, fh = .74;
+      const flap = Math.sin(G.t * (1.4 + ws * .03)) * (.03 + lift * .17);   // one cloth, rippling — the flap grows and quickens with the wind
+      const yaw = -wa + flap * .5;                                   // streams downwind, swaying a touch side to side
+      const rz = -(1 - lift) * 1.15 + flap;                         // hangs limp when calm (edge sags), snaps out flat in a gale
+      _e.set(0, yaw, rz, 'YXZ'); _qq.setFromEuler(_e);
+      _p.set(fl, 0, 0).applyQuaternion(_qq); const ax = _p.x, ay = _p.y, az = _p.z;
+      _p.set(0, 1, 0).applyQuaternion(_qq); const ux = _p.x, uy = _p.y, uz = _p.z;
+      const cx = bx + ax * .5, cy = (poleY + poleH - .12) + ay * .5, cz = bz + az * .5;   // one single piece of cloth, hoisted at the pole top
+      put(P.cloth, cx, cy, cz, 0, yaw, rz, fl, fh, .02, fcolFlag);
+      put(P.cloth, cx + ux * fh * .42, cy + uy * fh * .42, cz + uz * fh * .42, 0, yaw, rz, fl, fh * .16, .022, GOLD); }
+    // two sparring pairs off to one side: the player's recruits drill hand-to-hand CQB (unarmed, trading jabs and
+    // blocks), the ancient host spars with sword/spear
     for (let d2 = 0; d2 < 2; d2++) {
       const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = 1.25 * TS, beat = Math.sin(t * 3 + d2 * 1.3);
       const a1 = at(fwd, lat), b2 = at(fwd + gap, lat);
-      post(17 + d2 * 2, a1.x, a1.y, dirA, { id: idb + 70 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'spear' : 'sword'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, beat) * .7 });
-      post(18 + d2 * 2, b2.x, b2.y, dirA + Math.PI, { id: idb + 71 + d2 * 2, gun: player ? 'rifle' : (d2 & 1 ? 'sword' : 'spear'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, -beat) * .7 });
+      if (player) {
+        const ph = t * 3.4 + d2 * 1.9, lunge = Math.max(0, Math.sin(ph)) * .18 * TS;       // step in on the strike, back on the recovery
+        post(17 + d2 * 2, a1.x + fdx * lunge, a1.y + fdy * lunge, dirA, { id: idb + 70 + d2 * 2, gun: 'none', scale: .9, tac: 1, spar: ph });
+        post(18 + d2 * 2, b2.x - fdx * lunge, b2.y - fdy * lunge, dirA + Math.PI, { id: idb + 71 + d2 * 2, gun: 'none', scale: .9, tac: 1, spar: ph + Math.PI });
+      } else {
+        post(17 + d2 * 2, a1.x, a1.y, dirA, { id: idb + 70 + d2 * 2, gun: (d2 & 1 ? 'spear' : 'sword'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, beat) * .7 });
+        post(18 + d2 * 2, b2.x, b2.y, dirA + Math.PI, { id: idb + 71 + d2 * 2, gun: (d2 & 1 ? 'sword' : 'spear'), scale: .9, tac: 1, aimD: 0, mv: .25 + Math.max(0, -beat) * .7 });
+      }
     }
   }
   /* ======================= screen → world: raycast against the heightfield ======================= */
@@ -18266,7 +18312,8 @@ function ctrlHudTick(dt) {
         const el = (zz.climb || 0) * K, air = !!zz.leap, crouched = !!zz.perch || !!zz.pin || air;
         let roll = 0;
         if (zz.pin) { const lg = zz.lunge || 0, k = zz.clawKind; roll = k === 'clawL' ? -lg * .7 : k === 'clawR' ? lg * .7 : 0; }   // left / right claw swings the body to that side; a bite lunges straight in (via the forward push)
-        drawFigureC(x, gy + el, z, zz.ang, air ? 0 : (zz.step || 0), S, { ck: zz, kind: 'zed', zt: 'predator', scale: .9, limbs: zz.limbs, id: zz.id, hop: air ? 1 : 0, crouch: crouched, roll, mv: zedMv(zz) });
+        const onFours = !air && !zz.perch && !zz.pin;                                     // stalking / sprinting on the ground → down on all fours like a wild animal
+        drawFigureC(x, gy + el, z, zz.ang, air ? 0 : (zz.step || 0), S, { ck: zz, kind: 'zed', zt: 'predator', scale: .9, limbs: zz.limbs, id: zz.id, hop: air ? 1 : 0, crouch: crouched, quad: onFours ? 1 : 0, roll, mv: zedMv(zz) });
       }
       else if (zz.def.charger) {
         // brute: a heavy, powerful run — the torso bends side to side (menacing sway) and the arms pump; NO body jitter
@@ -18509,6 +18556,8 @@ function ctrlHudTick(dt) {
     ctx.lineWidth = 1;
     const bar = (x, y, h, w, f, col) => { const s = toScreen(x, y, h); if (s[2] > 1) return; ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(s[0] - w / 2, s[1] - 2, w, 3); ctx.fillStyle = col; ctx.fillRect(s[0] - w / 2, s[1] - 2, w * f, 3); };
     for (const u of G.units) if (!u.dead && !u.inside && u.hp < u.maxHp && u.x > vx0 && u.x < vx1 && u.y > vy0 && u.y < vy1) bar(u.x, u.y, groundY(u.x, u.y) + (u.def.fly ? (u.def.alt || 150) * K * ALTK : 0) + u.r * K * 2.4, 22, u.hp / u.maxHp, '#4de08c');
+    // parade soldiers (recruits, sergeant, sparring pairs) show a health bar once they've been hit
+    if (typeof PARADE_HP !== 'undefined') for (const b of G.builds) { if (b.dead || b.t !== 'barracks' || !b.done || !b.guards) continue; const gs = b.guards; for (let i = 0; i < gs.length; i++) { const g = gs[i]; if (!g || !g.alive || g.hp >= PARADE_HP) continue; const gx = g.x, gy = g.y; if (gx < vx0 || gx > vx1 || gy < vy0 || gy > vy1) continue; bar(gx, gy, groundY(gx, gy) + .95, 18, Math.max(0, g.hp / PARADE_HP), '#4de08c'); } }
     // multiplayer: a small team-colour pip above every unit so you can read who owns what at a glance
     if (G.mp) for (const u of G.units) { if (u.dead || u.inside || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue; const sc2 = toScreen(u.x, u.y, groundY(u.x, u.y) + (u.def.fly ? (u.def.alt || 150) * K * ALTK : 0) + u.r * K * (u.def.veh ? 3.0 : 2.9)); if (sc2[2] > 1) continue; const col = (TEAM_COL[plyOf(u).team]) || '#8dffbe'; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.moveTo(sc2[0], sc2[1] + 1); ctx.lineTo(sc2[0] - 4, sc2[1] - 6); ctx.lineTo(sc2[0] + 4, sc2[1] - 6); ctx.closePath(); ctx.fill(); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(sc2[0], sc2[1]); ctx.lineTo(sc2[0] - 3.2, sc2[1] - 5.2); ctx.lineTo(sc2[0] + 3.2, sc2[1] - 5.2); ctx.closePath(); ctx.fill(); }
     /* enemy health bars are hidden — you read a zombie's state from its wounds and dismemberment, not a bar */
@@ -19422,7 +19471,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b195';
+const BUILD_TAG = 'b196';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
