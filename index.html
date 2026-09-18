@@ -16994,7 +16994,7 @@ function ctrlHudTick(dt) {
       const hut = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(R, R, w * .96, 20, 1, false, 0, Math.PI), CORR)); hut.rotation.z = HPI; hut.position.set(0, .18, 0); g.add(hut);
       g.add(box(w * .96, .2, R * 2, wall, 0, .1, 0));
       for (const sd of [-1, 1]) { const cap = shadowed(new THREE.Mesh(new THREE.CircleGeometry(R, 20, 0, Math.PI), matFor('#4f5a44', CONC))); cap.rotation.y = sd > 0 ? HPI : -HPI; cap.position.set(sd * w * .48, .18, 0); g.add(cap); g.add(box(.03, .5, .34, matFor('#2a2e30', PANEL), sd * w * .49, .25, 0)); }
-      for (let i = 0; i < 2; i++) g.add(cyl(.04, .04, .35, TRACK, -w * .2 + i * w * .4, R + .3, -.15, 'y'));
+      for (let i = 0; i < 2; i++) g.add(cyl(.045, .045, .32, TRACK, -w * .2 + i * w * .4, R + .06, -.08, 'y'));   // stove pipes planted INTO the barrel roof (base inside, tip poking ~.1 above), not floating over it
       const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 }); g.userData.wins = win;
       for (let i = 0; i < 3; i++) for (const sd of [-1, 1]) g.add(box(.2, .14, .03, win, -w * .3 + i * w * .3, .3, sd * (R + .005), sd * .35, 0, 0));
       g.add(box(.6, .06, .2, matFor('#5a4a34', WOODM), 0, .22, R + .25)); g.add(box(.5, .3, .05, matFor('#3a3a3a'), w * .35, .15, R + .25));
@@ -17164,7 +17164,7 @@ function ctrlHudTick(dt) {
       } else if (b.t === 'barracks') {
         bagRow(-hw * .85, hw * .85 - .36, hh * .92); for (let i = 0; i < 3; i++) g.add(box(.3, .18, .3, STL, -hw * .5 + i * hw * .5, hh * .46 + .1, -hh * .1));   // revetment, roof AC units
         g.add(box(w * .9, .04, .06, ACC, 0, .5, hh * .93));
-        if (t3) { const net = box(w * .9, .02, h * .8, matFor('#3e5230', { transparent: true, opacity: .6 }), 0, hh * .46 + .32, 0); g.add(net); for (const sx of [-hw * .85, hw * .85]) for (const sz of [-hh * .8, hh * .8]) g.add(cyl(.02, .02, hh * .46 + .32, DKM, sx, (hh * .46 + .32) * .5, sz, 'y')); mast(hw * .8, -hh * .8, 1.2); g.add(box(.2, .2, .2, LED, hw * .8, hh * .46 + .5, hh * .8)); }   // camo net on poles, mast, lamp
+        if (t3) { const Rr = h * .46; const net = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(Rr + .05, Rr + .05, w * .82, 20, 1, false, .18, Math.PI - .36), matFor('#3e5230', { transparent: true, opacity: .5, side: THREE.DoubleSide }))); net.rotation.z = HPI; net.position.set(0, .18, 0); g.add(net); g.add(box(.22, .22, .22, LED, -hw * .82, .58, hh * .82)); }   // Mk3: a camo net draped OVER the curved roof (hugging the barrel) + a corner lamp — no free-standing masts/poles that would float above a quonset camo net on poles, mast, lamp
       } else if (b.t === 'armory') {
         const BW = w * .52, BX = -w * .23;
         for (let i = 0; i < 3; i++) g.add(box(.22, .18, .22, matFor('#5a4a34', WOODM), BX + BW * .5 + .15, .09 + (i === 2 ? .18 : 0), -hh * .7 + (i % 2) * .25));   // ammo crates
@@ -19584,7 +19584,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b198';
+const BUILD_TAG = 'b199';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
