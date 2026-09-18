@@ -196,6 +196,21 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 .btn .c{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:10px;color:#8dffbe;font-weight:700}
 .btn .c em{color:#ffbe63;font-style:normal;margin-left:5px}
 .btn .fill{position:absolute;inset:auto 0 0 0;height:4px;background:#3ea0ff}
+/* per-unit upgrade pill: rides on the buy tile, slides out on hover; glows and invites a click when you can afford it */
+.btn .upb{position:absolute;left:4px;right:4px;bottom:3px;height:16px;display:flex;align-items:center;justify-content:center;gap:3px;
+  border-radius:8px;font-size:9px;font-weight:800;letter-spacing:.2px;line-height:1;cursor:pointer;white-space:nowrap;overflow:hidden;
+  opacity:0;transform:translateY(7px) scale(.92);pointer-events:none;
+  transition:opacity .15s ease,transform .18s cubic-bezier(.22,1.4,.4,1),box-shadow .2s ease;z-index:4}
+.btn:hover .upb{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.btn .upb .ug{font-size:10px;line-height:1}
+.btn .upb .uc{margin-left:2px}.btn .upb .uc em{font-style:normal}
+.btn .upb.can{background:linear-gradient(180deg,#37e084,#12a457);color:#04180d;border:1px solid #9dffc4;box-shadow:0 0 10px rgba(70,255,150,.55);animation:upglow 1.25s ease-in-out infinite}
+.btn .upb.can .uc{color:#063d22}.btn .upb.can .uc em{color:#7a2a00}
+.btn .upb.can:hover{background:linear-gradient(180deg,#5affab,#1cc471);transform:translateY(-1px) scale(1.04);box-shadow:0 0 18px rgba(90,255,170,.85)}
+.btn .upb.no{background:linear-gradient(180deg,#25392f,#16241d);color:#78a08d;border:1px solid #315345;cursor:not-allowed}
+.btn .upb.no .uc{color:#8fb3a2}.btn .upb.no .uc em{color:#c79b6a}
+.btn .upb.max{background:linear-gradient(180deg,#3a3320,#241f12);color:#ffd24a;border:1px solid #6a5a2a;cursor:default;font-size:8.5px}
+@keyframes upglow{0%,100%{box-shadow:0 0 7px rgba(70,255,150,.42)}50%{box-shadow:0 0 15px rgba(95,255,175,.72)}}
 
 /* ---------- minimap ---------- */
 #miniwrap{position:absolute;left:12px;bottom:12px;padding:6px}
@@ -8205,7 +8220,7 @@ function updateUnits(dt) {
        shove it sprawling back. Never attempted on a Predator, a Brute, or a mounted man (Horse Lancer / War Elephant). --- */
     if (u.cqb) {
       const C = u.cqb, z = C.z; C.t += dt;
-      if (C.t >= CQB_DUR) { if (z.cqbBy === u) z.cqbBy = null; if (!z.dead && C.down && z.down < .4) z.down = .5; u.cqb = null; u.cqbCd = 1.1; }
+      if (C.t >= CQB_DUR) { if (z.cqbBy === u) z.cqbBy = null; if (!z.dead) z.down = Math.max(z.down || 0, C.down ? .6 : 1.1); u.cqb = null; u.cqbCd = 1.1; }   // whether taken down or knocked back, he ends up on the ground (stays down a beat, then climbs up)
       else {
         u.vx = u.vy = 0;
         if (!z.dead) {
@@ -8216,7 +8231,7 @@ function updateUnits(dt) {
           if (!C.fin && C.t >= CQB_FIN[C.kind]) {
             C.fin = true;
             if (C.down) { damage(z, z.hp <= 130 ? z.hp + 1 : 55, u.ang, { trueDmg: true }); if (!z.dead) z.down = 1.3; AU.gore ? AU.gore(z.x, z.y, .6) : (AU.splat && AU.splat(z.x, z.y)); }   // finished on the ground (a heavy body survives it, but stays down)
-            else { damage(z, 14, u.ang, { trueDmg: true }); if (!z.dead) { z.kbx = Math.cos(u.ang) * 240; z.kby = Math.sin(u.ang) * 240; z.down = .8; z.cqbBy = null; } }   // kicked / shoved sprawling backward
+            else { damage(z, 14, u.ang, { trueDmg: true }); if (!z.dead) { z.kbx = Math.cos(u.ang) * 240; z.kby = Math.sin(u.ang) * 240; } }   // kicked / shoved off his feet — the topple plays out over the rest of the move (kept held), then he lies down (set at CQB_DUR)
           }
         }
         continue;   // no shooting and no moving while the move plays out
@@ -10321,11 +10336,17 @@ function updateBuildings(dt) {
           if (it.t === 'kevlar' || it.t === 'composite') for (const u of G.units) { const st = unitStats(u.t); const f = u.hp / u.maxHp; u.maxHp = st.hp; u.hp = st.hp * f; u.armor = st.armor; }
         } else {
           const ex = Math.max(b.w, b.h) * TS * .5 + 26;
-          // spawn in FRONT of the building — toward the rally point if one is set, otherwise the building's front
-          const a = b.rally ? Math.atan2(b.rally.y - b.y, b.rally.x - b.x) : Math.PI / 2;
+          // where the fresh unit musters: the player's rally flag if one is set, else — for a barracks — onto its own
+          // parade yard, forming up in front of the sergeant; any other building just puts it out its front
+          let rx = b.rally ? b.rally.x : null, ry = b.rally ? b.rally.y : null;
+          if (rx == null && b.t === 'barracks' && typeof paradePosts === 'function') {
+            const pp = paradePosts(b), sg = pp.list && pp.list[CMD_IDX];
+            if (sg) { rx = sg.x - Math.cos(pp.dirA) * 2.0 * TS; ry = sg.y - Math.sin(pp.dirA) * 2.0 * TS; }   // ~2 tiles in front of the sergeant, on the parade
+          }
+          const a = (rx != null) ? Math.atan2(ry - b.y, rx - b.x) : Math.PI / 2;
           const u = spawnUnit(it.t, b.x + Math.cos(a) * ex + rnd(-8, 8), b.y + Math.sin(a) * ex + rnd(-8, 8), true);
           unstick(u, true);
-          if (b.rally) u.order = { type: 'move', x: b.rally.x, y: b.rally.y };
+          if (rx != null) u.order = { type: 'move', x: rx + rnd(-10, 10), y: ry + rnd(-10, 10) };
           alertMsg(UDEF[it.t].name + ' ready', 'good');
         }
       }
@@ -11201,7 +11222,7 @@ function paradePosts(b) {
   const list = [];
   for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) list[r * 4 + c] = at(halfPx + (2.0 + r * 1.35) * TS, (c - 1.5) * 1.4 * TS);           // push-up ranks 0..15
   { const p = at(halfPx + (2.0 + 4 * 1.35 + 1.4) * TS, -2.2 * TS); list[16] = { x: p.x, y: p.y, face: dirA + Math.PI }; }                          // sergeant
-  for (let d2 = 0; d2 < 2; d2++) { const gap = .72 * TS, fwd = halfPx + 3.2 * TS, lat = (3.2 + d2 * 1.7) * TS; const a = at(fwd, lat), bb = at(fwd + gap, lat); list[17 + d2 * 2] = a; list[18 + d2 * 2] = { x: bb.x, y: bb.y, face: dirA + Math.PI }; }   // drill pairs 17..20
+  for (let d2 = 0; d2 < 2; d2++) { const gap = .72 * TS, fwd = halfPx + 4.2 * TS, lat = (2.4 + d2 * 1.5) * TS; const a = at(fwd, lat), bb = at(fwd + gap, lat); list[17 + d2 * 2] = a; list[18 + d2 * 2] = { x: bb.x, y: bb.y, face: dirA + Math.PI }; }   // drill pairs 17..20
   b._pposts = { dirA, list };
   return b._pposts;
 }
@@ -13918,9 +13939,13 @@ function cardFor() {
     if (!bld.done) { btns.push({ g: '🚧', n: 'Building', k: '', dis: true, prog: bld.prog }); return btns; }
     if (d.produces) for (const t of d.produces) {
       const ud = UDEF[t];
+      // each unit's own upgrade rides ON its buy tile: hover the tile and a small green "⬆ Mk N" button slides out,
+      // lit up and inviting when you can afford it (the separate per-unit upgrade rows are gone)
+      const cur = tierOfT(t), own = (G.utier && G.utier[t]) || 1, canUp = cur < 3, uc = canUp ? unitTypeUpgradeCost(t, cur) : null;
       btns.push({
-        g: unitIcon(t) || ud.g, n: ud.name, k: ud.key, cost: ud.cost, tip: ud.desc + '\n' + ud.hp + ' hp · ' + ud.wep.dmg + ' dmg · ' + Math.round(ud.wep.rng) + ' rng',
+        g: unitIcon(t) || ud.g, n: ud.name, k: ud.key, cost: ud.cost, tip: ud.desc + '\n' + ud.hp + ' hp · ' + ud.wep.dmg + ' dmg · ' + Math.round(ud.wep.rng) + ' rng' + (canUp ? '\nHover → ⬆ upgrade only the ' + ud.name + ' to Mk ' + (cur + 1) + '.' : ''),
         dis: !affordable(ud.cost) || (!G.cheat.pop && G.pop + ud.pop > G.cap),
+        up: canUp ? { cur, cost: uc, dis: !affordable(uc), name: ud.name, fn: () => { if (!affordable(uc)) { AU.ui('no'); return; } pay(uc); G.utier[t] = Math.max(own, cur) + 1; applyUnitTier(null, t); alertMsg(ud.name + ' upgraded to Mk ' + (cur + 1), 'good'); AU.ui('ready'); refreshCard(true); } } : { maxed: true },
         fn: () => {
           if (!G.cheat.pop && G.pop + ud.pop > G.cap) { alertMsg('Population cap reached — build more structures', ''); AU.ui('no'); return; }
           if (!affordable(ud.cost)) { AU.ui('no'); return; }
@@ -13977,19 +14002,7 @@ function cardFor() {
           btns.push({ g: '🎖️', n: lbl + ' Mk 3 (Max)', k: '', dis: true, badge: '✓' });
         }
       }
-      /* --- per-unit upgrades: each unit type this structure produces can be improved on its own (Mk 1 → 3) --- */
-      if (d.produces) for (const ut of d.produces) {
-        const ud = UDEF[ut]; if (!ud) continue;
-        const cur = tierOfT(ut), own = (G.utier && G.utier[ut]) || 1;
-        if (cur >= 3) { btns.push({ g: unitIcon(ut) || ud.g, n: ud.name + ' Mk 3', k: '', dis: true, badge: '✓' }); continue; }
-        const uc = unitTypeUpgradeCost(ut, cur);
-        btns.push({
-          g: unitIcon(ut) || ud.g, n: ud.name + ' → Mk ' + (cur + 1), k: '', cost: uc, badge: 'Mk ' + cur,
-          tip: 'Upgrade only the ' + ud.name + ': tougher, better armour, more modern look, hotter weapon effects.\nApplies to the ones you already have and every one built after.',
-          dis: !affordable(uc),
-          fn: () => { if (!affordable(uc)) { AU.ui('no'); return; } pay(uc); G.utier[ut] = Math.max(own, cur) + 1; applyUnitTier(null, ut); alertMsg(ud.name + ' upgraded to Mk ' + (cur + 1), 'good'); AU.ui('ready'); refreshCard(true); }
-        });
-      }
+      /* per-unit upgrades now ride on each unit's BUY tile (hover → ⬆) instead of taking their own rows */
     }
     if (d.ability === 'strikes') {
       const CD = { napalm: 45, artillery: 60, nuke: 300 }, COST = { napalm: { s: 0, c: 600 }, artillery: { s: 0, c: 750 }, nuke: { s: 0, c: 60000 } }, KEYS = { napalm: 'N', artillery: 'A', nuke: 'X' };
@@ -14020,7 +14033,7 @@ function cardFor() {
     }
     if (d.garrison) btns.push({ g: '🚪', n: 'Unload', k: 'U', tip: 'Empty the culvert.', dis: !bld.gar.length, fn: () => unload(bld) });
     if (!d.noMove) btns.push({ g: '📦', n: 'Relocate', k: 'V', tip: 'Pack the structure up and rebuild it somewhere else. It comes back at half strength and has to finish construction again.', fn: () => beginRelocate(bld) });
-    btns.push({ g: '🛠️', n: 'Sell', k: 'Del', tip: 'Demolish for half the supply back.', fn: () => { G.sup += (d.cost.s || 0) * .5; G.scr += (d.cost.c || 0) * .5; destroyBuilding(bld); } });
+    if (bld.t !== 'hq') btns.push({ g: '🛠️', n: 'Sell', k: 'Del', tip: 'Demolish for half the supply back.', fn: () => { G.sup += (d.cost.s || 0) * .5; G.scr += (d.cost.c || 0) * .5; destroyBuilding(bld); } });   // no selling the command post
     if (bld.t === 'hq') addAllyGifts(btns);
     return btns;
   }
@@ -14191,7 +14204,7 @@ function refreshCard(force) {
   // the placement tip card (bottom-right, under the eye button) shows only while a building is being placed / queued
   try { document.documentElement.classList.toggle('place-active', !!(UI.place || UI.pending || (UI.queue && UI.queue.length))); } catch (e) {}
   const btns = cardFor();
-  const sig = btns.title + '|' + btns.map(b => b.n + (b.dis ? 1 : 0) + (b.act ? 'a' : '') + (b.badge || '')).join(',');
+  const sig = btns.title + '|' + btns.map(b => b.n + (b.dis ? 1 : 0) + (b.act ? 'a' : '') + (b.badge || '') + (b.up ? (b.up.maxed ? 'um' : 'u' + b.up.cur + (b.up.dis ? 0 : 1)) : '')).join(',');
   if (!force && sig === UI.lastCard) { updateCardProgress(); return; }
   UI.lastCard = sig;
   elCmd.innerHTML = '';
@@ -14216,6 +14229,14 @@ function refreshCard(force) {
       (b.cost ? '<span class="c">' + (b.cost.s ? b.cost.s : '') + (b.cost.c ? '<em>' + b.cost.c + '</em>' : '') + '</span>' : '') +
       (b.badge ? '<span class="c">' + b.badge + '</span>' : '');
     if (b.prog !== undefined) { const f = document.createElement('div'); f.className = 'fill'; f.style.width = (b.prog * 100) + '%'; el.appendChild(f); }
+    if (b.up && !b.up.maxed) {   // the unit's own upgrade, riding on its buy tile — slides out on hover, lit up when affordable
+      const can = !b.up.dis, up = document.createElement('div');
+      up.className = 'upb ' + (can ? 'can' : 'no');
+      up.innerHTML = '<span class="ug">⬆</span> Mk' + (b.up.cur + 1) + '<span class="uc">' + (b.up.cost.s ? b.up.cost.s : '') + (b.up.cost.c ? (b.up.cost.s ? ' ' : '') + '<em>' + b.up.cost.c + '</em>' : '') + '</span>';
+      up.onclick = e => { e.stopPropagation(); if (can && b.up.fn) b.up.fn(); else AU.ui('no'); };
+      up.onmouseenter = e => { e.stopPropagation(); };
+      el.appendChild(up);
+    } else if (b.up && b.up.maxed) { const mk = document.createElement('div'); mk.className = 'upb max'; mk.innerHTML = '★ Mk3'; el.appendChild(mk); }
     el.onclick = e => { e.stopPropagation(); if (!b.dis && b.fn) b.fn(); };
     el.onmouseenter = () => showTip(el, b);
     el.onmouseleave = hideTip;
@@ -16469,8 +16490,8 @@ function ctrlHudTick(dt) {
       d.ra += 1.3 * pulse(1.45, 1.85); D.fx.fwd += c * seg(1.35, 1.6) * (1 - seg(1.9, 2.2)); A.fx.pitch -= rag(1.6, .3, 6, 12); a.la += .6 * pulse(1.5, 1.9);
     } else if (k === 1) {     // FRONT KICK: chamber, drive in and the boot lands on the chest (T .6); D folds around it and is thrown back off his feet a step, arms flung
       const c = close(CQ_LEG); A.o.kick = pulse(.3, .95); A.fx.fwd = c * seg(.4, .6) * (1 - seg(.95, 1.25)); A.fx.pitch = -.12 * pulse(.3, .95); a.la = .9; a.ra = .3;
-      D.fx.pitch = .25 * pulse(.58, .75) - rag(.6, .7, 4.5, 9) - .1 * seg(.6, .8) * (1 - seg(1.4, 2.0)); D.fx.fwd = -(.22 + gap * .1) * seg(.6, .85) * (1 - seg(1.6, 2.1)); D.fx.lift = .05 * pulse(.6, .8);
-      loose(.6, 1.1); D.o.walk = T > .6 && T < 1.5 ? 1 : 0; d.la = .55 + .6 * pulse(.45, .6); d.ra = .55 + .6 * pulse(.45, .6);
+      D.fx.fwd = -(.3 + gap * .12) * seg(.6, 1.05); D.fx.pitch = -HPI * fall(.62, .5); D.fx.pv = 0; D.fx.lift = .05 * pulse(.62, .85);   // boot lands, then he's kicked off his feet and lands flat on his back
+      loose(.6, 1.2); d.la = .55 + .6 * pulse(.45, .6); d.ra = .55 + .6 * pulse(.45, .6);
     } else if (k === 2) {     // ELBOW + KNEE: step chest-to-chest and the elbow cracks the jaw (T .45), then the knee drives into the body (T 1.05): D's head snaps, then he doubles over it
       const c = close(CQ_ELB), c2 = close(CQ_LEG * .8); A.fx.fwd = c * seg(.15, .42) + (c2 - c) * seg(.85, 1.02) - (c2) * seg(1.5, 1.9); a.ra += 1.75 * pulse(.25, .6); A.fx.pitch = .15 * pulse(.25, .6) + .14 * pulse(.85, 1.2); A.o.kickL = pulse(.85, 1.25);
       D.fx.yaw = rag(.45, .5, 6, 12); D.fx.pitch = -rag(.45, .35, 6, 13) + .55 * seg(1.02, 1.2) * (1 - seg(1.65, 2.2)) + rag(1.05, .2, 5, 9); D.o.crouch = T > 1.05 && T < 2.05; D.fx.fwd = -.06 * seg(1.02, 1.3);
@@ -16481,9 +16502,9 @@ function ctrlHudTick(dt) {
       D.fx.pitch = -HPI * fall(.72, .38) + HPI * seg(1.55, 2.15); D.fx.pv = 0; D.fx.lift = .06 * pulse(.72, .9); D.fx.fwd = -.18 * seg(.72, 1.0); D.fx.roll = rag(1.1, .18, 4, 8); loose(.72, 1.2);
       D.o.crouch = T > 1.55 && T < 2.25; if (T > 1.3 && T < 1.55) { d.la = 1.3; d.ra = 1.2; }   // hands up, covering, on the ground
     } else if (k === 4) {     // CLINCH AND SHOVE: both step into the collar tie (T .35), lean and push, A wins and shoves (T 1.0): D is flung backward stumbling, arms wide
-      const c = close(CQ_ARM * .55); a.la = a.ra = 1.4; d.la = d.ra = 1.4; A.fx.fwd = c * .55 * seg(.1, .35) + .06 * Math.sin(T * 9) * pulse(.4, 1.0) + c * .45 * pulse(.95, 1.2); D.fx.fwd = -c * .45 * seg(.1, .35) + .06 * Math.sin(T * 9) * pulse(.4, 1.0);
-      A.fx.pitch = .14 * seg(.1, .35); D.fx.pitch = .1 * seg(.1, .35);
-      D.fx.fwd -= (.42 + gap * .15) * seg(1.0, 1.3) * (1 - seg(1.75, 2.2)); D.fx.pitch -= .3 * pulse(1.0, 1.35) + rag(1.0, .3, 4, 8); loose(1.0, 1.3); D.o.walk = T > 1.0 && T < 1.8 ? 1 : 0;
+      const c = close(CQ_ARM * .55); a.la = a.ra = 1.4; d.la = d.ra = 1.4; A.fx.fwd = c * .55 * seg(.1, .35) + .06 * Math.sin(T * 9) * pulse(.4, 1.0) + c * .45 * pulse(.95, 1.2);
+      A.fx.pitch = .14 * seg(.1, .35);
+      D.fx.fwd = -c * .45 * seg(.1, .35) + .06 * Math.sin(T * 9) * pulse(.4, 1.0) - (.55 + gap * .18) * seg(1.0, 1.45); D.fx.pitch = .1 * seg(.1, .35) - HPI * fall(1.02, .55); D.fx.pv = 0; loose(1.0, 1.4);   // the shove throws him back and down flat
       if (T > 1.05) { d.la = 1.2 + rag(1.0, .6, 4, 9); d.ra = 1.2 - rag(1.0, .6, 4, 9); a.la = a.ra = .55; }
     } else {                  // HIP THROW: A steps in to the body, turns his hip under (T .5) and D is hauled up over it, flips head-over-heels and lands flat beyond him with a bounce, arms loose, then climbs up
       const c = close(CQ_BODY); A.fx.fwd = c * seg(.1, .4) - c * seg(1.4, 1.8); A.fx.yaw = -HPI * seg(.35, .65) * (1 - seg(1.3, 1.65)); A.fx.pitch = .4 * pulse(.55, 1.05); A.o.crouch = T > .5 && T < 1.05; a.la = a.ra = 1.35 * (1 - seg(1.0, 1.3)) + .55 * seg(1.0, 1.3);
@@ -17665,7 +17686,7 @@ function ctrlHudTick(dt) {
     // two sparring pairs off to one side: the player's recruits drill hand-to-hand CQB (unarmed, trading jabs and
     // blocks), the ancient host spars with sword/spear
     for (let d2 = 0; d2 < 2; d2++) {
-      const lat = (3.2 + d2 * 1.7) * TS, fwd = halfPx + 3.2 * TS, gap = (player ? .72 : 1.25) * TS, beat = Math.sin(t * 3 + d2 * 1.3);
+      const lat = (2.4 + d2 * 1.5) * TS, fwd = halfPx + 4.2 * TS, gap = (player ? .72 : 1.25) * TS, beat = Math.sin(t * 3 + d2 * 1.3);
       const a1 = at(fwd, lat), b2 = at(fwd + gap, lat);
       if (player) {
         // tactical close-combat drill: one of six forms (jab-cross, front kick, elbow + knee, leg-sweep takedown, clinch
@@ -19594,7 +19615,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b200';
+const BUILD_TAG = 'b201';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
