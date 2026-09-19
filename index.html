@@ -11686,21 +11686,28 @@ function updateAAMissile(b, dt) {
   const wantA = Math.atan2(dy, dx);
   b.hd = b.hd === undefined ? wantA : angLerp(b.hd, wantA, 1 - Math.pow(.0004, dt));   // hard-turning seeker
   const climb = clamp(dz / Math.max(50, dh), -1.5, 1.5);
-  b.x += Math.cos(b.hd) * b.spd * dt; b.y += Math.sin(b.hd) * b.spd * dt; b.z += climb * b.spd * dt * .5;
+  // --- SPEED RAMP: slow ignition for first 0.5 s then full burn ---
+  b._age = (b._age || 0) + dt;
+  const RAMP_T = 0.5, fullSpd = b.spd || 600;
+  const curSpd = b._age < RAMP_T ? (80 + (fullSpd - 80) * (b._age / RAMP_T)) : fullSpd;
+  b.x += Math.cos(b.hd) * curSpd * dt; b.y += Math.sin(b.hd) * curSpd * dt; b.z += climb * curSpd * dt * .5;
   b.life -= dt;
-  // a REAL burning contrail: dense smoke laid down along the WHOLE flight path (interpolated between frames so it is a
-  // solid line however fast the missile goes), lasting ~5 s so the entire route hangs in the air, then fading out — and
-  // the whole trail drifts on the wind.
+  // THICK WHITE SMOKE COLUMN: interpolate every 3px along the path so the line is
+  // solid at any speed; each puff is large (r 30-50), long-lived (5-6 s), and barely
+  // drifts so the column hangs right where the missile flew.
   { const px = b._px === undefined ? b.x : b._px, py = b._py === undefined ? b.y : b._py, pz = b._pz === undefined ? b.z : b._pz;
-    const seg = Math.hypot(b.x - px, b.y - py), steps = Math.max(2, Math.min(12, Math.round(seg / 6)));   // denser sampling so the column is solid even at speed
+    const seg = Math.hypot(b.x - px, b.y - py), steps = Math.max(3, Math.min(20, Math.round(seg / 3)));
     for (let s = 1; s <= steps; s++) { const t = s / steps, sx = px + (b.x - px) * t, sy = py + (b.y - py) * t, sz = pz + (b.z - pz) * t;
-      // a FAT, billowing WHITE column like a real launch plume: a big bright core, a broad growing outer bloom, and a soft halo
-      part('smoke', sx + rnd(-3, 3), sy + rnd(-3, 3), rnd(-3, 3), rnd(-3, 3), rnd(5.2, 6.4), rnd(14, 22), 'rgba(250,250,248,1)', { a: .96, z: sz + rnd(-4, 4), vz: rnd(-1, 4), grow: 34, drag: .96, wind: 1 });
-      part('smoke', sx + rnd(-5, 5), sy + rnd(-5, 5), rnd(-2, 2), rnd(-2, 2), rnd(4.6, 5.6), rnd(9, 15), 'rgba(238,238,234,1)', { a: .82, z: sz + rnd(-3, 5), vz: rnd(0, 5), grow: 26, drag: .96, wind: 1 });
-      if (s === steps) part('fire', sx, sy, 0, 0, rnd(.2, .35), rnd(1.1, 1.7), Math.random() < .5 ? '#ffb45a' : '#ff8a3a', { glow: 1, z: sz, vz: rnd(4, 12), g: -8, grow: 3, drag: .9, wind: 1 });   // the afterburner edge — reach cut in half
+      // fat bright white CORE puff — very opaque, expands to fill the sky
+      part('smoke', sx + rnd(-2, 2), sy + rnd(-2, 2), rnd(-2, 2), rnd(-2, 2), rnd(5.0, 6.5), rnd(30, 50), 'rgba(255,255,255,1)', { a: 1.0, z: sz + rnd(-3, 3), vz: rnd(0, 3), grow: 55, drag: .99, wind: .6 });
+      // softer outer halo, slightly off-white
+      part('smoke', sx + rnd(-4, 4), sy + rnd(-4, 4), rnd(-1, 1), rnd(-1, 1), rnd(4.5, 6.0), rnd(20, 36), 'rgba(240,240,238,1)', { a: .92, z: sz + rnd(-5, 5), vz: rnd(0, 4), grow: 42, drag: .99, wind: .5 });
+      if (s === steps) part('fire', sx, sy, 0, 0, rnd(.18, .3), rnd(1.4, 2.2), Math.random() < .5 ? '#ffcc60' : '#ff9030', { glow: 1, z: sz, vz: rnd(2, 8), g: -6, grow: 4, drag: .92, wind: .4 });
     }
     b._px = b.x; b._py = b.y; b._pz = b.z; }
-  part('fire', b.x, b.y, 0, 0, .06, 1.6, '#ffd27a', { glow: 1, z: b.z });                   // the glowing motor at the nose (afterburner shortened)
+  // big glowing motor flame at the nose — visible at altitude
+  part('fire', b.x, b.y, 0, 0, .10, 5.5, '#fff0a0', { glow: 1, z: b.z });
+  part('fire', b.x, b.y, 0, 0, .06, 3.2, '#ffb030', { glow: 1, z: b.z });
   G.lights.push({ x: b.x, y: b.y, r: 70, c: [255, 170, 90], i: .5 });
   const hitR = b.decoyed ? 20 : ((T && T.r ? T.r : 16) + 22);
   const reached = !lost && dist2(b.x, b.y, tx, ty) < hitR * hitR && Math.abs(b.z - tz) < 48;
@@ -20266,7 +20273,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b215';
+const BUILD_TAG = 'b216';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
