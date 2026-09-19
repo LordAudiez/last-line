@@ -3357,7 +3357,7 @@ const UDEF = {
     desc: '30mm chain gun — one round kills anything it lands on, and the blast rim knocks back and tears apart whatever stands at its edge — traversing 135° either side of the nose. The 12-round Hydra pod fires straight ahead, so the Apache swings its nose onto the rocket target while the gun keeps working on its own.'
   },
   ac130: {
-    name: 'AC-130 Gunship', key: 'B', g: '✈️', hp: 2600, spd: 205, r: 40, sight: 620, armor: 6, pop: 10, veh: true, fly: 1, alt: 900, orbit: 1, heavy: 1,
+    name: 'AC-130 Gunship', key: 'B', g: '✈️', hp: 2600, spd: 205, r: 40, sight: 620, armor: 6, pop: 10, veh: true, fly: 1, alt: 630, orbit: 1, heavy: 1,
     cost: { s: 1150, c: 1050 }, time: 72, spr: 'ac130', needs: 'airbase',
     wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 5 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },   // 105mm: biggest blast in the game — the old five-tile Abrams area
     weps: [
@@ -3368,7 +3368,7 @@ const UDEF = {
   },
   f16: {
     name: 'F-16 Falcon', key: 'N', g: '🛩️', hp: 1500, spd: 410, r: 26, sight: 660, armor: 5, pop: 8,
-    veh: true, fly: 1, jet: 1, alt: 1020, turnR: 15 * TS / 2, needs: 'airbase',
+    veh: true, fly: 1, jet: 1, alt: 714, turnR: 15 * TS / 2, needs: 'airbase',
     cost: { s: 1350, c: 1250 }, time: 80, spr: 'f16',
     // M61 Vulcan cannon — fast forward gun
     wep: { dmg: 30, rng: 560, cd: .045, spread: .02, spd: 2000, kind: 'shell', splash: 18, sfx: 'chain40', casings: 2, smokeTrail: true, off: 26 },
@@ -6044,14 +6044,14 @@ function killUnit(u) {
     // altitude. When it slams into the ground it throws a dust ring, flattens the grass and trees under it, and THEN,
     // two seconds later, the fuel and ordnance cook off in the full brew-up. (Physics + fuse in updateItems.)
     const az = (typeof airZ === 'function') ? airZ(u) : (u.def.alt || 400) * .3;
-    fxExplosion(u.x, u.y, Math.min(40, u.r), '#ffd070', '#ff6a2e');                            // the hit that downs it: a flash and a puff, not the full blast
+    { const _sb = AU._skipBoom; AU._skipBoom = true; try { fxExplosion(u.x, u.y, Math.min(40, u.r), '#ffd070', '#ff6a2e'); } finally { AU._skipBoom = _sb; } }   // the hit that downs it: a flash and a puff (its own sound below)
     addShake(u.x, u.y, 6);
     const a = rnd(TAU);
     const wreck = { x: u.x, y: u.y, a: u.ang, t: u.t, spr: u.def.spr, tur: u.def.tur, veh: true, fly: 1, r: u.r, limbs: 15, life: 66, max: 62, burnt: true, burnT: 0,
       downedAir: 1, air: 1, z: Math.max(20, az), vx: (u.vx || 0) * .4 + Math.cos(a) * rnd(6, 24), vy: (u.vy || 0) * .4 + Math.sin(a) * rnd(6, 20), vz: rnd(-40, -10), rot: u.ang, vr: rnd(-3.2, 3.2), fuse: -1 };
     G.corpses.push(wreck);
     if (u.rope) u.rope = null;
-    AU.boom && AU.boom(u.x, u.y, .8);
+    if (AU.artyBlast) AU.artyBlast(u.x, u.y, .95); else AU.boom && AU.boom(u.x, u.y, .9);   // shot-down: a real explosion (same family as the ground blow-up)
   } else if (u.def.veh) {
     // brew up: the blast instantly kills zombies in a radius that scales with the machine (ground vehicles ×2),
     // then a burning wreck smoulders and trails smoke downwind for a minute.
@@ -10869,9 +10869,10 @@ function updateItems(dt) {
         c.vz -= 210 * dt; if (c.vz < -300) c.vz = -300;
         c.z += c.vz * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot = (c.rot || 0) + (c.vr || 0) * dt;
         c._tr = (c._tr || 0) + dt;
-        if (c._tr > .035) { c._tr = 0;                             // the trailing plume: black smoke + fire streaming off the falling airframe
-          part('smoke', c.x, c.y, rnd(-8, 8) + G.wind.x * .2, rnd(-8, 8), rnd(2.2, 3.6), rnd(5, 10), 'rgba(34,30,26,1)', { a: .8, z: c.z, vz: rnd(2, 12), grow: 22, drag: .93, wind: 1 });
-          part('fire', c.x + rnd(-4, 4), c.y + rnd(-4, 4), rnd(-10, 10), rnd(-10, 10), rnd(.3, .6), rnd(3, 7), Math.random() < .5 ? '#ff8a2e' : '#ff5a26', { glow: 1, z: c.z + rnd(-4, 4), vz: rnd(-10, 20), g: -20, grow: 8, drag: .9 });
+        if (c._tr > .03) { c._tr = 0;                              // black smoke streams off as a lingering TRAIL; the fire stays glued to the airframe
+          part('smoke', c.x, c.y, rnd(-6, 6) + G.wind.x * .2, rnd(-6, 6), rnd(2.2, 3.6), rnd(5, 10), 'rgba(34,30,26,1)', { a: .8, z: c.z, vz: rnd(2, 12), grow: 22, drag: .93, wind: 1 });
+          // fire ON the model: short-lived flames right at the airframe, moving WITH it (they inherit its fall velocity) so they never float free
+          for (let q = 0; q < 2; q++) part('fire', c.x + rnd(-c.r * .3, c.r * .3), c.y + rnd(-c.r * .3, c.r * .3), c.vx || 0, c.vy || 0, rnd(.14, .24), rnd(4, 8), Math.random() < .5 ? '#ff8a2e' : '#ff5a26', { glow: 1, z: c.z + rnd(-2, 3), vz: (c.vz || 0) * .85, g: 0, grow: 5, drag: .97 });
         }
         G.lights.push({ x: c.x, y: c.y, r: 130, c: [255, 140, 70], i: 1.0 });
         if (c.z <= 0) {                                            // impact: dust ring, flatten grass and trees, shake — but not the blast yet
@@ -10886,16 +10887,15 @@ function updateItems(dt) {
           if (typeof grassStamp === 'function') grassStamp(c.x, c.y, c.r * 1.5);
           if (typeof scorchDecal === 'function') scorchDecal(c.x, c.y, c.r * .8);
           addShake(c.x, c.y, 13);
-          AU.boom && AU.boom(c.x, c.y, 1.0);
+          if (AU.artyBlast) AU.artyBlast(c.x, c.y, .8); else AU.boom && AU.boom(c.x, c.y, 1.0);   // the crash-down, same explosion family
         }
       } else {                                                     // down on the deck: fuse ticking to the brew-up
         c.fuse -= dt;
         if (c.fuse <= 0) {
           c.downedAir = 0;                                         // becomes an ordinary burning wreck for the rest of its life
           const R = Math.min(150, c.r * 2.6);
-          fxExplosion(c.x, c.y, R);
-          if (typeof fxCinematic === 'function') fxCinematic(c.x, c.y, c.r * 1.5);
-          fxExplosion(c.x - c.r * .5, c.y + c.r * .3, c.r * 1.6); fxExplosion(c.x + c.r * .5, c.y - c.r * .3, c.r * 1.6);
+          { const _sb = AU._skipBoom; AU._skipBoom = true; try { fxExplosion(c.x - c.r * .5, c.y + c.r * .3, c.r * 1.6); fxExplosion(c.x + c.r * .5, c.y - c.r * .3, c.r * 1.6); if (typeof fxCinematic === 'function') fxCinematic(c.x, c.y, c.r * 1.5); } finally { AU._skipBoom = _sb; } }
+          fxExplosion(c.x, c.y, R, null, null, 'howitzer');        // the blow-up on the ground: a real explosion sound (the "sound of explosive")
           areaDamage(c.x, c.y, c.r * 3, 999999, false, true);     // the ordnance cooks off — anything on top of the wreck dies
           scorchDecal(c.x, c.y, R * .55);
           addShake(c.x, c.y, 18);
@@ -11710,7 +11710,7 @@ function aaAirburst(x, y, z) {
   G._fx = _fx;
   G.lights.push({ x, y, r: 240, c: [255, 160, 70], i: 2.4 });
   addShake(x, y, 3.5);
-  if (AU.boom) AU.boom(x, y, .9); else if (AU.artyBlast) AU.artyBlast(x, y, .6);
+  if (AU.artyBlast) AU.artyBlast(x, y, .8); else if (AU.boom) AU.boom(x, y, .9);   // the missile striking home: the same real explosion sound
 }
 
 function step(dt) {
@@ -20217,7 +20217,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b208';
+const BUILD_TAG = 'b209';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
