@@ -5083,13 +5083,15 @@ function fxMuzzle(x, y, ang, sc, z, tier) {
   G.lights.push({ x: x + Math.cos(ang) * 10, y: y + Math.sin(ang) * 10, r: 120 * sc, c: [255, 218, 150], i: 1.1 });
   G._fx = _fx;
 }
-function fxSpark(x, y, ang, n, col) {
-  // ricochet sparks arc and fall under gravity; a pinpoint impact flash marks the hit
+function fxSpark(x, y, ang, n, col, z) {
+  // ricochet sparks arc and fall under gravity; a pinpoint impact flash marks the hit. z lifts the whole effect to the point
+  // of impact (an aircraft's hit sparks leave the airframe at altitude, not the ground), and everything drifts on the wind.
+  z = z === undefined ? 4 : z;
   for (let i = 0; i < n; i++) {
     const a = ang + rnd(-1.5, 1.5), s = rnd(50, 260);
-    part('spark', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.14, .45), rnd(.8, 1.9), col || '#ffcf7a', { drag: .90, glow: 1, z: 4, vz: rnd(20, 90), g: 380, bounce: .3 });
+    part('spark', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.14, .45), rnd(.8, 1.9), col || '#ffcf7a', { drag: .90, glow: 1, z, vz: rnd(20, 90), g: 380, bounce: .3, wind: 1 });
   }
-  if (n >= 3) part('fire', x, y, 0, 0, .05, 4, '#fff1c8', { glow: 1, z: 6 });
+  if (n >= 3) part('fire', x, y, G.wind.x * .25, G.wind.y * .25, .05, 4, '#fff1c8', { glow: 1, z: z + 2, wind: 1 });
 }
 /* Dust kicked up by a vehicle's gun: a low wave rolling out around the muzzle
    that drifts off on the wind, plus (for big guns) a jet of dust punched
@@ -5405,11 +5407,12 @@ function fxCasing(x, y, ang, z) {
   part('casing', x, y, Math.cos(ang - 1.6) * rnd(40, 90), Math.sin(ang - 1.6) * rnd(40, 90), rnd(.7, (z ? 2.4 : 1.2)), 1.4, '#c9a33d',
     { z: (z || 0) + 12, vz: rnd(60, 130), vr: rnd(-14, 14), drag: .985, g: 520, bounce: 1 });
 }
-function fxDebris(x, y, n, col) {
+function fxDebris(x, y, n, col, z) {
+  z = z === undefined ? 6 : z;
   for (let i = 0; i < n; i++) {
     const a = rnd(TAU), s = rnd(40, 220);
     part('debris', x, y, Math.cos(a) * s, Math.sin(a) * s, rnd(.5, 1.2), rnd(1.2, 3.4), col || '#5a5348',
-      { z: 6, vz: rnd(60, 210), vr: rnd(-10, 10), drag: .97, g: 520, bounce: 1 });
+      { z, vz: rnd(60, 210), vr: rnd(-10, 10), drag: .97, g: 520, bounce: 1, wind: 1 });
   }
 }
 /* Big billowing dust cloud that hangs for ~10s and rolls away on the wind —
@@ -5962,7 +5965,7 @@ function damage(e, amt, srcAng, opts) {
   } else if (e.kind === 'unit') {
     e.hp -= a;
     e.lastHit = G.t;
-    if (e.def.veh) { fxSpark(e.x + rnd(-e.r * .5, e.r * .5), e.y + rnd(-e.r * .5, e.r * .5), rnd(TAU), 3, '#ffd27a'); if (a > 10 && Math.random() < .4) fxDebris(e.x, e.y, 2, '#4a5040'); }
+    if (e.def.veh) { const hz = (e.def.fly && typeof airZ === 'function') ? airZ(e) : undefined; fxSpark(e.x + rnd(-e.r * .5, e.r * .5), e.y + rnd(-e.r * .5, e.r * .5), rnd(TAU), 3, '#ffd27a', hz); if (a > 10 && Math.random() < .4) fxDebris(e.x, e.y, 2, '#4a5040', hz); }   // a struck aircraft sheds its sparks and debris from ALTITUDE, not the ground
     else fxBlood(e.x, e.y, rnd(TAU), 3, '#b32020');
     if (e.hp > 0 && e.limbs && Math.random() < clamp(a / (e.maxHp * 1.6), 0, .3)) severLimb(e, srcAng);
     if (e.hp <= 0) killUnit(e);
@@ -18134,16 +18137,18 @@ function ctrlHudTick(dt) {
     const since = G.t - e.lastHit; if (since > DMG_T) return;
     const fade = since < DMG_T - 12 ? 1 : (DMG_T - since) / 12;                 // last 12 s: dies down
     const dmg = 1 - e.hp / e.maxHp, n = Math.min(5, 1 + Math.floor(dmg * 5)), seed = (e.id || 0) * 31, sf = Math.max(1, (hw + hh) * .45);   // effects scale with the structure
+    // fire and smoke lean DOWNWIND: the wind vector (world px/s) normalised to a lean direction, stronger higher up the plume
+    const wl = Math.hypot(G.wind.x, G.wind.y) || 1, wdx = (G.wind.x / wl), wdz = (G.wind.y / wl), wmag = Math.min(1.4, wl / 55);
     for (let i = 0; i < n; i++) {
       const hx = hash2(seed + i * 7, 3) * 2 - 1, hz = hash2(seed + i * 13, 5) * 2 - 1, hy = hash2(seed + i * 3, 9);
       const px = x + hx * hw * .8, pz = z + hz * hh * .8, py = y + Math.max(.2, ht * (.8 + hy * .4)) * (e.done === false ? .5 : 1);
       const ph = G.t * 9 + i * 2.1, fl = .8 + Math.sin(ph) * .2 + Math.sin(ph * 2.7) * .1;
-      if (dmg > .35 || i === 0) {                                                  // flame: additive orange core with a yellow heart
-        bb(partsAdd, px, py + .08 * sf, pz, (.26 + dmg * .26) * sf * fl * fade, 1, .45, .12, .85 * fade);
-        bb(partsAdd, px, py + .18 * sf, pz, (.14 + dmg * .14) * sf * fl * fade, 1, .85, .35, .9 * fade);
+      if (dmg > .35 || i === 0) {                                                  // flame: additive orange core with a yellow heart, tugged downwind
+        bb(partsAdd, px + wdx * .16 * sf * wmag, py + .08 * sf, pz + wdz * .16 * sf * wmag, (.26 + dmg * .26) * sf * fl * fade, 1, .45, .12, .85 * fade);
+        bb(partsAdd, px + wdx * .34 * sf * wmag, py + .18 * sf, pz + wdz * .34 * sf * wmag, (.14 + dmg * .14) * sf * fl * fade, 1, .85, .35, .9 * fade);
       }
-      const sm = (G.t * .55 + i * .37) % 1;                                        // rising smoke column, three puffs per spot
-      for (let k = 0; k < 3; k++) { const f = (sm + k / 3) % 1; bb(partsAlpha, px + Math.sin(G.t + k + i) * .15 * sf * f, py + (.2 + f * 1.8) * sf, pz + Math.cos(G.t * .8 + k) * .15 * sf * f, (.2 + f * .7) * sf, .18, .17, .16, .45 * (1 - f) * fade * (dmg > .35 ? 1 : .6)); }
+      const sm = (G.t * .55 + i * .37) % 1;                                        // rising smoke column, three puffs per spot — leaning further downwind the higher it goes
+      for (let k = 0; k < 3; k++) { const f = (sm + k / 3) % 1; const lean = f * sf * (1.1 + wmag * 2.2); bb(partsAlpha, px + Math.sin(G.t + k + i) * .15 * sf * f + wdx * lean, py + (.2 + f * 1.8) * sf, pz + Math.cos(G.t * .8 + k) * .15 * sf * f + wdz * lean, (.2 + f * .7) * sf, .18, .17, .16, .45 * (1 - f) * fade * (dmg > .35 ? 1 : .6)); }
     }
   }
   /* the rig for a unit at its current upgrade tier (Mk2 / Mk3 rigs are brighter with extra kit) */
@@ -20217,7 +20222,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b209';
+const BUILD_TAG = 'b210';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
