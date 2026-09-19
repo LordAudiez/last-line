@@ -3551,7 +3551,7 @@ const BDEF = {
   },
   aaturret: {
     name: 'AA Missile Turret', key: 'A', g: '🚀', cat: 'def', w: 3, h: 3, mw: 2, mh: 2, hgt: 42, hp: 620, armor: 4, cost: { s: 260, c: 200 }, time: 18, needs: 'armory',
-    col: ['#39413a', '#282e29'], roof: '#48524a', light: 110, aa: true, aaRng: 22 * 32, aaCd: 3.2,
+    col: ['#39413a', '#282e29'], roof: '#48524a', light: 110, aa: true, aaRng: 88 * 32, aaCd: 3.2,
     desc: 'Surface-to-air missile battery. Locks onto hostile aircraft — enemy bots and rival players alike — and salvos guided missiles; two hits down any airframe. Missiles trail smoke that the wind scrubs out in a few seconds, and chase countermeasure flares, bursting in the air if decoyed. Requires a Research Lab.'
   },
   mortarpit: {
@@ -5437,7 +5437,8 @@ function fxFlare(x, y, zc) { /* kept for compatibility */ if (arguments.length) 
    orange/red ember that arcs out and falls, trailing smoke — and while lit the
    aircraft registers as a decoy that lures the horde toward it. */
 function flareTick(u, dt) {
-  if (!u.flareOn) return;
+  if (u.autoFlareT > 0) u.autoFlareT -= dt;                      // auto-defence: a missile is inbound, so the aircraft pops flares on its own for a few seconds
+  if (!u.flareOn && !(u.autoFlareT > 0)) return;
   if (G.flareDecoys) G.flareDecoys.push({ x: u.x, y: u.y });    // lure the horde while armed
   // pattern: a 2-second salvo, then a 4-second hold, repeat
   u.flarePhaseT = ((u.flarePhaseT || 0) + dt) % 6;
@@ -5901,8 +5902,8 @@ function refreshCap() {
 /* ---------------- damage & death ---------------- */
 function damage(e, amt, srcAng, opts) {
   if (!e || e.dead) return;
-  // god-mode cheat: your units and structures take no damage at all
-  if (G.cheat.god && (e.kind === 'unit' || e.kind === 'build')) return;
+  // god-mode cheat: only YOUR OWN units and structures are invulnerable — dev-spawned ally or enemy troops still take damage
+  if (G.cheat.god && (e.kind === 'unit' || e.kind === 'build') && (e.owner || 0) === G.me) return;
   opts = opts || {};
   if (opts.blast && (e.kind === 'build' || (e.kind === 'zed' && e.def && e.def.struct)) && srcAng !== undefined) brickBlast(e, amt, srcAng);   // a blast: the struck side sheds bricks
   // co-op: ally units/buildings are ghosts — the owner is authoritative, so never damage them locally.
@@ -6029,22 +6030,32 @@ function killUnit(u) {
   const i = G.sel.indexOf(u); if (i >= 0) G.sel.splice(i, 1);
   if (u.inside) { if (u.inside.gar) { const g = u.inside.gar, k = g.indexOf(u); if (k >= 0) g.splice(k, 1); } else if (u.inside.cargo) { const k = u.inside.cargo.indexOf(u); if (k >= 0) u.inside.cargo.splice(k, 1); } u.inside = null; }
   if (u.cargo && u.cargo.length) { const cs = u.cargo.slice(); u.cargo.length = 0; for (const c of cs) { c.inside = null; c.carriedBy = null; c.x = u.x + rnd(-10, 10); c.y = u.y + rnd(-10, 10); killUnit(c); } }   // nobody walks away from the wreck
-  if (u.def.veh) {
-    // brew up: the blast instantly kills zombies in a radius that scales with
-    // the machine — ground vehicles ×2, aircraft ×3 (they come down harder) —
+  if (u.def.veh && u.def.fly) {
+    // a shot-down aircraft: it does NOT blow up in the air — it heels over, streams fire and smoke, and falls from its
+    // altitude. When it slams into the ground it throws a dust ring, flattens the grass and trees under it, and THEN,
+    // two seconds later, the fuel and ordnance cook off in the full brew-up. (Physics + fuse in updateItems.)
+    const az = (typeof airZ === 'function') ? airZ(u) : (u.def.alt || 400) * .3;
+    fxExplosion(u.x, u.y, Math.min(40, u.r), '#ffd070', '#ff6a2e');                            // the hit that downs it: a flash and a puff, not the full blast
+    addShake(u.x, u.y, 6);
+    const a = rnd(TAU);
+    const wreck = { x: u.x, y: u.y, a: u.ang, t: u.t, spr: u.def.spr, tur: u.def.tur, veh: true, fly: 1, r: u.r, limbs: 15, life: 66, max: 62, burnt: true, burnT: 0,
+      downedAir: 1, air: 1, z: Math.max(20, az), vx: (u.vx || 0) * .4 + Math.cos(a) * rnd(6, 24), vy: (u.vy || 0) * .4 + Math.sin(a) * rnd(6, 20), vz: rnd(-40, -10), rot: u.ang, vr: rnd(-3.2, 3.2), fuse: -1 };
+    G.corpses.push(wreck);
+    if (u.rope) u.rope = null;
+    AU.boom && AU.boom(u.x, u.y, .8);
+  } else if (u.def.veh) {
+    // brew up: the blast instantly kills zombies in a radius that scales with the machine (ground vehicles ×2),
     // then a burning wreck smoulders and trails smoke downwind for a minute.
-    const fly = u.def.fly;
-    const R = u.r * (fly ? 3 : 2);
-    fxExplosion(u.x, u.y, fly ? Math.min(150, u.r * 2.6) : (u.def.heavy ? 82 : 56));
+    const R = u.r * 2;
+    fxExplosion(u.x, u.y, u.def.heavy ? 82 : 56);
     fxCinematic(u.x, u.y, u.r * 1.5);                                                          // and the cinematic brew-up: fireball, dust column, burning debris — scaled 1.5× to the hull
-    if (fly) { fxExplosion(u.x - u.r * .5, u.y + u.r * .3, u.r * 1.6); fxExplosion(u.x + u.r * .5, u.y - u.r * .3, u.r * 1.6); }
     areaDamage(u.x, u.y, R, 999999, false, true);                 // zombies in the blast die instantly
     scorchDecal(u.x, u.y, R * .55);
-    addShake(u.x, u.y, fly ? 18 : 13);
+    addShake(u.x, u.y, 13);
     const wreck = { x: u.x, y: u.y, a: u.ang, t: u.t, spr: u.def.spr, tur: u.def.tur, veh: true, r: u.r, limbs: 15, life: 62, max: 62, burnt: true, burnT: 0 };
     G.corpses.push(wreck);
     // the brew-up heaves the wreck into the air; it comes down spinning and slams into the ground
-    if (!fly) { const a = rnd(TAU); wreck.air = 1; wreck.z = 2; wreck.vx = Math.cos(a) * rnd(20, 70); wreck.vy = Math.sin(a) * rnd(20, 60); wreck.vz = u.def.heavy ? rnd(120, 180) : rnd(170, 250); wreck.rot = u.ang; wreck.vr = rnd(-2.2, 2.2); wreck.bounced = 0; }
+    const a = rnd(TAU); wreck.air = 1; wreck.z = 2; wreck.vx = Math.cos(a) * rnd(20, 70); wreck.vy = Math.sin(a) * rnd(20, 60); wreck.vz = u.def.heavy ? rnd(120, 180) : rnd(170, 250); wreck.rot = u.ang; wreck.vr = rnd(-2.2, 2.2); wreck.bounced = 0;
   } else {
     bloodDecal(u.x, u.y, 6, '#5c0f0f');
     fxBlood(u.x, u.y, rnd(TAU), 10, '#b32020');
@@ -8303,6 +8314,7 @@ function packSPG(u) { if (u.spgDeployed && !(u.spgUndeploy > 0)) u.spgUndeploy =
 function spgUpdate(u, dt) {
   const w = u.def.wep;
   u.spgCd = (u.spgCd || 0) - dt;
+  if (u.recoil) u.recoil = Math.max(0, u.recoil - dt * 6);        // the barrel settles back after the shot (this loop skips the shared decay)
   u.bob += dt * 3;
   const o = u.order;
   // a right-click on a hostile (an attack order) sets up the station on its own and makes that the priority target
@@ -8332,8 +8344,8 @@ function spgUpdate(u, dt) {
   if (o && (o.type === 'move' || o.type === 'amove')) { packSPG(u); return; }
   u.vx = u.vy = 0;
   // choose an aimpoint: a fixed fire-mission area > a right-clicked priority target > any hostile that wanders into range
-  let tx, ty, tgt = null;
-  if (u.spgArea) { tx = u.spgArea.x; ty = u.spgArea.y; }
+  let tx, ty, tgt = null, impact = null;
+  if (u.spgArea) { tx = u.spgArea.x; ty = u.spgArea.y; }           // the battery traverses onto the CENTRE of the beaten zone…
   else {
     if (u.spgPrio && (u.spgPrio.dead || !hostile(u, u.spgPrio) || dist2(u.x, u.y, u.spgPrio.x, u.spgPrio.y) > w.rng * w.rng)) u.spgPrio = null;
     tgt = u.spgPrio || findEnemy(u.x, u.y, w.rng, w.minRng);
@@ -8344,7 +8356,10 @@ function spgUpdate(u, dt) {
   u.aimT = angLerp(u.aimT, want, 1 - Math.pow(.01, dt));       // the turret traverses straight onto the bearing
   const d2 = dist2(u.x, u.y, tx, ty), inR = d2 <= w.rng * w.rng && (!w.minRng || d2 >= w.minRng * w.minRng);
   const aligned = Math.abs(((want - u.aimT + Math.PI * 3) % TAU) - Math.PI) < .12;
-  if (inR && aligned && u.spgCd <= 0) { fire(u, tgt || { x: tx, y: ty, vx: 0, vy: 0 }, w, muzzleFor(u, 0, w)); u.spgCd = w.cd; }
+  if (inR && aligned && u.spgCd <= 0) {
+    if (u.spgArea && u.spgArea.r) { const a = rnd(TAU), rr = Math.sqrt(Math.random()) * u.spgArea.r; impact = { x: u.spgArea.x + Math.cos(a) * rr, y: u.spgArea.y + Math.sin(a) * rr, vx: 0, vy: 0 }; }   // …but each round scatters somewhere across it
+    fire(u, impact || tgt || { x: tx, y: ty, vx: 0, vy: 0 }, w, muzzleFor(u, 0, w)); u.spgCd = w.cd;
+  }
 }
 
 function updateUnits(dt) {
@@ -9567,30 +9582,39 @@ function fire(src, tgt, wep, muz) {
     const flight = wep.flight;
     const tx = tgt.x + (tgt.vx || 0) * flight * .75 + rnd(-wep.spread, wep.spread);
     const ty = tgt.y + (tgt.vy || 0) * flight * .75 + rnd(-wep.spread, wep.spread);
+    if (wep.spg) {
+      // the 155mm going off: the barrel is cranked high, so the round LEAVES the elevated muzzle and arcs from up there, and the
+      // blast jets UP and forward off the muzzle in a great plume, with a full ring of dust thrown out around the hull.
+      const base = src.aimT !== undefined ? angTo(src.x, src.y, tx, ty) : src.ang;
+      const MZ = 82, fwd = src.r * .7, mtx = src.x + Math.cos(base) * fwd, mty = src.y + Math.sin(base) * fwd;   // elevated muzzle tip (2D projection + height)
+      G.bullets.push({
+        kind: 'mortar', spgShell: 1, x: mtx, y: mty, sx: mtx, sy: mty, tx, ty, z: MZ, z0m: MZ,
+        t: 0, flight, arcH: wep.arcH, dmg: wep.dmg * dmgMul(src), splash: wep.splash,
+        team: 1, tm: plyOf(src).team, vx: 0, vy: 0, life: flight + .2, src,
+        howie: 1, lethal: 1, sfx: wep.sfx
+      });
+      const _fx = G._fx; G._fx = 1;
+      part('flash', mtx, mty, 0, 0, .12, 26, '#fff0c0', { glow: 1, z: MZ });                                     // big muzzle flash at the barrel tip
+      part('flash', mtx, mty, 0, 0, .09, 16, '#ffd27a', { glow: 1, z: MZ });
+      for (let k = 0; k < 30; k++) { const a = base + rnd(-.4, .4), sp = rnd(120, 340); part('smoke', mtx, mty, Math.cos(a) * sp * .7 + G.wind.x * .3, Math.sin(a) * sp * .5 + G.wind.y * .3, rnd(1.3, 2.2), rnd(6, 12), k < 12 ? 'rgba(238,230,214,1)' : 'rgba(176,166,150,1)', { z: MZ + rnd(-6, 8), vz: rnd(60, 210), g: -14, grow: 40, drag: .86, wind: 1, a: .55 }); }   // the plume boiling up off the muzzle
+      for (let k = 0; k < 16; k++) { const a = base + rnd(-.35, .35), sp = rnd(160, 400); part('fire', mtx, mty, Math.cos(a) * sp * .7, Math.sin(a) * sp * .5, rnd(.12, .28), rnd(7, 13), k & 1 ? '#ffb54a' : '#ffe6b0', { glow: 1, z: MZ + rnd(-4, 10), vz: rnd(40, 150), g: 30, drag: .82, grow: 16 }); }   // fire in the plume
+      fxGunBump(src.x, src.y, src.r, 6, base);
+      for (let k = 0; k < 48; k++) { const a = rnd(TAU), sp = rnd(80, 260); part('dust', src.x + Math.cos(a) * src.r * .5, src.y + Math.sin(a) * src.r * .4, Math.cos(a) * sp, Math.sin(a) * sp * .62, rnd(1, 1.9), rnd(10, 18), k & 1 ? 'rgba(184,172,146,1)' : 'rgba(206,196,172,1)', { z: rnd(0, 6), vz: rnd(14, 54), g: 34, grow: 36, drag: .9, wind: 1, a: .9 }); }   // the great ground ring around the hull
+      part('ring', src.x, src.y, 0, 0, .6, src.r * .7, 'rgba(214,204,180,.55)', { grow: src.r * 6 });
+      G._fx = _fx;
+      src.recoil = 1.5; src.recoilA = base;
+      addShake(src.x, src.y, wep.shake || 11);
+      G.lights.push({ x: mtx, y: mty, r: 260, c: [255, 208, 140], i: 2.0 });
+      AU.shot(mtx, mty, 'spg', wep.cd);
+      AU.whistle(tx, ty, flight * .9);
+      return;
+    }
     G.bullets.push({
       kind: 'mortar', x: m.x, y: m.y, sx: m.x, sy: m.y, tx, ty, z: 0,
       t: 0, flight, arcH: wep.arcH, dmg: wep.dmg * dmgMul(src), splash: wep.splash,
       slow: wep.slow || 0, big: wep.big || 0, team: 1, tm: plyOf(src).team, vx: 0, vy: 0, life: flight + .2, src,
       howie: wep.howie ? 1 : 0, lethal: (wep.howie || wep.lethal) ? 1 : 0, sfx: wep.sfx
     });
-    if (wep.spg) {
-      // the 155mm going off: a hard tank-style muzzle flash and jet, a MASSIVE ring of dust thrown out all round the hull, the spades biting, a heavy kick and the louder report
-      const base = src.aimT !== undefined ? angTo(m.x, m.y, tx, ty) : src.ang;
-      fxMuzzle(m.x, m.y, base, 3.4, m.z || 0, tier);
-      const muzLen = m.z !== undefined ? Math.hypot(m.x - src.x, m.y - src.y) : (wep.off || (src.r + 12));
-      fxMuzzleDust(src.x, src.y, base, .55, 3.4, muzLen, m.z || 0);
-      fxGunBump(src.x, src.y, src.r, 6, base);
-      { const _fx = G._fx; G._fx = 1;                                    // the great dust ring: a wall of it blown out in a full circle around the vehicle
-        for (let k = 0; k < 46; k++) { const a = rnd(TAU), sp = rnd(70, 240); part('dust', src.x + Math.cos(a) * src.r * .5, src.y + Math.sin(a) * src.r * .4, Math.cos(a) * sp, Math.sin(a) * sp * .62, rnd(.9, 1.8), rnd(9, 17), k & 1 ? 'rgba(184,172,146,1)' : 'rgba(206,196,172,1)', { z: rnd(0, 6), vz: rnd(14, 54), g: 34, grow: 34, drag: .9, wind: 1, a: .85 }); }
-        part('ring', src.x, src.y, 0, 0, .55, src.r * .7, 'rgba(214,204,180,.5)', { grow: src.r * 5.5 });
-        G._fx = _fx; }
-      src.recoil = 1.5; src.recoilA = base;
-      addShake(src.x, src.y, wep.shake || 10);
-      G.lights.push({ x: m.x, y: m.y, r: 240, c: [255, 208, 140], i: 1.8 });
-      AU.shot(m.x, m.y, 'spg', wep.cd);
-      AU.whistle(tx, ty, flight * .9);
-      return;
-    }
     fxSmoke(m.x, m.y, rnd(-30, 30), rnd(-30, 30), 11, 1.5, 'rgba(180,176,166,1)');
     fxSmoke(m.x, m.y, rnd(-20, 20), rnd(-20, 20), 8, 1.1, 'rgba(150,146,138,1)');
     part('flash', m.x, m.y, 0, -60, .1, 10, '#ffe9a8', { rot: -Math.PI / 2, glow: 1, z: 8 });
@@ -10657,12 +10681,16 @@ function updateBullets(dt) {
       b.t += dt / b.flight;
       const k = Math.min(1, b.t);
       b.x = lerp(b.sx, b.tx, k); b.y = lerp(b.sy, b.ty, k);
-      b.z = b.arcH * 4 * k * (1 - k);
-      if (Math.random() < dt * 22) fxSmoke(b.x, b.y, rnd(-6, 6), rnd(-6, 6), 3, .7, 'rgba(190,186,178,1)');
+      b.z = b.arcH * 4 * k * (1 - k) + (b.z0m || 0) * (1 - k);        // the SPG round leaves the elevated barrel tip and arcs down from there
+      if (b.spgShell) {                                                // a fat 155mm you can watch the whole way: a smoking, glowing shell with a heavy trail
+        b._st = (b._st || 0) + dt; if (b._st > .03) { b._st = 0; fxSmoke(b.x, b.y, rnd(-8, 8), rnd(-8, 8), rnd(3, 5), rnd(1.1, 1.8), 'rgba(210,204,194,1)'); }
+      } else if (Math.random() < dt * 22) fxSmoke(b.x, b.y, rnd(-6, 6), rnd(-6, 6), 3, .7, 'rgba(190,186,178,1)');
       if (b.t >= 1) {
-        if (b.howie) {                                                   // the SPG bursts exactly like the AC-130's 105mm: the same explosion, shell-impact wave, and lethal-in-the-burst damage
-          fxExplosion(b.x, b.y, 34, null, null, 'howitzer');
+        if (b.howie) {                                                   // the SPG bursts like the AC-130's 105mm, only bigger: a heavy explosion, a shell-impact wave, and lethal damage in the burst
+          const R = b.spgShell ? 52 : 34;
+          fxExplosion(b.x, b.y, R, null, null, 'howitzer');
           fxShellImpact(b.x, b.y, b.splash || 60, 1);
+          if (b.spgShell) { const _fx = G._fx; G._fx = 2; for (let q = 0; q < 30; q++) { const a = rnd(TAU), sp = rnd(60, 240); part('dust', b.x, b.y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(1, 2), rnd(9, 18), q & 1 ? 'rgba(120,108,92,1)' : 'rgba(158,146,124,1)', { z: rnd(0, 8), vz: rnd(30, 120), g: 60, grow: 40, drag: .9, wind: 1 }); } part('ring', b.x, b.y, 0, 0, .5, 20, 'rgba(255,200,140,.5)', { grow: b.splash * 3, glow: 1 }); G._fx = _fx; addShake(b.x, b.y, 8); }
           areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, !!b.lethal);
         } else {
           fxMortar(b.x, b.y, b.splash, b.big);
@@ -10818,9 +10846,46 @@ function updateItems(dt) {
     const c = G.corpses[i]; c.life -= dt;
     if (c.life <= 0) { G.corpses.splice(i, 1); continue; }
     if (c.ele) { const t0 = c.ele.t; c.ele.t += dt; if (t0 < 2.1 && c.ele.t >= 2.1) { addShake(c.x, c.y, 7); bloodDecal(c.x, c.y, 10, '#4d0c0c'); for (let k = 0; k < 14; k++) part('dust', c.x + rnd(-40, 40), c.y + rnd(-28, 28), rnd(-50, 50), rnd(-30, 30), rnd(.9, 1.6), rnd(7, 13), 'rgba(160,146,124,1)', { grow: 20, drag: .9, z: 0, vz: rnd(10, 30), g: -40 }); AU.boom && AU.boom(c.x, c.y, .5); } }   // the carcass hits the ground
+    /* ---- shot-down aircraft: fall from altitude trailing fire and smoke, slam in, THEN brew up 2 s later ---- */
+    if (c.downedAir) {
+      if (c.z > 0) {                                               // still falling
+        c.vz -= 210 * dt; if (c.vz < -300) c.vz = -300;
+        c.z += c.vz * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot = (c.rot || 0) + (c.vr || 0) * dt;
+        c._tr = (c._tr || 0) + dt;
+        if (c._tr > .035) { c._tr = 0;                             // the trailing plume: black smoke + fire streaming off the falling airframe
+          part('smoke', c.x, c.y, rnd(-8, 8) + G.wind.x * .2, rnd(-8, 8), rnd(2.2, 3.6), rnd(5, 10), 'rgba(34,30,26,1)', { a: .8, z: c.z, vz: rnd(2, 12), grow: 22, drag: .93, wind: 1 });
+          part('fire', c.x + rnd(-4, 4), c.y + rnd(-4, 4), rnd(-10, 10), rnd(-10, 10), rnd(.3, .6), rnd(3, 7), Math.random() < .5 ? '#ff8a2e' : '#ff5a26', { glow: 1, z: c.z + rnd(-4, 4), vz: rnd(-10, 20), g: -20, grow: 8, drag: .9 });
+        }
+        G.lights.push({ x: c.x, y: c.y, r: 130, c: [255, 140, 70], i: 1.0 });
+        if (c.z <= 0) {                                            // impact: dust ring, flatten grass and trees, shake — but not the blast yet
+          c.z = 0; c.air = 0; c.fuse = 2; c.a = c.rot; c.vx = c.vy = 0; c.vz = 0;
+          const _fx = G._fx; G._fx = 2;
+          for (let k = 0; k < 30; k++) { const a2 = rnd(TAU), sp = rnd(70, 240); part('dust', c.x, c.y, Math.cos(a2) * sp, Math.sin(a2) * sp * .7, rnd(1.1, 2), rnd(10, 20), k & 1 ? 'rgba(150,138,116,1)' : 'rgba(186,174,148,1)', { z: rnd(0, 5), vz: rnd(20, 80), g: 48, grow: 40, drag: .9, wind: 1 }); }
+          part('ring', c.x, c.y, 0, 0, .5, c.r * .8, 'rgba(210,200,176,.6)', { grow: c.r * 7 });
+          G._fx = _fx;
+          if (typeof fellTrees === 'function') fellTrees(c.x, c.y, c.r * 1.4 + 6, c.rot, true);
+          if (typeof grassStamp === 'function') grassStamp(c.x, c.y, c.r * 1.5);
+          if (typeof scorchDecal === 'function') scorchDecal(c.x, c.y, c.r * .8);
+          addShake(c.x, c.y, 13);
+          AU.boom && AU.boom(c.x, c.y, 1.0);
+        }
+      } else {                                                     // down on the deck: fuse ticking to the brew-up
+        c.fuse -= dt;
+        if (c.fuse <= 0) {
+          c.downedAir = 0;                                         // becomes an ordinary burning wreck for the rest of its life
+          const R = Math.min(150, c.r * 2.6);
+          fxExplosion(c.x, c.y, R);
+          if (typeof fxCinematic === 'function') fxCinematic(c.x, c.y, c.r * 1.5);
+          fxExplosion(c.x - c.r * .5, c.y + c.r * .3, c.r * 1.6); fxExplosion(c.x + c.r * .5, c.y - c.r * .3, c.r * 1.6);
+          areaDamage(c.x, c.y, c.r * 3, 999999, false, true);     // the ordnance cooks off — anything on top of the wreck dies
+          scorchDecal(c.x, c.y, R * .55);
+          addShake(c.x, c.y, 18);
+        }
+      }
+    }
     /* ---- blast ragdoll: a body thrown by an explosion arcs through the air,
        tumbling, then hits the ground, bounces once and slides to a stop ---- */
-    if (c.air) {
+    if (c.air && !c.downedAir) {
       c.z += c.vz * dt; c.vz -= 620 * dt;
       c.x += c.vx * dt; c.y += c.vy * dt; c.rot += c.vr * dt;
       const dr = Math.pow(.985, dt * 60); c.vx *= dr; c.vy *= dr;
@@ -11415,6 +11480,9 @@ function updateStrikes(dt) {
 }
 /* the cursor / hover preview for a dev strike placement (read by the renderer) */
 function strikePreview() {
+  // SPG "Fire on Area" reticle: a dragged circle, or a cursor ring following the mouse
+  if (UI.spgDrag) { const a = UI.spgDrag, r = a.r < TS ? SPG_RDEF : clamp(a.r, SPG_RMIN, SPG_RMAX); return { kind: 'ring', x: a.x, y: a.y, r, col: '#ffc45c', r2: 7 }; }
+  if (UI.spgPlace) { if (!IN.hasMouse) return null; return { kind: 'ring', x: s2wx(IN.mx, IN.my), y: s2wy(IN.my, IN.mx), r: SPG_RDEF, col: '#ffc45c' }; }
   const d = UI.spawnDrop; if (!d || d.side !== 'strike') return null;
   if (UI.artyDrag) { const a = UI.artyDrag, r = a.r < TS ? ARTY_RDEF : clamp(a.r, ARTY_RMIN, ARTY_RMAX); return { kind: 'ring', x: a.x, y: a.y, r, col: '#ff8a5a', r2: 6 }; }   // being dragged out
   if (!IN.hasMouse) return null;
@@ -11553,6 +11621,8 @@ function aaTurretUpdate(b, dt) {
     b.aaCd = b.def.aaCd || 3.2; b.aaFx = .12;
     best._aaInbound = (best._aaInbound || 0) + 1;
     if (best._aaInbound >= 2) best._aaDoom = true;            // two already inbound: leave it for the next airframe
+    // a missile is inbound: every airborne craft on the threatened side auto-pops countermeasure flares for a few seconds
+    for (const u of G.units) { if (u.dead || u.landed || !u.def.fly) continue; if (u === best || (teamOf(u) === teamOf(best) && dist2(u.x, u.y, best.x, best.y) < (36 * TS) * (36 * TS))) u.autoFlareT = Math.max(u.autoFlareT || 0, 5); }
   }
 }
 function launchAAMissile(b, tgt, x, y, z) {
@@ -11560,6 +11630,13 @@ function launchAAMissile(b, tgt, x, y, z) {
   fxSmoke(x, y, 0, 0, 6, 1.6, 'rgba(210,210,214,1)');
   part('flash', x, y, 0, 0, .09, 12, '#ffe9a8', { glow: 1, z });
   G.lights.push({ x, y, r: 150, c: [255, 200, 130], i: 1.2 });
+  // a ring of dust and backblast smoke thrown out around the station on launch — it hangs for ~3 s
+  { const _fx = G._fx; G._fx = 1;
+    for (let k = 0; k < 30; k++) { const a = rnd(TAU), sp = rnd(50, 170); part('dust', b.x + Math.cos(a) * b.w * TS * .3, b.y + Math.sin(a) * b.h * TS * .3, Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .6 + G.wind.y * .3, rnd(2.4, 3.4), rnd(8, 15), k & 1 ? 'rgba(180,168,144,1)' : 'rgba(202,192,168,1)', { z: rnd(0, 4), vz: rnd(6, 26), g: 18, grow: 30, drag: .95, wind: 1, a: .8 }); }
+    for (let k = 0; k < 12; k++) { const a = rnd(TAU); part('smoke', b.x, b.y, Math.cos(a) * rnd(30, 90), Math.sin(a) * rnd(20, 60), rnd(2.2, 3.2), rnd(6, 11), 'rgba(150,142,130,1)', { z: rnd(2, 10), vz: rnd(10, 30), g: -6, grow: 22, drag: .93, wind: 1, a: .55 }); }
+    part('ring', b.x, b.y, 0, 0, .6, Math.max(b.w, b.h) * TS * .4, 'rgba(210,200,176,.45)', { grow: Math.max(b.w, b.h) * TS * 3 });
+    G._fx = _fx; }
+  addShake(b.x, b.y, 3);
   if (AU.shot) AU.shot(x, y, 'hydra', .3);
 }
 /* a guided missile: re-steers toward its target's 3D position each tick, climbing to its altitude; a nearby live
@@ -11581,8 +11658,9 @@ function updateAAMissile(b, dt) {
   const climb = clamp(dz / Math.max(50, dh), -1.5, 1.5);
   b.x += Math.cos(b.hd) * b.spd * dt; b.y += Math.sin(b.hd) * b.spd * dt; b.z += climb * b.spd * dt * .5;
   b.life -= dt;
+  // a thick white smoke trail hanging in the air behind the missile, plus its glowing motor
   b._sm = (b._sm || 0) + dt;
-  if (b._sm > .02) { b._sm = 0; part('smoke', b.x, b.y, rnd(-6, 6), rnd(-6, 6), rnd(2.2, 3.4), rnd(1.4, 2.4), 'rgba(214,210,204,1)', { a: .8, z: b.z, vz: rnd(2, 10), grow: 10, drag: .93, wind: 1 }); part('fire', b.x, b.y, 0, 0, .1, 2.2, '#ffd27a', { glow: 1, z: b.z }); }
+  if (b._sm > .012) { b._sm = 0; part('smoke', b.x, b.y, rnd(-4, 4), rnd(-4, 4), rnd(2.6, 4.2), rnd(2.4, 3.8), 'rgba(224,222,218,1)', { a: .92, z: b.z + rnd(-2, 2), vz: rnd(0, 6), grow: 16, drag: .95, wind: 1 }); part('smoke', b.x, b.y, 0, 0, rnd(1.6, 2.6), rnd(1.6, 2.4), 'rgba(198,194,188,1)', { a: .7, z: b.z, vz: rnd(1, 5), grow: 12, drag: .94, wind: 1 }); part('fire', b.x, b.y, 0, 0, .1, 2.6, '#ffd27a', { glow: 1, z: b.z }); }
   G.lights.push({ x: b.x, y: b.y, r: 70, c: [255, 170, 90], i: .5 });
   const hitR = b.decoyed ? 20 : ((T && T.r ? T.r : 16) + 22);
   const reached = !lost && dist2(b.x, b.y, tx, ty) < hitR * hitR && Math.abs(b.z - tz) < 48;
@@ -13750,7 +13828,7 @@ function buildSpawnMenu() {
   ctrl.innerHTML = '<div class="sprole" id="spRoleRow"><button class="sprolebtn" data-role="you">👤 You</button><button class="sprolebtn" data-role="ally">🤝 Ally</button><button class="sprolebtn" data-role="enemy">☠ Enemy</button></div>'
     + '<div class="sprow"><button class="dvbtn" id="spMinus">−</button><input id="spN" class="dvnum" value="1" inputmode="numeric"><button class="dvbtn" id="spPlus">+</button><button class="dvbtn spawnbtn spawngo" id="spGo">SPAWN ▾</button></div>';
   const spNel = ctrl.querySelector('#spN');
-  const paintRole = () => { for (const rb of ctrl.querySelectorAll('.sprolebtn')) rb.classList.toggle('on', rb.dataset.role === spRole); };
+  const paintRole = () => { const enemySide = spSel && spSel.side === 'enemy'; for (const rb of ctrl.querySelectorAll('.sprolebtn')) { const isYou = rb.dataset.role === 'you'; rb.style.display = (enemySide && isYou) ? 'none' : ''; rb.classList.toggle('on', rb.dataset.role === spRole); } };   // zombies / Thai Ancient can only be Ally or Enemy — never "You"
   for (const rb of ctrl.querySelectorAll('.sprolebtn')) rb.onclick = e => { e.stopPropagation(); spRole = rb.dataset.role; paintRole(); AU.ui('ok'); };
   const clearSel = () => { for (const o of wrap.querySelectorAll('.spitem')) o.classList.remove('sel'); ctrl.style.display = 'none'; spSel = null; };
   // group accordion — opening one closes the others (and hides the inline controls)
@@ -13770,7 +13848,7 @@ function buildSpawnMenu() {
     if (already) { AU.ui('no'); return; }
     it.classList.add('sel');
     spSel = { side: it.dataset.side, t: it.dataset.t, label: it.textContent.trim() };
-    spRole = it.dataset.side === 'enemy' ? 'enemy' : 'you';       // sensible default; the player can override
+    spRole = it.dataset.side === 'enemy' ? 'enemy' : 'you';       // enemy-side (zeds) default to Enemy and offer only Ally/Enemy; player units default to You
     paintRole();
     it.insertAdjacentElement('afterend', ctrl);
     ctrl.style.display = 'flex';
@@ -13848,16 +13926,23 @@ function spawnDropAt(wx, wy) {
   UI.spawnDrop = null;
   return made;
 }
-/* SPG "Fire on Area": drop a standing fire mission on the tapped spot for every selected Paladin, deploying it first */
-function spgPlaceAt(wx, wy) {
+/* SPG "Fire on Area": exactly like the artillery command — press on the centre and drag the ring out to size the beaten
+   zone, release to commit. Every selected Paladin deploys and keeps shelling RANDOMLY across that circle until Stopped. */
+const SPG_RMIN = 2 * TS, SPG_RMAX = 12 * TS, SPG_RDEF = 4 * TS;
+function spgDragStart(wx, wy) { UI.spgDrag = { x: wx, y: wy, r: 0 }; }
+function spgDragMove(wx, wy) { const d = UI.spgDrag; if (!d) return; d.r = Math.hypot(wx - d.x, wy - d.y); }
+function spgDragEnd() { const d = UI.spgDrag; if (!d) return; UI.spgDrag = null; const r = d.r < TS ? SPG_RDEF : clamp(d.r, SPG_RMIN, SPG_RMAX); spgSetArea(d.x, d.y, r); }
+function spgSetArea(wx, wy, r) {
   const ids = UI.spgPlace; if (!ids) return 0;
+  r = r || SPG_RDEF;
   let n = 0;
-  for (const u of G.units) { if (u.dead || !u.def || !u.def.spg || ids.indexOf(u.id) < 0) continue; u.spgArea = { x: wx, y: wy }; u.spgPrio = null; if (!u.spgDeployed && !(u.spgDeploy > 0) && !(u.spgUndeploy > 0) && typeof startSPGDeploy === 'function') startSPGDeploy(u); n++; }
+  for (const u of G.units) { if (u.dead || !u.def || !u.def.spg || ids.indexOf(u.id) < 0) continue; u.spgArea = { x: wx, y: wy, r }; u.spgPrio = null; u._spgAimPt = null; if (!u.spgDeployed && !(u.spgDeploy > 0) && !(u.spgUndeploy > 0) && typeof startSPGDeploy === 'function') startSPGDeploy(u); n++; }
   UI.spgPlace = null;
-  if (n) { alertMsg('Fire mission set — ' + n + ' Paladin on it', 'good'); AU.ui('ok'); } else alertMsg('No battery selected', '');
+  if (n) { alertMsg('Fire mission set — ' + n + ' Paladin shelling the zone', 'good'); AU.ui('ok'); } else alertMsg('No battery selected', '');
   refreshCard(true);
   return n;
 }
+function spgPlaceAt(wx, wy) { return spgSetArea(wx, wy, SPG_RDEF); }   // a plain tap = default circle
 if ($('dvSpawnOpen')) $('dvSpawnOpen').onclick = e => { e.stopPropagation(); showDevView(true); };
 if ($('dvSpBack')) $('dvSpBack').onclick = e => { e.stopPropagation(); showDevView(false); };
 
@@ -14880,7 +14965,7 @@ cv.addEventListener('mousedown', e => {
   AU.init();
   if (e.button === 0) {
     if (UI.spawnDrop) { if (UI.spawnDrop.side === 'strike' && UI.spawnDrop.t === 'artillery') { artyDragStart(s2wx(x, y), s2wy(y, x)); IN.down = true; return; } spawnDropAt(s2wx(x, y), s2wy(y, x)); return; }
-    if (UI.spgPlace) { spgPlaceAt(s2wx(x, y), s2wy(y, x)); return; }
+    if (UI.spgPlace) { spgDragStart(s2wx(x, y), s2wy(y, x)); IN.down = true; return; }
     if (UI.spawnPlace) {
       const wx = s2wx(x, y), wy = s2wy(y, x);
       const made = ivSpawnAt(wx, wy, UI.spawnPlace, 200);
@@ -14894,7 +14979,7 @@ cv.addEventListener('mousedown', e => {
     IN.down = true; IN.dragging = true; IN.dx0 = x; IN.dy0 = y; IN.dragDist = 0;
   } else if (e.button === 2) {
     if (UI.spawnDrop) { cancelSpawnDrop(); return; }
-    if (UI.spgPlace) { UI.spgPlace = null; alertMsg('Fire mission cancelled', ''); AU.ui('no'); refreshCard(true); return; }
+    if (UI.spgPlace || UI.spgDrag) { UI.spgPlace = null; UI.spgDrag = null; alertMsg('Fire mission cancelled', ''); AU.ui('no'); refreshCard(true); return; }
     if (UI.spawnPlace) { UI.spawnPlace = 0; $('dvIvPlace').classList.remove('arm'); alertMsg('Spawn placement cancelled', ''); return; }
     if (UI.moving) { cancelRelocate(); return; }
     if (UI.brush && UI.brush.on) { UI.brush.on = false; refreshCard(true); AU.ui('no'); return; }
@@ -14916,6 +15001,7 @@ window.addEventListener('mousemove', e => {
   if (x > 2 && y > 2 && x < cv.width - 2 && y < cv.height - 2) IN.hasMouse = true;
   if (IN.dragging) IN.dragDist = Math.hypot(x - IN.dx0, y - IN.dy0);
   if (UI.artyDrag) artyDragMove(s2wx(x, y), s2wy(y, x));
+  if (UI.spgDrag) spgDragMove(s2wx(x, y), s2wy(y, x));
   if (IN.down && UI.brush && UI.brush.on) applyBrush(s2wx(x, y), s2wy(y, x));
   if (IN.down && UI.place && BDEF[UI.place] && (BDEF[UI.place].wall || BDEF[UI.place].trap || BDEF[UI.place].row)) tryPlace(s2wx(x, y), s2wy(y, x));
   if (IN.miniDrag) miniJump(e);
@@ -14925,6 +15011,7 @@ window.addEventListener('mouseup', e => {
   UI.wallAnchor = null; UI.wallLast = null;                       // a wall drag ends here; the next drag starts a fresh straight row
   if (e.button === 1) { IN.pan = false; IN.orbit = false; }
   if (e.button === 0 && UI.artyDrag) { artyDragMove(s2wx(x, y), s2wy(y, x)); artyDragEnd(); IN.down = false; return; }
+  if (e.button === 0 && UI.spgDrag) { spgDragMove(s2wx(x, y), s2wy(y, x)); spgDragEnd(); IN.down = false; return; }
   if (e.button === 0) {
     if (IN.dragging && IN.dragDist > 6) {
       boxSelect(s2wx(IN.dx0, IN.dy0), s2wy(IN.dy0, IN.dx0), s2wx(x, y), s2wy(y, x), e.shiftKey);
@@ -17039,10 +17126,14 @@ function ctrlHudTick(dt) {
       g.add(box(.5, .18, .16, STL2, 1.5, .5, .5)); g.add(cyl(.01, .01, 1.1, TRACK, -1.1, 1.6, -.6, 'y'));                          // headlight guard, antenna
       tur.position.set(-.35, 1.06, 0);
       tur.add(box(1.7, .78, 1.42, HULL, 0, .4, 0));                                                                                // casemate body
-      tur.add(box(.5, .5, 1.2, HULL, .9, .3, 0, 0, 0, -.25));                                                                      // gun mount slope
-      tur.add(cyl(.09, .1, 2.7, BARREL, 2.15, .34, 0, 'x'));                                                                       // 155mm barrel
-      tur.add(cyl(.14, .14, .34, BARREL, 1.55, .34, 0, 'x'));                                                                      // fume extractor bulge
-      tur.add(box(.18, .2, .2, BARREL, 3.44, .34, 0));                                                                             // muzzle brake
+      tur.add(box(.5, .5, 1.2, HULL, .78, .3, 0, 0, 0, -.25));                                                                     // gun mount slope
+      // the whole 155mm rides an elevation pivot at the trunnion, so it can be cranked high into the air for the lob
+      const gun = new THREE.Group(); gun.position.set(.72, .52, 0);
+      gun.add(cyl(.095, .105, 2.7, BARREL, 1.45, 0, 0, 'x'));                                                                      // 155mm barrel
+      gun.add(cyl(.15, .15, .36, BARREL, .86, 0, 0, 'x'));                                                                         // fume extractor bulge
+      gun.add(box(.2, .24, .24, BARREL, 2.78, 0, 0));                                                                              // muzzle brake
+      gun.add(box(.34, .4, .56, HULL, -.1, 0, 0));                                                                                 // breech behind the trunnion (counterweight)
+      tur.add(gun); g.userData.spgGun = gun;
       tur.add(box(.42, .3, .34, STL2, -.5, .74, .4)); tur.add(cyl(.1, .1, .14, STL2, -.5, .95, .4, 'y'));                          // commander's cupola
       tur.add(cyl(.03, .05, .6, BARREL, -.4, .95, .4, 'x'));                                                                       // pintle .50
       for (let i = 0; i < 3; i++) tur.add(box(.16, .2, .14, STL2, -.72 + i * .18, .5, -.62));                                      // stowage bins
@@ -17200,7 +17291,7 @@ function ctrlHudTick(dt) {
         g.add(box(.6, .03, .05, ACC, 0, .66, .5));
       }
     }
-    return { g, tur, rotor, disc: rotor && rotor.userData.disc, props, tails, tier, mgs: g.userData.mgs || null, spades: g.userData.spades || null };
+    return { g, tur, rotor, disc: rotor && rotor.userData.disc, props, tails, tier, mgs: g.userData.mgs || null, spades: g.userData.spades || null, spgGun: g.userData.spgGun || null };
   }
   const WRECK = matFor('#2a2624', { map: TEX.panel, roughness: .95 });
 
@@ -18746,9 +18837,10 @@ function ctrlHudTick(dt) {
             u._pit = (u._pit || 0) + (pitT - (u._pit || 0)) * Math.min(1, rdt * 4); u._rol = (u._rol || 0) + (rolT - (u._rol || 0)) * Math.min(1, rdt * 3.2); u._yw = (u._yw || 0) + (yawT - (u._yw || 0)) * Math.min(1, rdt * 3);
             um.g.rotateY(-u._yw); um.g.rotateX(u._rol); um.g.rotateZ(-u._pit);
           } else { um.g.rotateZ(Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); } /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; if (um.g.userData.guns) aimGuns(u, um, Math.max(1e-3, render._dt || .016)); const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
-        else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil) um.tur.position.x = -.15 - u.recoil * .12;
+        else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil && !um.spgGun) um.tur.position.x = -.15 - u.recoil * .12;
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); }
-          if (um.spades) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spades.rotation.z = -Math.max(0, Math.min(1, dep)) * 1.15; } }   // the Paladin's spades dig in as it deploys
+          if (um.spades) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spades.rotation.z = -Math.max(0, Math.min(1, dep)) * 1.15; }   // the Paladin's spades dig in as it deploys
+          if (um.spgGun) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spgGun.rotation.z = .2 + .82 * Math.max(0, Math.min(1, dep)); um.spgGun.position.x = .72 - (u.recoil || 0) * .3; } }   // the 155mm cranks high into the air to lob, and recoils along the barrel on fire
         if (u.order && u.order.lead && !d.fly) { const pl = G.players && G.players[u.owner || 0]; drawBanner(x, gy + u.r * K * .9, z, u.ang, 1.35 * FS, col3(pl && pl.color ? pl.color : '#7dffb2'), col3('#f2f2f2'), u.id); }   // convoy leader flies the pennant
         if (u.headlight && !d.fly && G.flashOn !== false) {                                        // headlights: a soft fan of light laid over the ground ahead of the hull
           const hl = u.r * K * 1.05, L = 7 + u.r * K * 3, dk = .35 + (1 - dayNow) * .65, ca = Math.cos(u.ang), sa = Math.sin(u.ang);
@@ -19030,7 +19122,7 @@ function ctrlHudTick(dt) {
       // so the tracer doesn't hop up and down (bounce) with every bump in the ground beneath it.
       if (b._gy === undefined) b._gy = groundY(b.x, b.y);
       const x = b.x * K, z = b.y * K, y = b._gy + (b.z || 8) * K;
-      if (b.kind === 'mortar') { bb(partsAdd, x, y, z, .18, 1, .9, .7, .9); continue; }
+      if (b.kind === 'mortar') { if (b.spgShell) { bb(partsAdd, x, y, z, .5, 1, .85, .55, 1); bb(partsAdd, x, y, z, .26, 1, 1, .9, 1); } else bb(partsAdd, x, y, z, .18, 1, .9, .7, .9); continue; }
       if (b.kind === 'aamsl') { bb(partsAdd, x, y, z, .3, 1, .85, .6, 1); bb(partsAdd, x, y, z, .16, 1, 1, .95, 1); continue; }   // the missile's bright motor plume (the smoke trail draws its wake)
       const a = Math.atan2(b.vy, b.vx);
       // short tracer streaks — 15% of the old length (arrows keep their real shaft)
@@ -20047,7 +20139,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b206';
+const BUILD_TAG = 'b207';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
@@ -20289,7 +20381,7 @@ function attachFirebaseIfPresent() {
     if (e.touches.length === 1) {
       const [x, y] = posT(e.touches[0]); IN.mx = x; IN.my = y; sx = x; sy = y; moved = false; startT = performance.now();
       if (UI.spawnDrop) { if (UI.spawnDrop.side === 'strike' && UI.spawnDrop.t === 'artillery') { mode = 'artydrag'; artyDragStart(s2wx(x, y), s2wy(y, x)); return; } mode = 'spawndrop'; return; }
-      if (UI.spgPlace) { mode = 'spgplace'; return; }
+      if (UI.spgPlace) { mode = 'spgdrag'; spgDragStart(s2wx(x, y), s2wy(y, x)); return; }
       if (UI.spawnPlace) { mode = 'spawn'; return; }
       if (UI.moving) { mode = 'reloc'; return; }
       if (UI.clearMode) { mode = 'clear'; clearTerrainAt(s2wx(x, y), s2wy(y, x), UI.clearSize || 2); return; }
@@ -20316,6 +20408,7 @@ function attachFirebaseIfPresent() {
   cv.addEventListener('touchmove', e => {
     e.preventDefault();
     if (mode === 'artydrag' && e.touches.length === 1) { const [x, y] = posT(e.touches[0]); IN.mx = x; IN.my = y; artyDragMove(s2wx(x, y), s2wy(y, x)); return; }
+    if (mode === 'spgdrag' && e.touches.length === 1) { const [x, y] = posT(e.touches[0]); IN.mx = x; IN.my = y; spgDragMove(s2wx(x, y), s2wy(y, x)); return; }
     if (mode === 'pinch' && e.touches.length === 2) {
       const a = posT(e.touches[0]), b = posT(e.touches[1]);
       const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
@@ -20340,7 +20433,7 @@ function attachFirebaseIfPresent() {
     const x = IN.mx, y = IN.my;
     if (mode === 'artydrag') { artyDragMove(s2wx(x, y), s2wy(y, x)); artyDragEnd(); }
     else if (mode === 'spawndrop') { spawnDropAt(s2wx(x, y), s2wy(y, x)); }
-    else if (mode === 'spgplace') { spgPlaceAt(s2wx(x, y), s2wy(y, x)); }
+    else if (mode === 'spgdrag') { spgDragMove(s2wx(x, y), s2wy(y, x)); spgDragEnd(); }
     else if (mode === 'spawn') { const made = ivSpawnAt(s2wx(x, y), s2wy(y, x), UI.spawnPlace, 200); alertMsg(made + ' invaders dropped here', 'info'); AU.ui('alarm'); UI.spawnPlace = 0; const dp = $('dvIvPlace'); if (dp) dp.classList.remove('arm'); }
     else if (mode === 'reloc') { finishRelocate(s2wx(x, y), s2wy(y, x)); }
     else if (mode === 'place') { /* placed on down/move */ }
