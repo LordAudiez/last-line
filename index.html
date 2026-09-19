@@ -248,6 +248,14 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 #scoreboard .brk .bt{display:flex;justify-content:space-between;gap:14px;font-size:10.5px;color:#c3d5cb;padding:1.5px 0;white-space:nowrap}
 #scoreboard .brk .bt b{color:#8dffbe;font-variant-numeric:tabular-nums}
 /* multiplayer deploy status: who has placed their HQ, who we're still waiting on — floats above the minimap during deploy */
+#spgrange{position:absolute;left:50%;top:78px;transform:translateX(-50%);min-width:220px;max-width:90vw;display:none;pointer-events:none;z-index:40;
+  padding:8px 12px;border-radius:10px;border:1px solid rgba(255,196,92,.5);background:rgba(14,20,16,.82);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 6px 18px rgba(0,0,0,.35);
+  font:600 12px/1.5 system-ui,sans-serif;color:#eafff4;text-align:center}
+#spgrange .hd{font-weight:800;letter-spacing:1px;font-size:11px;color:#ffd28a;margin-bottom:3px}
+#spgrange .hd.no{color:#ff7a68}
+#spgrange .ok{color:#8dffbe}
+#spgrange .no{color:#ff7a68}
 #depstatus{position:absolute;left:0;bottom:calc(100% + 8px);width:300px;max-width:82vw;display:none;pointer-events:none;
   background:linear-gradient(180deg,rgba(20,16,10,.96),rgba(14,11,7,.96));border:1px solid #6a5a2a;border-radius:6px;padding:8px 10px;
   box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:41;font-size:11px}
@@ -1164,6 +1172,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   <div id="rallyPill"><span class="rp-dot"></span><span class="rp-txt">ALARM · RALLY TO COMMAND POST</span><span class="rp-n" id="rallyN"></span></div>
   <div id="alerts"></div>
   <div id="hint"></div>
+  <div id="spgrange"></div>
   <div id="confirm" class="pan">
     <span class="txt">Blueprints queued: <em id="qn">0</em> &nbsp;·&nbsp; cost <em id="qc"></em></span>
     <button class="cbtn go" id="qok">CONFIRM ⏎</button>
@@ -3409,7 +3418,7 @@ const UDEF = {
     cost: { s: 620, c: 620 }, time: 46, spr: 'spg', tur: 'spg_t', head: 1,
     wep: {
       // a lobbed 155mm shell: twice a mortar's reach, ~2.5 rounds a minute, bursting like the AC-130's 105mm
-      dmg: 900, rng: 3720, minRng: 6 * 32, cd: 24, spread: 26, kind: 'mortar', splash: 5 * 32,
+      dmg: 900, rng: 500 * 32, minRng: 6 * 32, cd: 24, spread: 26, kind: 'mortar', splash: 5 * 32,
       sfx: 'spg', flight: 3.4, arcH: 720, shake: 11, slew: .0016, spg: 1, howie: 1, lethal: 1
     },
     desc: 'M109 Paladin 155mm self-propelled howitzer. Deploy its spades (5 s) before it can fire, then it lobs 155mm shells twice as far as a mortar at ~2.5 rounds/min, each bursting with a 105mm-class blast. Set a fire mission on an area, or right-click a target to auto-deploy and engage. Requires a Vehicle Bay.'
@@ -6108,7 +6117,7 @@ function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
     if (z.dead && dmg >= 20 && G.corpses.length) { const c = G.corpses[G.corpses.length - 1]; if (c.t === z.t && c.x === z.x && c.y === z.y) fling(c, x, y, f, !!z.def.big); }
   }
   if (hitPlayer || (team && G.players.length > 1)) {                 // horde blasts hit everyone; a team's blast hits the OTHER teams
-    for (const u of G.units) if (!u.dead && !u.inside && dist2(u.x, u.y, x, y) < r2 && (hitPlayer || plyOf(u).team !== team)) {
+    for (const u of G.units) if (!u.dead && !u.inside && !u.def.fly && dist2(u.x, u.y, x, y) < r2 && (hitPlayer || plyOf(u).team !== team)) {   // ground blasts never reach aircraft at altitude
       const f = 1 - Math.sqrt(dist2(u.x, u.y, x, y)) / r;
       damage(u, dmg * (.4 + f * .5), 0);
     }
@@ -7606,7 +7615,7 @@ function blockedBy(e, x, y, friendly, heavy) {
   const b = buildingAtTile((x / TS) | 0, (y / TS) | 0);
   // a zombie marching on a distant structure (the HQ) tears through whatever it bumps into on the way; one already
   // fighting a unit keeps at the unit
-  if (b && !b.dead && !b.def.flat) { const t = e.target; if (!t || t.dead || (t.kind === 'build' && t !== b)) e.target = b; }
+  if (b && !b.dead && !b.def.flat && (typeof hostile !== 'function' || hostile(e, b))) { const t = e.target; if (!t || t.dead || (t.kind === 'build' && t !== b)) e.target = b; }   // only a HOSTILE structure — a friendly (dev-cheat) zed never turns on your own buildings it bumps into
 }
 
 /* ==================== TIME, WAVES, AIRDROPS, WEATHER ==================== */
@@ -8099,7 +8108,7 @@ function callBigDrop() {
 }
 
 /* ==================== TARGETING ==================== */
-function findEnemy(x, y, range, minRange) { return findEnemyExcept(x, y, range, minRange, null); }
+function findEnemy(x, y, range, minRange, airOk) { return findEnemyExcept(x, y, range, minRange, null, airOk); }
 /* nearest hostile structure of another team (PvP) */
 function nearestHostileBuilding(x, y, range, team) {
   let best = null, bd = range * range;
@@ -8334,14 +8343,17 @@ function spgUpdate(u, dt) {
     if (u.spgDeploy <= 0) { u.spgDeploy = 0; u.spgDeployed = true; u.spgCd = Math.min(u.spgCd, 1.0); if (isMine(u) && AU.ui) AU.ui('ready'); }
     return;
   }
-  // --- idle (spades up): can be driven, never fires ---
+  // --- mobile (spades up): it can drive, but the turret is locked forward and it CANNOT fire while on the move ---
   if (!u.spgDeployed) {
-    u.aimT = angLerp(u.aimT, u.ang, 1 - Math.pow(.02, dt));
+    u.aimT = u.ang;                                                 // turret stowed straight ahead — no traversing while mobile
     if (o && (o.type === 'move' || o.type === 'amove')) { if (steerRoute(u, dt, o, o.x, o.y, 12 + u.r)) u.order = null; }
+    else if (o && o.type === 'attack') { /* right-click on an enemy: the deploy was started above */ }
     return;
   }
-  // --- deployed: a move order packs up first ---
-  if (o && (o.type === 'move' || o.type === 'amove')) { packSPG(u); return; }
+  // --- deployed: dug in and STATIONARY. A move order is ignored — Pack Up first to move again ---
+  if (o && (o.type === 'move' || o.type === 'amove')) { u.order = null; if (isMine(u) && !u._movedWarn) { u._movedWarn = 1; alertMsg('Paladin is deployed — Pack Up before moving', 'info'); } }
+  else if (o && o.type !== 'attack') u.order = null;
+  if (!(o && o.type === 'attack')) u._movedWarn = 0;
   u.vx = u.vy = 0;
   // choose an aimpoint: a fixed fire-mission area > a right-clicked priority target > any hostile that wanders into range
   let tx, ty, tgt = null, impact = null;
@@ -9306,7 +9318,7 @@ function weapRange(u, w) {
   if (cov) r *= 1.2; else r *= nightPenalty(u);
   return r;
 }
-function findEnemyExcept(x, y, range, minRange, taken) {
+function findEnemyExcept(x, y, range, minRange, taken, airOk) {
   const list = G.hZeds.near(x, y, range, _q);
   let best = null, bd = range * range;
   const mn = minRange ? minRange * minRange : 0;
@@ -9321,7 +9333,7 @@ function findEnemyExcept(x, y, range, minRange, taken) {
   if (G.players.length > 1) {                                       // PvP: other teams' troops and structures are targets too
     const team = G.players[G.cur].team;
     const ul = G.hUnits.near(x, y, range, _q3);
-    for (let i = 0; i < ul.length; i++) { const u = ul[i]; if (u.dead || u.inside || plyOf(u).team === team) continue; if (taken && taken.indexOf(u) >= 0) continue; const d = dist2(u.x, u.y, x, y); if (d < bd && d >= mn) { bd = d; best = u; } }
+    for (let i = 0; i < ul.length; i++) { const u = ul[i]; if (u.dead || u.inside || plyOf(u).team === team) continue; if (u.def.fly && airOk === false) continue; if (taken && taken.indexOf(u) >= 0) continue; const d = dist2(u.x, u.y, x, y); if (d < bd && d >= mn) { bd = d; best = u; } }
     const hb = nearestHostileBuilding(x, y, range, team); if (hb && !(taken && taken.indexOf(hb) >= 0)) { const d = dist2(hb.x, hb.y, x, y); if (d < bd && d >= mn) { bd = d; best = hb; } }
   }
   return best;
@@ -9386,6 +9398,8 @@ function driveManual(u, dt) {
 function updateWeapons(u, dt, order) {
   const ws = u.def.allWeps;
   let engaged = false;
+  // only marksmen and snipers (and aircraft) may engage aircraft with small arms — every other ground unit ignores air
+  const canAir = !!(u.def.fly || u.t === 'marksman' || u.t === 'sniper');
   const taken = _tk; taken.length = 0;
   const forced = (order && order.type === 'attack' && order.target && !order.target.dead) ? order.target : null;
   const cov = towerAt(u.x, u.y);
@@ -9484,8 +9498,8 @@ function updateWeapons(u, dt, order) {
       const sr2 = i === 0 ? Math.max(rng, sr) : rng;
       if (forced && dist2(forced.x, forced.y, u.x, u.y) < r2) t = forced;   // explicit order: every gun on it
       else {
-        t = findEnemyExcept(u.x, u.y, sr2, w.minRng, taken);                // spread across separate targets...
-        if (!t) t = findEnemy(u.x, u.y, sr2, w.minRng);                     // ...but a lone target draws all guns
+        t = findEnemyExcept(u.x, u.y, sr2, w.minRng, taken, canAir);                // spread across separate targets...
+        if (!t) t = findEnemy(u.x, u.y, sr2, w.minRng, canAir);                     // ...but a lone target draws all guns
       }
     }
     u.tgts[i] = t;
@@ -9570,6 +9584,8 @@ function muzzlePos(u) {
 
 function fire(src, tgt, wep, muz) {
   const m = muz || muzzlePos(src);
+  // only these sources may actually strike aircraft: a marksman/sniper, an aircraft, and (flagged on their synthetic src) the Watch Tower and MG Nest. Everyone else's rounds pass under air.
+  const antiAir = !!(src.antiAir || (src.def && src.def.fly) || src.t === 'marksman' || src.t === 'sniper');
   if (typeof npRecordShot === 'function') npRecordShot(src, tgt, wep, m);   // co-op: let allies see this shot
   // fire out of the airframe, not the ground shadow: the aircraft is drawn at height alt*ALTK*altK tiles up,
   // so the round (and tracer) must start at that same height, matching the model exactly.
@@ -9659,7 +9675,7 @@ function fire(src, tgt, wep, muz) {
       dmg: inc ? dmg * .85 : dmg, inc: inc ? 1 : 0, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx, small: wep.kind === 'bullet' && !wep.pierce && (wep.dmg || 0) <= 16, pistol: !!wep.sidearm,
       lethal: wep.lethal ? 1 : 0, cluster: wep.cluster || 0, clusterDmg: wep.clusterDmg || 0, clusterSplash: wep.clusterSplash || 0,
       ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0, pn: wep.pierceN || 0,
-      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0, shock: wep.shock ? 1 : 0,
+      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0, shock: wep.shock ? 1 : 0, antiAir: antiAir ? 1 : 0,
       gnd: (Math.abs(z0 - tz) > 3 && tz < z0 && src.def && (src.def.fly || src.def.veh)) ? 1 : 0   // plunging fire from a vehicle or aircraft: the round ends where it meets the ground
     });
   }
@@ -10016,10 +10032,10 @@ function startPredatorLeap(z, tx, ty, th, land, arc) {
 function pouncePin(z) {
   z.climb = 0;
   let u = z.pounceU; z.pounceU = null;
-  if (!u || u.dead || u.inside || u.pinnedBy || (u.def && (u.def.veh || u.def.fly)) || dist2(u.x, u.y, z.x, z.y) > 46 * 46) {
+  if (!u || u.dead || u.inside || u.pinnedBy || !hostile(z, u) || (u.def && (u.def.veh || u.def.fly)) || dist2(u.x, u.y, z.x, z.y) > 46 * 46) {
     // whoever it actually landed on
     u = null; const nl = G.hUnits.near(z.x, z.y, 40, _q); let bd = 40 * 40;
-    for (let k = 0; k < nl.length; k++) { const v = nl[k]; if (v.dead || v.inside || v.pinnedBy || (v.def && (v.def.veh || v.def.fly))) continue; const dd = dist2(v.x, v.y, z.x, z.y); if (dd < bd) { bd = dd; u = v; } }
+    for (let k = 0; k < nl.length; k++) { const v = nl[k]; if (v.dead || v.inside || v.pinnedBy || !hostile(z, v) || (v.def && (v.def.veh || v.def.fly))) continue; const dd = dist2(v.x, v.y, z.x, z.y); if (dd < bd) { bd = dd; u = v; } }
   }
   if (u) {
     z.pin = u; u.pinnedBy = z; u.pose = 'prone'; u.knock = null; u.target = null; u.order = null; u.rolling = 0;
@@ -10197,7 +10213,7 @@ function updateZeds(dt) {
     if (z.guard) {
       if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
         const R = zedSense(z) * .8; let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
+        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
         z.target = best;
       }
       if (!z.target) {
@@ -10216,7 +10232,7 @@ function updateZeds(dt) {
       else {
         if (((i + G.frame) % 6) === 0) {                                                                        // eyes peeled at full sense range
           const R = zedSense(z) * 1.1, ul = G.hUnits.near(z.x, z.y, R, _q); let best = null, bd = R * R;
-          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
           if (best) { z.target = best; hostCallToArms(z, best); continue; }
         }
         if (S.t <= 0) { z.search = null; continue; }                                                            // nothing — back to the ranks
@@ -10234,7 +10250,7 @@ function updateZeds(dt) {
     if (z.host && z.slot && G.hostFm && G.hostFm[z.host] && !(G.hostHot && G.hostHot[z.host])) {
       if (((i + G.frame) % 10) === 0) {                                                             // eyes open: a player unit in sight breaks the whole host into a run
         const R = zedSense(z); const ul = G.hUnits.near(z.x, z.y, R, _q); let seen = null, bd = R * R;
-        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; seen = u; } }
+        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; seen = u; } }
         if (seen) { z.target = seen; hostEngage(z.host); }
       }
       if (!(G.hostHot && G.hostHot[z.host])) {
@@ -10257,7 +10273,7 @@ function updateZeds(dt) {
       else {
         if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
           const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
           z.target = best;
         }
         if (!z.target) {
@@ -10297,7 +10313,7 @@ function updateZeds(dt) {
       else {
         if (!z.target || z.target.dead || z.target.kind !== 'unit' || ((i + G.frame) % 10) === 0) {
           const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
+          for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
           z.target = best;
         }
         if (!z.target) {
@@ -10342,7 +10358,7 @@ function updateZeds(dt) {
     if (!z.target || z.target.dead || (z.target.kind === 'unit' && z.target.inside) || (z.def.predator && z.target.kind === 'unit' && !z.pin && predTaken(z.target, z))) z.target = pickZedTarget(z);
     else if (z.target.kind === 'build' && ((i + G.frame) % 20) === 0) {                 // marching on a structure: troops that come into sight take priority — twice a second, look for one
       const R = zedSense(z); let best = null, bd = R * R; const ul = G.hUnits.near(z.x, z.y, R, _q);
-      for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
+      for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
       if (best) z.target = best;
     }
     if (z.target && z.mode === 'roam') z.mode = 'hunt';
@@ -10430,7 +10446,7 @@ function updateZeds(dt) {
       let tgt = t;
       if (t.knock || t.pinnedBy || ((G.frame + i) & 7) === 0) {
         const R = zedSense(z), ul = G.hUnits.near(z.x, z.y, R, _q); let best = null, bd = R * R;
-        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || u.knock || u.pinnedBy) continue; const dd = dist2(u.x, u.y, z.x, z.y); if (dd < bd) { bd = dd; best = u; } }
+        for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || u.knock || u.pinnedBy || !hostile(z, u)) continue; const dd = dist2(u.x, u.y, z.x, z.y); if (dd < bd) { bd = dd; best = u; } }
         if (best) { tgt = best; z.target = best; }
       }
       bruteCharge(z, dtz, tgt, reach);
@@ -10613,12 +10629,12 @@ function updateBuildings(dt) {
       let rng = w.rng * rngMul(b) * (1 + .12 * (b.tier - 1));
       const bs = b.def.mw ? b.def.w / b.def.mw : 1, off = .42 * bs * TS, pz = (b.def.hgt || 96) * bs;   // soldier corner offset + platform height (px), matches the renderer
       const gunA = { x: b.x - off, y: b.y - off, z: pz }, gunB = { x: b.x + off, y: b.y + off, z: pz };
-      const t1 = findEnemy(b.x, b.y, rng, w.minRng);
-      const t2 = t1 ? findEnemyExcept(b.x, b.y, rng, w.minRng, [t1]) : null;
+      const t1 = findEnemy(b.x, b.y, rng, w.minRng, true);                 // the Watch Tower's marksmen can engage aircraft
+      const t2 = t1 ? findEnemyExcept(b.x, b.y, rng, w.minRng, [t1], true) : null;
       b.aimA = t1 ? angTo(gunA.x, gunA.y, t1.x, t1.y) : (b.aimA || 0);
       b.aimB = t2 ? angTo(gunB.x, gunB.y, t2.x, t2.y) : b.aimA;
       b.gunA = gunA; b.gunB = gunB;                                        // hand the exact soldier positions to the renderer
-      const shoot = (gun, tt, aim) => fire({ x: gun.x, y: gun.y, ang: aim, aimT: aim, r: 6, def: { wep: w, nightSight: true }, ammo: b.ammo, vx: 0, vy: 0, bDmg: lv, tier: b.tier, mz: gun.z }, tt, w, { x: gun.x + Math.cos(aim) * 10, y: gun.y + Math.sin(aim) * 10, a: aim, z: gun.z });
+      const shoot = (gun, tt, aim) => fire({ x: gun.x, y: gun.y, ang: aim, aimT: aim, r: 6, def: { wep: w, nightSight: true }, antiAir: true, ammo: b.ammo, vx: 0, vy: 0, bDmg: lv, tier: b.tier, mz: gun.z }, tt, w, { x: gun.x + Math.cos(aim) * 10, y: gun.y + Math.sin(aim) * 10, a: aim, z: gun.z });
       if (t1 && b.cd <= 0 && b.reloadT <= 0) { if (w.mag && b.ammo <= 0) { b.reloadT = w.reload; AU.reload(b.x, b.y, w.sfx); } else { shoot(gunA, t1, b.aimA); if (w.mag) b.ammo--; b.cd = w.cd; b.fxA = .1; } }
       if (t2 && b.cd2 <= 0 && b.reloadT <= 0) { if (!(w.mag && b.ammo <= 0)) { shoot(gunB, t2, b.aimB); if (w.mag) b.ammo--; b.cd2 = w.cd; b.fxB = .1; } }
       if (b.fxA > 0) b.fxA -= dt; if (b.fxB > 0) b.fxB -= dt;
@@ -10631,7 +10647,8 @@ function updateBuildings(dt) {
       const lv = bLvl(b);
       let rng = w.rng * rngMul(b) * (1 + .12 * (b.tier - 1));
       if (cov) rng *= 1.15; else if (G.night && !G.up.nvg && litAt(b.x, b.y) < .4) rng *= .88;
-      const t = findEnemy(b.x, b.y, rng, w.minRng);
+      const bAir = (b.t === 'turret');                                     // only the MG Nest, among the single-weapon emplacements, may fire on aircraft
+      const t = findEnemy(b.x, b.y, rng, w.minRng, bAir);
       if (t) {
         const want = angTo(b.x, b.y, t.x, t.y);
         b.ang = angLerp(b.ang, want, 1 - Math.pow(w.kind === 'mortar' ? .02 : .002, dt));
@@ -10639,7 +10656,7 @@ function updateBuildings(dt) {
         if (b.cd <= 0 && aligned && b.reloadT <= 0) {
           if (w.mag && b.ammo <= 0) { b.reloadT = w.reload; AU.reload(b.x, b.y, w.sfx); }
           else {
-            fire({ x: b.x, y: b.y, ang: b.ang, aimT: b.ang, r: Math.max(b.w, b.h) * TS * .4, def: { wep: w }, ammo: b.ammo, vx: 0, vy: 0, bDmg: lv, tier: b.tier }, t, w);
+            fire({ x: b.x, y: b.y, ang: b.ang, aimT: b.ang, r: Math.max(b.w, b.h) * TS * .4, def: { wep: w }, antiAir: bAir, ammo: b.ammo, vx: 0, vy: 0, bDmg: lv, tier: b.tier }, t, w);
             if (w.mag) b.ammo--;
             b.cd = w.cd;
           }
@@ -10740,13 +10757,13 @@ function updateBullets(dt) {
         for (const z of list) { if (z.dead || (z.teamOv && z.teamOv === bTeam)) continue; const rr = z.r + 3; if (dist2(z.x, z.y, b.x, b.y) < rr * rr) { hit = z; break; } }
       }
       if (!hit && G.players.length > 1) {                                 // PvP: rounds also strike the other teams' troops and structures
-        const ul = G.hUnits.near(b.x, b.y, 26, _q3);
-        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (!u.def.veh && !u.def.fly) netFlesh(b.x, b.y, true); } } else { hit = u; break; } } }
+        const ul = G.hUnits.near(b.x, b.y, b.antiAir ? 46 : 26, _q3);     // anti-air rounds sweep a wider net so a fast round doesn't tunnel past a small airframe
+        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; if (u.def.fly && !b.antiAir) continue; const rr = u.r + (u.def.fly ? 20 : 3); if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (!u.def.veh && !u.def.fly) netFlesh(b.x, b.y, true); } } else { hit = u; break; } } }
         if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat && plyOf(bb).team !== b.tm) hit = bb; }
       }
     } else {
       const list = G.hUnits.near(b.x, b.y, 26, _q2);
-      for (const u of list) { if (u.dead || u.inside) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } hit = u; if (b.vsInf && !u.def.veh && !u.def.fly) b.dmg *= b.vsInf; break; } }   // arrows: extra bite on foot soldiers; a crouched (40%) or prone (85%) man makes the round sail over him
+      for (const u of list) { if (u.dead || u.inside) continue; if (u.def.fly && !b.antiAir) continue; const rr = u.r + 3; if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } hit = u; if (b.vsInf && !u.def.veh && !u.def.fly) b.dmg *= b.vsInf; break; } }   // arrows: extra bite on foot soldiers; a crouched (40%) or prone (85%) man makes the round sail over him
       if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat) hit = bb; }
     }
     // trees: a small-arms round stops in the trunk; vehicle guns, tank shells and the MG nest chew straight through and fell it
@@ -10860,8 +10877,10 @@ function updateItems(dt) {
         if (c.z <= 0) {                                            // impact: dust ring, flatten grass and trees, shake — but not the blast yet
           c.z = 0; c.air = 0; c.fuse = 2; c.a = c.rot; c.vx = c.vy = 0; c.vz = 0;
           const _fx = G._fx; G._fx = 2;
-          for (let k = 0; k < 30; k++) { const a2 = rnd(TAU), sp = rnd(70, 240); part('dust', c.x, c.y, Math.cos(a2) * sp, Math.sin(a2) * sp * .7, rnd(1.1, 2), rnd(10, 20), k & 1 ? 'rgba(150,138,116,1)' : 'rgba(186,174,148,1)', { z: rnd(0, 5), vz: rnd(20, 80), g: 48, grow: 40, drag: .9, wind: 1 }); }
-          part('ring', c.x, c.y, 0, 0, .5, c.r * .8, 'rgba(210,200,176,.6)', { grow: c.r * 7 });
+          // a big expanding RING OF DUST kicked up where it hits — real dust, not a flat ring sprite
+          const rr = c.r * .7;
+          for (let k = 0; k < 46; k++) { const a2 = rnd(TAU), sp = rnd(120, 300); part('dust', c.x + Math.cos(a2) * rr, c.y + Math.sin(a2) * rr * .7, Math.cos(a2) * sp, Math.sin(a2) * sp * .65, rnd(1.4, 2.4), rnd(11, 20), k & 1 ? 'rgba(150,138,116,1)' : 'rgba(190,178,152,1)', { z: rnd(0, 5), vz: rnd(14, 60), g: 40, grow: 44, drag: .92, wind: 1, a: .9 }); }
+          for (let k = 0; k < 24; k++) { const a2 = rnd(TAU), sp = rnd(40, 150); part('dust', c.x, c.y, Math.cos(a2) * sp, Math.sin(a2) * sp * .7, rnd(1.1, 2), rnd(9, 16), 'rgba(168,156,132,1)', { z: rnd(0, 8), vz: rnd(30, 90), g: 50, grow: 36, drag: .9, wind: 1 }); }
           G._fx = _fx;
           if (typeof fellTrees === 'function') fellTrees(c.x, c.y, c.r * 1.4 + 6, c.rot, true);
           if (typeof grassStamp === 'function') grassStamp(c.x, c.y, c.r * 1.5);
@@ -11630,11 +11649,10 @@ function launchAAMissile(b, tgt, x, y, z) {
   fxSmoke(x, y, 0, 0, 6, 1.6, 'rgba(210,210,214,1)');
   part('flash', x, y, 0, 0, .09, 12, '#ffe9a8', { glow: 1, z });
   G.lights.push({ x, y, r: 150, c: [255, 200, 130], i: 1.2 });
-  // a ring of dust and backblast smoke thrown out around the station on launch — it hangs for ~3 s
-  { const _fx = G._fx; G._fx = 1;
-    for (let k = 0; k < 30; k++) { const a = rnd(TAU), sp = rnd(50, 170); part('dust', b.x + Math.cos(a) * b.w * TS * .3, b.y + Math.sin(a) * b.h * TS * .3, Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .6 + G.wind.y * .3, rnd(2.4, 3.4), rnd(8, 15), k & 1 ? 'rgba(180,168,144,1)' : 'rgba(202,192,168,1)', { z: rnd(0, 4), vz: rnd(6, 26), g: 18, grow: 30, drag: .95, wind: 1, a: .8 }); }
-    for (let k = 0; k < 12; k++) { const a = rnd(TAU); part('smoke', b.x, b.y, Math.cos(a) * rnd(30, 90), Math.sin(a) * rnd(20, 60), rnd(2.2, 3.2), rnd(6, 11), 'rgba(150,142,130,1)', { z: rnd(2, 10), vz: rnd(10, 30), g: -6, grow: 22, drag: .93, wind: 1, a: .55 }); }
-    part('ring', b.x, b.y, 0, 0, .6, Math.max(b.w, b.h) * TS * .4, 'rgba(210,200,176,.45)', { grow: Math.max(b.w, b.h) * TS * 3 });
+  // a thick expanding RING OF DUST thrown out around the station on launch, hanging for ~3 s (no flat ring sprite — real dust)
+  { const _fx = G._fx; G._fx = 1; const rr = Math.max(b.w, b.h) * TS * .38;
+    for (let k = 0; k < 40; k++) { const a = rnd(TAU), sp = rnd(90, 220); part('dust', b.x + Math.cos(a) * rr, b.y + Math.sin(a) * rr * .7, Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .6 + G.wind.y * .3, rnd(2.6, 3.6), rnd(9, 17), k & 1 ? 'rgba(180,168,144,1)' : 'rgba(202,192,168,1)', { z: rnd(0, 5), vz: rnd(6, 26), g: 16, grow: 34, drag: .95, wind: 1, a: .85 }); }
+    for (let k = 0; k < 14; k++) { const a = rnd(TAU); part('dust', b.x + rnd(-8, 8), b.y + rnd(-6, 6), Math.cos(a) * rnd(40, 110), Math.sin(a) * rnd(30, 80) * .6, rnd(2.4, 3.4), rnd(7, 12), 'rgba(196,186,162,1)', { z: rnd(2, 8), vz: rnd(10, 30), g: 12, grow: 26, drag: .94, wind: 1, a: .7 }); }
     G._fx = _fx; }
   addShake(b.x, b.y, 3);
   if (AU.shot) AU.shot(x, y, 'hydra', .3);
@@ -11658,9 +11676,16 @@ function updateAAMissile(b, dt) {
   const climb = clamp(dz / Math.max(50, dh), -1.5, 1.5);
   b.x += Math.cos(b.hd) * b.spd * dt; b.y += Math.sin(b.hd) * b.spd * dt; b.z += climb * b.spd * dt * .5;
   b.life -= dt;
-  // a thick white smoke trail hanging in the air behind the missile, plus its glowing motor
-  b._sm = (b._sm || 0) + dt;
-  if (b._sm > .012) { b._sm = 0; part('smoke', b.x, b.y, rnd(-4, 4), rnd(-4, 4), rnd(2.6, 4.2), rnd(2.4, 3.8), 'rgba(224,222,218,1)', { a: .92, z: b.z + rnd(-2, 2), vz: rnd(0, 6), grow: 16, drag: .95, wind: 1 }); part('smoke', b.x, b.y, 0, 0, rnd(1.6, 2.6), rnd(1.6, 2.4), 'rgba(198,194,188,1)', { a: .7, z: b.z, vz: rnd(1, 5), grow: 12, drag: .94, wind: 1 }); part('fire', b.x, b.y, 0, 0, .1, 2.6, '#ffd27a', { glow: 1, z: b.z }); }
+  // a REAL contrail: dense white smoke laid down along the whole flight path, hanging almost still in the air (barely
+  // drifting) so the route the missile flew is drawn out behind it. Interpolated between frames so it is a solid line,
+  // not a dotted one, however fast the missile goes.
+  { const px = b._px === undefined ? b.x : b._px, py = b._py === undefined ? b.y : b._py, pz = b._pz === undefined ? b.z : b._pz;
+    const seg = Math.hypot(b.x - px, b.y - py), steps = Math.max(1, Math.min(8, Math.round(seg / 10)));
+    for (let s = 1; s <= steps; s++) { const t = s / steps, sx = px + (b.x - px) * t, sy = py + (b.y - py) * t, sz = pz + (b.z - pz) * t;
+      part('smoke', sx, sy, rnd(-2, 2), rnd(-2, 2), rnd(2.4, 3.6), rnd(2.6, 4), 'rgba(228,226,222,1)', { a: .95, z: sz, vz: rnd(-1, 2), grow: 12, drag: .97, wind: .2 });   // the solid white core of the contrail — nearly stationary
+    }
+    b._px = b.x; b._py = b.y; b._pz = b.z; }
+  part('fire', b.x, b.y, 0, 0, .1, 3, '#ffd27a', { glow: 1, z: b.z });                     // the glowing motor at the nose
   G.lights.push({ x: b.x, y: b.y, r: 70, c: [255, 170, 90], i: .5 });
   const hitR = b.decoyed ? 20 : ((T && T.r ? T.r : 16) + 22);
   const reached = !lost && dist2(b.x, b.y, tx, ty) < hitR * hitR && Math.abs(b.z - tz) < 48;
@@ -11676,14 +11701,16 @@ function updateAAMissile(b, dt) {
 /* the air burst: a half-scale napalm bloom firing in every direction, throwing burning gobs that arc and rain down */
 function aaAirburst(x, y, z) {
   const _fx = G._fx; G._fx = 2; z = z || 40;
-  part('flash', x, y, 0, 0, .12, 26, '#fff0c0', { glow: 1, z });
-  for (let k = 0; k < 34; k++) { const a = rnd(TAU), sp = rnd(30, 150); part('fire', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .8, rnd(.3, .8), rnd(8, 18), k % 3 === 0 ? '#fff0b0' : k % 3 === 1 ? '#ffb040' : '#ff5a1e', { glow: 1, grow: 20, drag: .9, z: z + rnd(-6, 6), vz: rnd(-40, 90), g: -30 }); }
-  for (let k = 0; k < 22; k++) { const a = rnd(TAU), sp = rnd(60, 200); part('fire', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .8, rnd(.6, 1.3), rnd(4, 8), Math.random() < .5 ? '#ffe090' : '#ff8a30', { glow: 1, grow: 6, drag: .92, z, vz: rnd(20, 110), g: 150, bounce: .2 }); }   // burning gobs raining down on their own arcs
-  for (let k = 0; k < 16; k++) { const a = rnd(TAU), sp = rnd(20, 90); part('smoke', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.8, 1.6), rnd(5, 10), 'rgba(40,36,32,1)', { a: .85, z: z + rnd(-6, 10), vz: rnd(10, 40), g: -12, grow: 20, drag: .93, wind: 1 }); }
+  part('flash', x, y, 0, 0, .14, 30, '#fff0c0', { glow: 1, z });
+  part('flash', x, y, 0, 0, .1, 18, '#ffd27a', { glow: 1, z });
+  for (let k = 0; k < 46; k++) { const a = rnd(TAU), sp = rnd(40, 180); part('fire', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .85, rnd(.35, .9), rnd(9, 20), k % 3 === 0 ? '#fff0b0' : k % 3 === 1 ? '#ffb040' : '#ff5a1e', { glow: 1, grow: 22, drag: .9, z: z + rnd(-8, 8), vz: rnd(-50, 110), g: -28 }); }   // the fireball, boiling out in every direction
+  // burning FIRE SPRITES flung off the burst — hot gobs that arc out in 360° and rain down, each leaving a little spark trail
+  for (let k = 0; k < 34; k++) { const a = rnd(TAU), sp = rnd(80, 260); part('fire', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .85, rnd(.7, 1.5), rnd(4, 9), Math.random() < .5 ? '#ffe090' : '#ff8a30', { glow: 1, grow: 6, drag: .93, z: z + rnd(-4, 6), vz: rnd(30, 130), g: 150, bounce: .25 }); }
+  for (let k = 0; k < 18; k++) { const a = rnd(TAU), sp = rnd(20, 90); part('smoke', x, y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(.9, 1.7), rnd(6, 11), 'rgba(40,36,32,1)', { a: .85, z: z + rnd(-6, 10), vz: rnd(10, 40), g: -12, grow: 22, drag: .93, wind: 1 }); }
   G._fx = _fx;
-  G.lights.push({ x, y, r: 220, c: [255, 160, 70], i: 2.2 });
-  addShake(x, y, 3);
-  if (AU.boom) AU.boom(x, y, .8); else if (AU.artyBlast) AU.artyBlast(x, y, .6);
+  G.lights.push({ x, y, r: 240, c: [255, 160, 70], i: 2.4 });
+  addShake(x, y, 3.5);
+  if (AU.boom) AU.boom(x, y, .9); else if (AU.artyBlast) AU.artyBlast(x, y, .6);
 }
 
 function step(dt) {
@@ -13935,10 +13962,13 @@ function spgDragEnd() { const d = UI.spgDrag; if (!d) return; UI.spgDrag = null;
 function spgSetArea(wx, wy, r) {
   const ids = UI.spgPlace; if (!ids) return 0;
   r = r || SPG_RDEF;
-  let n = 0;
-  for (const u of G.units) { if (u.dead || !u.def || !u.def.spg || ids.indexOf(u.id) < 0) continue; u.spgArea = { x: wx, y: wy, r }; u.spgPrio = null; u._spgAimPt = null; if (!u.spgDeployed && !(u.spgDeploy > 0) && !(u.spgUndeploy > 0) && typeof startSPGDeploy === 'function') startSPGDeploy(u); n++; }
-  UI.spgPlace = null;
-  if (n) { alertMsg('Fire mission set — ' + n + ' Paladin shelling the zone', 'good'); AU.ui('ok'); } else alertMsg('No battery selected', '');
+  let n = 0, outOfRange = 0;
+  for (const u of G.units) { if (u.dead || !u.def || !u.def.spg || ids.indexOf(u.id) < 0) continue;
+    if (dist2(u.x, u.y, wx, wy) > u.def.wep.rng * u.def.wep.rng) { outOfRange++; continue; }   // that gun can't reach the zone — it does not take the mission
+    u.spgArea = { x: wx, y: wy, r }; u.spgPrio = null; u._spgAimPt = null; if (!u.spgDeployed && !(u.spgDeploy > 0) && !(u.spgUndeploy > 0) && typeof startSPGDeploy === 'function') startSPGDeploy(u); n++;
+  }
+  if (n) { UI.spgPlace = null; alertMsg('Fire mission set — ' + n + ' Paladin shelling the zone' + (outOfRange ? ' (' + outOfRange + ' out of range)' : ''), 'good'); AU.ui('ok'); }
+  else { alertMsg('Out of range — move the fire mission closer', 'bad'); AU.ui('no'); }   // none could reach: keep placement armed so the player can adjust
   refreshCard(true);
   return n;
 }
@@ -14859,6 +14889,20 @@ function updateHUD(dt) {
   updateSelPanel(); refreshCard(false); refreshConfirm();
   { const mw = $('miniwrap'); if (mw && mw.classList.contains('showscore') && typeof renderScoreboard === 'function') renderScoreboard(); }
   if (typeof updateDeployStatus === 'function') updateDeployStatus();
+  { const el = $('spgrange');   // Fire-on-Area readout: each selected Paladin's distance to the aim point and whether it can reach
+    if (el) {
+      const active = !!(UI.spgPlace && UI.spgPlace.length);
+      if (active) {
+        const drag = UI.spgDrag, tx = drag ? drag.x : s2wx(IN.mx, IN.my), ty = drag ? drag.y : s2wy(IN.my, IN.mx);
+        let h = '', idx = 0, anyIn = false;
+        for (const id of UI.spgPlace) { const u = G.units.find(q => q.id === id && !q.dead); if (!u) continue; idx++;
+          const D = Math.hypot(tx - u.x, ty - u.y), rng = u.def.wep.rng, inR = D <= rng; if (inR) anyIn = true;
+          h += '<div class="' + (inR ? 'ok' : 'no') + '">Paladin ' + idx + ': ' + Math.round(D / TS) + ' tiles ' + (inR ? '✓ in range' : '✗ (max ' + Math.round(rng / TS) + ')') + '</div>';
+        }
+        el.innerHTML = '<div class="hd' + (anyIn ? '' : ' no') + '">FIRE MISSION' + (anyIn ? '' : ' — OUT OF RANGE') + '</div>' + h;
+        el.style.display = 'block'; el._sh = true;
+      } else if (el._sh) { el.style.display = 'none'; el._sh = false; }
+    } }
   if (G.mode === 'invaders') updateIntel();
   if (flashT > 0) { flashT -= .1; if (flashT <= 0) $('dmgflash').style.opacity = '0'; }
   updateHint();
@@ -16065,7 +16109,7 @@ function ctrlHudTick(dt) {
     }
   }
   let mapStamp = null, structStamp = null;
-  function resetWorld() { for (const m of chunks3.values()) { scene3.remove(m); m.geometry.dispose(); } chunks3.clear(); for (const s of structMeshes.values()) scene3.remove(s); structMeshes.clear(); for (const s of buildMeshes.values()) scene3.remove(s.g); buildMeshes.clear(); for (const s of unitMeshes.values()) scene3.remove(s.g); unitMeshes.clear(); for (const s of wreckMeshes.values()) scene3.remove(s); wreckMeshes.clear(); for (const s of ebMeshes.values()) scene3.remove(s); ebMeshes.clear(); CRAT = null; CRW = null; decalList.length = 0; }
+  function resetWorld() { for (const m of chunks3.values()) { scene3.remove(m); m.geometry.dispose(); } chunks3.clear(); for (const s of structMeshes.values()) scene3.remove(s); structMeshes.clear(); for (const s of buildMeshes.values()) scene3.remove(s.g); buildMeshes.clear(); for (const s of unitMeshes.values()) scene3.remove(s.g); unitMeshes.clear(); for (const s of wreckMeshes.values()) scene3.remove(s.g || s); wreckMeshes.clear(); for (const s of ebMeshes.values()) scene3.remove(s); ebMeshes.clear(); CRAT = null; CRW = null; decalList.length = 0; }
 
   /* ======================= instanced pools ======================= */
   function pool(geo, material, n, shadow) { const im = new THREE.InstancedMesh(geo, material, n); im.count = 0; im.frustumCulled = false; im.matrixAutoUpdate = false; im.castShadow = !!shadow; im.receiveShadow = !!shadow; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3); im.instanceColor.setUsage(THREE.DynamicDrawUsage); scene3.add(im); return im; }   // every pool carries instance colours from the start (r128 caches the program per material)
@@ -18994,7 +19038,21 @@ function ctrlHudTick(dt) {
     for (const c of G.corpses) {
       if (c.x < vx0 || c.x > vx1 || c.y < vy0 || c.y > vy1) continue;
       const x = c.x * K, z = c.y * K, gy = groundY(c.x, c.y) + (c.air ? c.z * K : 0);
-      if (c.veh) { const key = c; liveW.add(key); let wm = wreckMeshes.get(key); if (!wm) { const v = mkVehicle(c.spr); v.g.traverse(o => { if (o.isMesh) o.material = WRECK; }); v.g.scale.setScalar((c.r * K) / .9); scene3.add(v.g); wm = v.g; wreckMeshes.set(key, wm); } wm.position.set(x, gy, z); wm.rotation.set(c.air ? .3 : 0, -(c.air ? c.rot : c.a), c.air ? .2 : 0); wm.visible = true; }
+      if (c.veh) {
+        const key = c; liveW.add(key);
+        const wantBurnt = !c.downedAir;                                       // a shot-down aircraft keeps its OWN colours while it falls; only after the brew-up does it go to the blackened wreck
+        let wm = wreckMeshes.get(key);
+        if (!wm || wm._burnt !== wantBurnt) {
+          if (wm) scene3.remove(wm.g);
+          const v = mkVehicle(c.spr);
+          if (wantBurnt) v.g.traverse(o => { if (o.isMesh) o.material = WRECK; });
+          v.g.scale.setScalar(c.fly ? (AIRSC[c.spr] || 1.45) : (c.r * K) / .9);
+          if (c.fly) { if (v.rotor) v.rotor.visible = false; if (v.disc) v.disc.visible = false; if (v.props) for (const pr of v.props) pr.visible = false; if (v.tails) for (const tr of v.tails) tr.visible = false; }   // the rotor / props stop and are hidden the moment it is downed (falling AND wrecked)
+          v._burnt = wantBurnt;
+          scene3.add(v.g); wm = v; wreckMeshes.set(key, wm);
+        }
+        wm.g.position.set(x, gy, z); wm.g.rotation.set(c.air ? .3 : 0, -(c.air ? c.rot : c.a), c.air ? .2 : 0); wm.g.visible = true;
+      }
       else {
         const M = MODEL[c.t]; const S = M ? M.S : { uni: '#5a6a7e', helm: '#a8a08c' }; const isZed = !!ZDEF[c.t], isMed = !!MDEF[c.t];
         if (!c._bp) { c._bp = 1; if (!c.air) { const v = rgbOf(S.blood || '#5a0e0e'); decalList.push({ k: (Math.random() * 4) | 0, x: (c.x + Math.cos(c.a) * 6) * K, y: (c.y + Math.sin(c.a) * 6) * K, r: rnd(.5, .7), rot: rnd(TAU), c: v[1] > v[0] ? GREENBLOOD : WHITE }); bloodDecal(c.x, c.y, 3, S.blood || '#5a0e0e'); } }
@@ -19023,7 +19081,7 @@ function ctrlHudTick(dt) {
         else drawFigureC(x, gy + (fv ? fv.lift : 0), z, c.a, 0, S, { ck: c, kind: kind0, dead: 1, tilt: c.air ? (c.rot - c.a) : 0, scale: .9, limbs: c.limbs, id: c.x | 0 });   // thrown riders and the like
       }
     }
-    for (const [key, wm] of wreckMeshes) if (!liveW.has(key)) { scene3.remove(wm); wreckMeshes.delete(key); }
+    for (const [key, wm] of wreckMeshes) if (!liveW.has(key)) { scene3.remove(wm.g || wm); wreckMeshes.delete(key); }
     for (const [id, g] of ebMeshes) { if (g.userData.live !== G.frame) { const zz = G.zeds.find(q => q.id === id); if (!zz || zz.dead) { scene3.remove(g); ebMeshes.delete(id); } else g.visible = false; } }
     PF('corpses');
     /* ---- the training yard: a straw-headed pell and a spear rack at each sparring station beside the parade ground, while the host musters ---- */
@@ -19112,6 +19170,26 @@ function ctrlHudTick(dt) {
         else { const dx = pv.x2 - pv.x, dy = pv.y2 - pv.y, L = Math.hypot(dx, dy) || 1, a = Math.atan2(dy, dx), n = Math.max(2, Math.min(24, Math.round(L / 40)));
           for (let i = 0; i <= n; i++) { const t = i / n, px = pv.x + dx * t, py = pv.y + dy * t; put(P.sel, px * K, groundY(px, py) + .05, py * K, -HPI, 0, 0, (i === 0 || i === n ? 1.6 : .8), (i === 0 || i === n ? 1.6 : .8), 1, c); }
           put(P.beam, (pv.x + dx * .5) * K, gy0 + .06, (pv.y + dy * .5) * K, -HPI, -a, 0, L * K, 2.4, 1, c); }
+      }
+      // SPG "Fire on Area" aiming aid: a line from every selected Paladin to the aim point — GREEN within its reach, RED
+      // beyond it — plus a faint max-range ring round each gun and the beaten-zone ring (green if any gun can reach, else red)
+      if (typeof UI !== 'undefined' && UI.spgPlace && UI.spgPlace.length && typeof s2wx === 'function') {
+        const drag = UI.spgDrag;
+        const tx = drag ? drag.x : s2wx(IN.mx, IN.my), ty = drag ? drag.y : s2wy(IN.my, IN.mx);
+        const areaR = drag ? (drag.r < TS ? SPG_RDEF : Math.max(SPG_RMIN, Math.min(SPG_RMAX, drag.r))) : SPG_RDEF;
+        const GRN = col3('#5fe06a'), RED = col3('#ff5040');
+        let anyIn = false;
+        for (const id of UI.spgPlace) {
+          const u = G.units.find(q => q.id === id && !q.dead); if (!u) continue;
+          const rng = u.def.wep.rng, dx = tx - u.x, dy = ty - u.y, D = Math.hypot(dx, dy) || 1, ang = Math.atan2(dy, dx), inR = D <= rng; if (inR) anyIn = true;
+          const gLen = Math.min(D, rng), gmx = u.x + Math.cos(ang) * gLen * .5, gmy = u.y + Math.sin(ang) * gLen * .5;
+          put(P.beam, gmx * K, groundY(gmx, gmy) + .08, gmy * K, -HPI, -ang, 0, gLen * K, 1.8, 1, GRN);
+          if (D > rng) { const rLen = D - rng, rmx = u.x + Math.cos(ang) * (rng + rLen * .5), rmy = u.y + Math.sin(ang) * (rng + rLen * .5); put(P.beam, rmx * K, groundY(rmx, rmy) + .08, rmy * K, -HPI, -ang, 0, rLen * K, 1.8, 1, RED); }
+          put(P.sel, u.x * K, groundY(u.x, u.y) + .045, u.y * K, -HPI, 0, 0, rng * K * 2, rng * K * 2, 1, inR ? col3('#356f3a') : col3('#6f3a35'));
+        }
+        const tc = anyIn ? GRN : RED;
+        put(P.sel, tx * K, groundY(tx, ty) + .07, ty * K, -HPI, 0, 0, areaR * K * 2, areaR * K * 2, 1, tc);
+        put(P.sel, tx * K, groundY(tx, ty) + .07, ty * K, -HPI, 0, 0, 8 * K * 2, 8 * K * 2, 1, tc);
       }
     }
     PF('crates');
@@ -20139,7 +20217,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b207';
+const BUILD_TAG = 'b208';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
