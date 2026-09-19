@@ -8387,12 +8387,12 @@ function updateUnits(dt) {
     if (u.rc > 0) u.rc = Math.max(0, u.rc - dt * 7);              // recoil animation decays over ~0.15 s
     u.cd -= dt; u.burstCd -= dt;
     const wep = u.def.wep;
-    // a missile-struck aircraft keeps belching BLACK smoke off its tail (simulated here so it produces whether or not it is on screen)
+    // a missile-struck aircraft keeps belching a MASSIVE black smoke plume off its tail (simulated here so it produces whether or not it is on screen)
     if (u.def.fly && u.aaSmoke && !u.landed) {
       u._aaSmT = (u._aaSmT || 0) + dt;
-      if (u._aaSmT > .05) { u._aaSmT = 0; const az = (typeof airZ === 'function') ? airZ(u) : (u.def.alt || 150) * .84; const bx0 = u.x - Math.cos(u.ang) * u.r * .5, by0 = u.y - Math.sin(u.ang) * u.r * .5;
-        part('smoke', bx0, by0, -(u.vx || 0) * .35 + G.wind.x * .5 + rnd(-4, 4), -(u.vy || 0) * .35 + G.wind.y * .5 + rnd(-4, 4), rnd(2.8, 4.2), rnd(6, 10), 'rgba(18,16,14,1)', { a: .84, z: az + rnd(-4, 4), vz: rnd(0, 8), g: -3, grow: 18, drag: .95, wind: 1 });
-        part('smoke', bx0, by0, -(u.vx || 0) * .2 + G.wind.x * .4, -(u.vy || 0) * .2 + G.wind.y * .4, rnd(2.2, 3.4), rnd(4, 7), 'rgba(44,40,36,1)', { a: .72, z: az + rnd(-2, 6), vz: rnd(2, 10), g: -3, grow: 14, drag: .94, wind: 1 }); }
+      if (u._aaSmT > .035) { u._aaSmT = 0; const az = (typeof airZ === 'function') ? airZ(u) : (u.def.alt || 150) * .84; const bx0 = u.x - Math.cos(u.ang) * u.r * .55, by0 = u.y - Math.sin(u.ang) * u.r * .55;
+        part('smoke', bx0 + rnd(-5, 5), by0 + rnd(-5, 5), -(u.vx || 0) * .35 + G.wind.x * .6 + rnd(-5, 5), -(u.vy || 0) * .35 + G.wind.y * .6 + rnd(-5, 5), rnd(3.4, 5), rnd(14, 22), 'rgba(16,14,12,1)', { a: .9, z: az + rnd(-6, 6), vz: rnd(0, 10), g: -3, grow: 30, drag: .95, wind: 1 });
+        part('smoke', bx0 + rnd(-4, 4), by0 + rnd(-4, 4), -(u.vx || 0) * .25 + G.wind.x * .5, -(u.vy || 0) * .25 + G.wind.y * .5, rnd(2.8, 4.2), rnd(9, 15), 'rgba(38,34,30,1)', { a: .78, z: az + rnd(-3, 8), vz: rnd(2, 12), g: -3, grow: 24, drag: .94, wind: 1 }); }
     }
 
     /* --- ACID BURN (splitter bile): each blob eats for 5 s at 2 hp/s, stacking up to 4 (so 8 hp/s under a full drenching) --- */
@@ -11692,9 +11692,11 @@ function updateAAMissile(b, dt) {
   // solid line however fast the missile goes), lasting ~5 s so the entire route hangs in the air, then fading out — and
   // the whole trail drifts on the wind.
   { const px = b._px === undefined ? b.x : b._px, py = b._py === undefined ? b.y : b._py, pz = b._pz === undefined ? b.z : b._pz;
-    const seg = Math.hypot(b.x - px, b.y - py), steps = Math.max(1, Math.min(8, Math.round(seg / 10)));
+    const seg = Math.hypot(b.x - px, b.y - py), steps = Math.max(2, Math.min(12, Math.round(seg / 6)));   // denser sampling so the column is solid even at speed
     for (let s = 1; s <= steps; s++) { const t = s / steps, sx = px + (b.x - px) * t, sy = py + (b.y - py) * t, sz = pz + (b.z - pz) * t;
-      part('smoke', sx, sy, rnd(-1, 1), rnd(-1, 1), rnd(4.7, 5.2), rnd(5.2, 8), 'rgba(248,248,246,1)', { a: .96, z: sz, vz: rnd(-1, 2), grow: 14, drag: .97, wind: 1 });   // the trail core — a WHITE contrail, twice as thick, lives ~5 s and drifts downwind
+      // a FAT, billowing WHITE column like a real launch plume: a big bright core, a broad growing outer bloom, and a soft halo
+      part('smoke', sx + rnd(-3, 3), sy + rnd(-3, 3), rnd(-3, 3), rnd(-3, 3), rnd(5.2, 6.4), rnd(14, 22), 'rgba(250,250,248,1)', { a: .96, z: sz + rnd(-4, 4), vz: rnd(-1, 4), grow: 34, drag: .96, wind: 1 });
+      part('smoke', sx + rnd(-5, 5), sy + rnd(-5, 5), rnd(-2, 2), rnd(-2, 2), rnd(4.6, 5.6), rnd(9, 15), 'rgba(238,238,234,1)', { a: .82, z: sz + rnd(-3, 5), vz: rnd(0, 5), grow: 26, drag: .96, wind: 1 });
       if (s === steps) part('fire', sx, sy, 0, 0, rnd(.2, .35), rnd(1.1, 1.7), Math.random() < .5 ? '#ffb45a' : '#ff8a3a', { glow: 1, z: sz, vz: rnd(4, 12), g: -8, grow: 3, drag: .9, wind: 1 });   // the afterburner edge — reach cut in half
     }
     b._px = b.x; b._py = b.y; b._pz = b.z; }
@@ -11708,10 +11710,11 @@ function updateAAMissile(b, dt) {
     if (air && air.kind === 'unit') { air._aaInbound = Math.max(0, (air._aaInbound || 0) - 1); if ((air._aaInbound || 0) < 2) air._aaDoom = false; }   // freed up: the battery may re-engage
     if (!b.decoyed && air && !air.dead && air.kind === 'unit') {
       air._aaHits = (air._aaHits || 0) + 1; air.aaSmoke = 1;   // a struck airframe streams black smoke (no open fire) as if it's about to go down
-      // a burst of BLACK smoke belched off the airframe the instant the missile connects, at the aircraft's altitude
+      // a MASSIVE burst of thick black smoke belched off the airframe the instant the missile connects, at its altitude
       const az = (typeof airZ === 'function') ? airZ(air) : (air.def.alt || 150) * .84;
       const _fx = G._fx; G._fx = 2;
-      for (let k = 0; k < 16; k++) { const a = rnd(TAU), sp = rnd(30, 130); part('smoke', air.x, air.y, Math.cos(a) * sp + G.wind.x * .5, Math.sin(a) * sp * .7 + G.wind.y * .5, rnd(2.6, 4.2), rnd(6, 11), Math.random() < .6 ? 'rgba(16,14,12,1)' : 'rgba(40,36,32,1)', { a: .88, z: az + rnd(-8, 10), vz: rnd(4, 18), g: -3, grow: 20, drag: .93, wind: 1 }); }
+      for (let k = 0; k < 40; k++) { const a = rnd(TAU), sp = rnd(30, 180); part('smoke', air.x, air.y, Math.cos(a) * sp + G.wind.x * .6, Math.sin(a) * sp * .7 + G.wind.y * .6, rnd(3.2, 5.4), rnd(14, 26), Math.random() < .6 ? 'rgba(14,12,10,1)' : 'rgba(34,30,26,1)', { a: .9, z: az + rnd(-12, 16), vz: rnd(6, 26), g: -3, grow: 34, drag: .93, wind: 1 }); }
+      part('fire', air.x, air.y, 0, 0, .18, 20, '#ff9a3a', { glow: 1, z: az });                          // a brief orange flash of the impact (then it's just smoke)
       G._fx = _fx;
       damage(air, air.maxHp * 0.62, b.hd || 0, { trueDmg: true });   // two hits kill any airframe
     }
@@ -20263,7 +20266,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b214';
+const BUILD_TAG = 'b215';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
