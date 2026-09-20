@@ -9626,7 +9626,10 @@ function fire(src, tgt, wep, muz) {
       for (let k = 0; k < 16; k++) { const a = base + rnd(-.35, .35), sp = rnd(160, 400); part('fire', mtx, mty, Math.cos(a) * sp * .7, Math.sin(a) * sp * .5, rnd(.12, .28), rnd(7, 13), k & 1 ? '#ffb54a' : '#ffe6b0', { glow: 1, z: MZ + rnd(-4, 10), vz: rnd(40, 150), g: 30, drag: .82, grow: 16 }); }   // fire in the plume
       fxGunBump(src.x, src.y, src.r, 6, base);
       for (let k = 0; k < 48; k++) { const a = rnd(TAU), sp = rnd(80, 260); part('dust', src.x + Math.cos(a) * src.r * .5, src.y + Math.sin(a) * src.r * .4, Math.cos(a) * sp, Math.sin(a) * sp * .62, rnd(1, 1.9), rnd(10, 18), k & 1 ? 'rgba(184,172,146,1)' : 'rgba(206,196,172,1)', { z: rnd(0, 6), vz: rnd(14, 54), g: 34, grow: 36, drag: .9, wind: 1, a: .9 }); }   // the great ground ring around the hull
-      part('ring', src.x, src.y, 0, 0, .6, src.r * .7, 'rgba(214,204,180,.55)', { grow: src.r * 6 });
+      // MASSIVE GROUND DUST SHOCKWAVE replacing flat ring — a wall of soil thrown radially outward
+      for (let k = 0; k < 72; k++) { const a = rnd(TAU), sp = rnd(200, 580); part('dust', src.x + Math.cos(a) * src.r * .35, src.y + Math.sin(a) * src.r * .28, Math.cos(a) * sp, Math.sin(a) * sp * .55, rnd(1.8, 3.2), rnd(16, 32), k % 3 === 0 ? 'rgba(162,148,120,1)' : k % 3 === 1 ? 'rgba(196,180,148,1)' : 'rgba(120,110,90,1)', { z: rnd(0, 8), vz: rnd(18, 80), g: 42, grow: 52, drag: .88, wind: 1, a: .92 }); }
+      // GROUND TUFTS — grass clods and earth chunks flung into the air by the blast
+      for (let k = 0; k < 32; k++) { const a = rnd(TAU), sp = rnd(90, 310); part('dust', src.x + Math.cos(a) * src.r * .6, src.y + Math.sin(a) * src.r * .5, Math.cos(a) * sp * .75, Math.sin(a) * sp * .45, rnd(1.0, 2.0), rnd(5, 12), k % 3 === 0 ? 'rgba(74,100,46,1)' : k % 3 === 1 ? 'rgba(100,128,58,1)' : 'rgba(140,120,72,1)', { z: 0, vz: rnd(60, 200), g: 110, grow: 20, drag: .91, wind: 1.4, a: .88 }); }
       G._fx = _fx;
       src.recoil = 1.5; src.recoilA = base;
       addShake(src.x, src.y, wep.shake || 11);
@@ -10717,7 +10720,12 @@ function updateBullets(dt) {
           const R = b.spgShell ? 52 : 34;
           fxExplosion(b.x, b.y, R, null, null, 'howitzer');
           fxShellImpact(b.x, b.y, b.splash || 60, 1);
-          if (b.spgShell) { const _fx = G._fx; G._fx = 2; for (let q = 0; q < 30; q++) { const a = rnd(TAU), sp = rnd(60, 240); part('dust', b.x, b.y, Math.cos(a) * sp, Math.sin(a) * sp * .7, rnd(1, 2), rnd(9, 18), q & 1 ? 'rgba(120,108,92,1)' : 'rgba(158,146,124,1)', { z: rnd(0, 8), vz: rnd(30, 120), g: 60, grow: 40, drag: .9, wind: 1 }); } part('ring', b.x, b.y, 0, 0, .5, 20, 'rgba(255,200,140,.5)', { grow: b.splash * 3, glow: 1 }); G._fx = _fx; addShake(b.x, b.y, 8);
+          if (b.spgShell) { const _fx = G._fx; G._fx = 2;
+            // IMPACT DUST SHOCKWAVE — wall of earth blasted radially outward
+            for (let q = 0; q < 80; q++) { const a = rnd(TAU), sp = rnd(140, 560); part('dust', b.x, b.y, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(1.4, 2.8), rnd(12, 28), q % 3 === 0 ? 'rgba(148,132,102,1)' : q % 3 === 1 ? 'rgba(186,166,128,1)' : 'rgba(216,196,154,1)', { z: rnd(0, 6), vz: rnd(30, 160), g: 55, grow: 46, drag: .88, wind: 1, a: .92 }); }
+            // GROUND TUFTS — earth clods and shredded grass thrown into the sky
+            for (let q = 0; q < 44; q++) { const a = rnd(TAU), sp = rnd(70, 280); part('dust', b.x + Math.cos(a) * rnd(0, 36), b.y + Math.sin(a) * rnd(0, 24), Math.cos(a) * sp * .7, Math.sin(a) * sp * .5, rnd(.9, 2.0), rnd(4, 11), q % 3 === 0 ? 'rgba(68,92,40,1)' : q % 3 === 1 ? 'rgba(98,122,54,1)' : 'rgba(136,114,68,1)', { z: 0, vz: rnd(80, 300), g: 130, grow: 18, drag: .91, wind: 1.4, a: .9 }); }
+            G._fx = _fx; addShake(b.x, b.y, 8);
             (G.spgImpacts || (G.spgImpacts = [])).push({ x: b.x, y: b.y, t: G.t });   // a shockwave ping on the minimap
           }
           areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, !!b.lethal);
@@ -11705,9 +11713,17 @@ function updateAAMissile(b, dt) {
       if (s === steps) part('fire', sx, sy, 0, 0, rnd(.18, .3), rnd(1.4, 2.2), Math.random() < .5 ? '#ffcc60' : '#ff9030', { glow: 1, z: sz, vz: rnd(2, 8), g: -6, grow: 4, drag: .92, wind: .4 });
     }
     b._px = b.x; b._py = b.y; b._pz = b.z; }
-  // big glowing motor flame at the nose — visible at altitude
+  // AFTERBURNER flame at the missile nose — bright double glow visible at altitude
   part('fire', b.x, b.y, 0, 0, .10, 5.5, '#fff0a0', { glow: 1, z: b.z });
   part('fire', b.x, b.y, 0, 0, .06, 3.2, '#ffb030', { glow: 1, z: b.z });
+  // WHITE EXHAUST PLUME — smoke shot BACKWARD out of the nozzle, directly following the afterburner
+  { const bkx = Math.cos(b.hd + Math.PI), bky = Math.sin(b.hd + Math.PI);
+    const exhSpd = curSpd * 0.35;
+    for (let k = 0; k < 4; k++) { const off = k * 3;
+      part('smoke', b.x + bkx * off + rnd(-1,1), b.y + bky * off + rnd(-1,1),
+        bkx * exhSpd * rnd(.7, 1.0) + rnd(-6,6), bky * exhSpd * rnd(.7, 1.0) + rnd(-6,6),
+        rnd(4.0, 5.5), rnd(28, 46), 'rgba(255,255,255,1)',
+        { a: 1.0, z: b.z + rnd(-2, 2), vz: rnd(0, 3), grow: 50, drag: .98, wind: .5 }); } }
   G.lights.push({ x: b.x, y: b.y, r: 70, c: [255, 170, 90], i: .5 });
   const hitR = b.decoyed ? 20 : ((T && T.r ? T.r : 16) + 22);
   const reached = !lost && dist2(b.x, b.y, tx, ty) < hitR * hitR && Math.abs(b.z - tz) < 48;
@@ -20273,7 +20289,7 @@ function lobbyNamePrompt(onDone) {
 }
 /* multiplayer screen: live server status + build tag, so two players can tell at a glance whether they are on the same
    database and the same version (a stale cached copy pointing at an old project is the usual reason a friend "can't see the lobby") */
-const BUILD_TAG = 'b216';
+const BUILD_TAG = 'b217';
 function mpStatusCheck() {
   const dot = $('mpDot'), txt = $('mpStatusTxt'), bld = $('mpBuild'); if (!dot || !txt) return;
   if (bld) bld.textContent = BUILD_TAG + (window.__FB_CONFIG ? ' · ' + (window.__FB_CONFIG.projectId || '') : '');
