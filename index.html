@@ -3554,26 +3554,26 @@ const UDEF = {
       { dmg: 10, rng: 24 * 32, cd: .09, spread: .05, spd: 1300, kind: 'bullet', sfx: 'mg', casings: 1, mag: 200, reload: 4.0, mount: [46, 4], tur: true, off: 0, mz: .2, coax: true, sustain: true },   // coaxial 7.62 beside the autocannon — rides the cannon's aim and works its target
       { minTier: 2, dmg: 260, rng: 30 * 32, cd: 6.5, spread: .008, spd: 620, kind: 'rocket', sfx: 'hydra', splash: 1.6 * TS, casings: 0, mount: [8, -26], tur: true, off: 44, mz: .38 },                    // Mk2: TOW ground-to-ground guided missile (left cheek)
       { minTier: 3, dmg: 190, rng: 88 * 32, cd: 5.5, spread: .006, spd: 1500, kind: 'rocket', sfx: 'hydra', splash: 26, casings: 0, mount: [8, 26], tur: true, off: 44, mz: .5, air: true, airOnly: true, aamsl: true },    // Mk3: Stinger air-to-air missile (right cheek) — fires the AA battery's guided homing seeker at the battery's full reach (climbs to altitude, flares can decoy it, two hits down any airframe)
-      { minTier: 5, tiers: [5], dmg: 12, rng: 88 * 32 * 0.4, cd: .035, spread: .09, spd: 1500, kind: 'bullet', sfx: 'minigun', casings: 1, mag: 300, reload: 3.5, mount: [-52, 0], off: 30, mz: 1.55, antiAir: true, air: true, sentry: true, sustain: true }   // Mk5: a 360° gatling sentry on the rear deck — engages ground OR air on its own, out to 40% of the AA battery's reach
+      { minTier: 5, tiers: [5], dmg: 12, rng: 88 * 32 * 0.4, cd: .035, spread: .09, spd: 1500, kind: 'bullet', sfx: 'minigun', casings: 1, mag: 300, reload: 3.5, mount: [0, 0], off: 26, mz: 1.7, antiAir: true, air: true, airPref: true, vsVeh: 0.3, sentry: true, sustain: true }   // Mk5: a compact 360° gatling sentry on the turret roof — air targets FIRST, ground only when no aircraft is in reach; light rounds do 70% less to any vehicle or airframe; out to 40% of the AA battery's reach
     ],
     desc: 'Tracked infantry fighting vehicle: 25mm chain gun with a coaxial MG, and a troop bay for 16. Upgrades add a TOW ground missile (Mk2) and a Stinger air-to-air missile (Mk3), plus applique armour. Right-click it with infantry selected to board; Unload deploys them around the ramp.'
   },
   abrams: {
     name: 'M1 Abrams', key: 'M', g: '🛡️', hp: 1250, spd: 68, r: 26, sight: 32 * 32, armor: 11, pop: 4, veh: true,
-    cost: { s: 540, c: 540 }, time: 40, spr: 'abrams', tur: 'abrams_t', head: 1, heavy: true, drawScale: 1.1,
+    cost: { s: 540, c: 540 }, time: 40, spr: 'abrams', tur: 'abrams_t', head: 1, heavy: true, drawScale: 1.1, mgResist: 0.2,
     wep: {
       dmg: 175, rng: 32 * 32, cd: 3.4, spread: .012, spd: 3000, kind: 'shell', splash: 3.5 * TS,   // HE round: blast area reduced 30% (was 5 tiles); the round flies at 3000 px/s
-      sfx: 'tank', casings: 3, shake: 9, slew: .004, off: 82   // muzzle at the barrel tip
+      sfx: 'tank', casings: 3, shake: 9, slew: .004, off: 82, apVeh: 0.55   // muzzle at the barrel tip; AP vs light/medium vehicles — two rounds brew up a Bradley
     },
     // commander's and loader's .50 cals — each hunts its own target
     weps: [
       // coaxial-style 7.62 machine guns (same weapon family as the Humvee's, cycling faster)
       // mounts are turret-relative pintles (tur) matching the 3D model: automatic remote weapon station on the −z side, commander's M2 (manned) on the +z cupola;
       // off = pintle → drawn muzzle (px), mz = barrel height in model units, so rounds and flash leave the visible barrel
-      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-12, -17], tur: true, off: 36, mz: 1.55, slew: .0009, sustain: true },   // automatic weapon station (slews a touch faster than a man)
-      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-14.6, 15.5], tur: true, off: 31, mz: 1.46, slew: .0012, sustain: true },
+      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-12, -17], tur: true, off: 36, mz: 1.55, slew: .0009, sustain: true, vsVeh: 0.15 },   // automatic weapon station (slews a touch faster than a man); an anti-personnel MG barely dents armour
+      { dmg: 8, rng: 24 * 32, cd: .06, spread: .07, spd: 1100, kind: 'bullet', sfx: 'mg', casings: 1, mag: 150, reload: 3.0, mount: [-14.6, 15.5], tur: true, off: 31, mz: 1.46, slew: .0012, sustain: true, vsVeh: 0.15 },
       // coaxial heavy MG beside the 120mm: fixed in the mantlet, so it points where the main gun points and works the main gun's target
-      { dmg: 14, rng: 24 * 32, cd: .1, spread: .05, spd: 1300, kind: 'bullet', sfx: 'mg', casings: 1, mag: 200, reload: 4.0, mount: [61.8, 9.7], tur: true, off: 0, mz: 1.02, coax: true, sustain: true, pierce: 1, pierceN: 3 }   // 40% slower than the roof guns, hits harder, and each round passes through up to three bodies
+      { dmg: 14, rng: 24 * 32, cd: .1, spread: .05, spd: 1300, kind: 'bullet', sfx: 'mg', casings: 1, mag: 200, reload: 4.0, mount: [61.8, 9.7], tur: true, off: 0, mz: 1.02, coax: true, sustain: true, pierce: 1, pierceN: 3, vsVeh: 0.15 }   // 40% slower than the roof guns, hits harder, and each round passes through up to three bodies — but does little to armour; the 120mm is the tank-killer
     ],
     mgs: [[-6, -9], [-6, 9]],
     desc: '120mm HE main gun with a five-tile blast, plus a coaxial heavy MG beside the main gun (slower-firing, hard-hitting, punches through three bodies), a manned .50 on the commander\'s cupola and an automatic remote weapon station, the last two slewing to their own targets. Engages three separate targets at once and crushes whatever it drives over.'
@@ -6354,7 +6354,7 @@ function coverIntercept(u, b) {
   if (u.coverCrouch && !u.coverPeek) return W.wall;           // ducked: the sandbags soak it up
   return null;                                                // popped up: his body is exposed — a direct hit lands
 }
-function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
+function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal, apVeh) {
   const r2 = r * r;
   if (hitZed !== false) for (const z of G.zeds) if (!z.dead && !(z.teamOv && !hitPlayer) && dist2(z.x, z.y, x, y) < r2) {   // a friendly zed only takes horde blasts, never your own artillery
     const f = 1 - Math.sqrt(dist2(z.x, z.y, x, y)) / r;
@@ -6369,7 +6369,7 @@ function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
       if (coverShields(u, x, y)) continue;                                            // the blast went off in front of his sandbags: they soak it up, he takes nothing
       const f = 1 - Math.sqrt(dist2(u.x, u.y, x, y)) / r;
       if (lethal && !u.def.veh) damage(u, 1e6, angTo(x, y, u.x, u.y), { trueDmg: true });   // a red-barrel cook-off: anyone on foot inside the ring dies outright; only armour rides it out
-      else damage(u, dmg * (.4 + f * .5), 0);
+      else { let dv = dmg * (.4 + f * .5); if (apVeh && u.def.veh && !u.def.heavy) dv = Math.max(dv, u.maxHp * apVeh * (.55 + f * .45)); damage(u, dv, 0); }   // an AP tank round (Abrams 120mm) tears through a light/medium vehicle for a big slice of its hull — two rounds brew up a Bradley; heavy tanks slug it out on normal damage
     }
     if (!noBuild) for (const b of G.builds) if (!b.dead && !(b.def && b.def.mine) && dist2(b.x, b.y, x, y) < r2 * 1.2 && (hitPlayer || plyOf(b).team !== team)) damage(b, dmg * .5, angTo(x, y, b.x, b.y), { blast: 1 });   // a landmine is never set off by a blast — only by a footstep; drums DO chain
   }
@@ -8670,6 +8670,9 @@ function updateUnits(dt) {
     if (u.rc > 0) u.rc = Math.max(0, u.rc - dt * 7);              // recoil animation decays over ~0.15 s
     u.cd -= dt; u.burstCd -= dt;
     const wep = u.def.wep;
+    if (u.def.veh && !u.def.fly && u.def.carry) updateVehLoad(u, dt);   // Bradley rear doors + 2-by-2 boarding / unloading
+    if (u.boarding) { boardWalkIn(u, dt); continue; }                   // a passenger filing in through the rear doors
+    if (u.exiting) { exitWalkOut(u, dt); continue; }                    // a passenger walking out the back
     // a missile-struck aircraft keeps belching a MASSIVE black smoke plume off its tail (simulated here so it produces whether or not it is on screen)
     if (u.def.fly && u.aaSmoke && !u.landed) {
       u._aaSmT = (u._aaSmT || 0) + dt;
@@ -9016,11 +9019,15 @@ function updateUnits(dt) {
       } else if (o.type === 'board') {
         const v = o.v;
         if (!v || v.dead || (v.cargo && v.cargo.length >= v.def.carry) || u.def.veh) u.order = null;
-        else {
-          if (v.def.fly) v.boardReq = G.frame;                                   // ask the helicopter to set down
-          const ready = !v.def.fly || v.landed;
-          if (ready && dist2(u.x, u.y, v.x, v.y) < Math.pow(v.r + 26, 2)) { (v.cargo = v.cargo || []).push(u); u.inside = v; u.carriedBy = v; u.order = null; AU.ui('ok'); }
+        else if (v.def.fly) {
+          v.boardReq = G.frame;                                                  // ask the helicopter to set down
+          if (v.landed && dist2(u.x, u.y, v.x, v.y) < Math.pow(v.r + 26, 2)) { (v.cargo = v.cargo || []).push(u); u.inside = v; u.carriedBy = v; u.order = null; AU.ui('ok'); }
           else steer(u, dt, v.x, v.y, true, v.r + 14);
+        } else {
+          // a ground carrier (the Bradley): walk to the rear doors and wait — updateVehLoad admits people two at a time
+          const rx = v.x - Math.cos(v.ang) * (v.r + 24), ry = v.y - Math.sin(v.ang) * (v.r + 24);
+          if (dist2(u.x, u.y, rx, ry) < 30 * 30) u.ang = angLerp(u.ang, v.ang, 1 - Math.pow(.0006, dt));   // at the door — face the ramp and hold for a slot
+          else steer(u, dt, rx, ry, true, 10);
         }
       } else if (o.type === 'enter') {
         const b = o.b;
@@ -9271,9 +9278,62 @@ function circleAround(u, cx, cy, R, dt, boost) {
 function unloadCargo(v) {
   if (!v.cargo || !v.cargo.length) return 0;
   const n = v.cargo.length;
+  if (!v.def.fly) { v._unloading = true; return n; }   // a ground carrier (Bradley) opens its rear doors and lets the troops walk out two at a time — see updateVehLoad
   for (let i = 0; i < n; i++) { const t = v.cargo[i]; t.inside = null; t.carriedBy = null; const a = i / n * TAU + rnd(-.3, .3), rr = v.r + 14 + rnd(0, 18); t.x = v.x + Math.cos(a) * rr; t.y = v.y + Math.sin(a) * rr; t.order = null; t.roping = 0; unstick(t, true); }
   v.cargo.length = 0; popText(v.x, v.y - 20, 'DEPLOYED', '#7dffb2'); AU.ui('ok');
   return n;
+}
+
+/* ground troop carrier (the Bradley): the twin rear doors open whenever anyone is boarding or the ramp is unloading, and the
+   passengers walk IN and OUT through them two at a time — nobody teleports. Approach, queue at the rear, and file aboard in pairs. */
+function updateVehLoad(v, dt) {
+  if (!v.cargo) v.cargo = [];
+  const boarding = v._boarding || (v._boarding = []);
+  for (let k = boarding.length - 1; k >= 0; k--) if (!boarding[k].boarding || boarding[k].dead) boarding.splice(k, 1);
+  const exiting = v._exiting || (v._exiting = []);
+  for (let k = exiting.length - 1; k >= 0; k--) if (!exiting[k].exiting || exiting[k].dead) exiting.splice(k, 1);
+  const rx = v.x - Math.cos(v.ang) * (v.r + 24), ry = v.y - Math.sin(v.ang) * (v.r + 24);   // the point just behind the rear doors
+  const waiting = [];
+  for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (u.dead || u.inside || u.boarding || u.exiting) continue; if (u.order && u.order.type === 'board' && u.order.v === v && dist2(u.x, u.y, rx, ry) < 42 * 42) waiting.push(u); }
+  const wantLoad = (waiting.length > 0 || boarding.length > 0) && v.cargo.length + boarding.length < v.def.carry;
+  const wantUnload = !!v._unloading && (v.cargo.length > 0 || exiting.length > 0);
+  const want = (wantLoad || wantUnload) ? 1 : 0;
+  v.doorT = (v.doorT || 0) + (want - (v.doorT || 0)) * Math.min(1, dt * 4);   // ease the doors open / shut
+  const open = v.doorT > .55;
+  if (open && wantLoad && boarding.length === 0) {                            // admit the next pair only once the last pair is aboard
+    waiting.sort((a, b) => dist2(a.x, a.y, rx, ry) - dist2(b.x, b.y, rx, ry));
+    for (let k = 0; k < waiting.length && boarding.length < 2 && v.cargo.length + boarding.length < v.def.carry; k++) { const u = waiting[k]; u.boarding = v; u.boardT = 0; u.order = null; boarding.push(u); }
+  }
+  if (v._unloading) {
+    if (open && v.cargo.length && exiting.length === 0) {                     // release the next pair only once the last pair has cleared the doors
+      for (let k = 0; k < 2 && v.cargo.length; k++) { const u = v.cargo.shift(); u.inside = null; u.carriedBy = null; u.exiting = v; u.exitT = 0; u._exitLane = k ? 1 : -1; u.x = rx + Math.cos(v.ang + Math.PI / 2) * u._exitLane * 8; u.y = ry + Math.sin(v.ang + Math.PI / 2) * u._exitLane * 8; exiting.push(u); }
+      AU.ui && AU.ui('ok');
+    }
+    if (!v.cargo.length && exiting.length === 0) { v._unloading = false; popText(v.x, v.y - 20, 'DEPLOYED', '#7dffb2'); }
+  }
+}
+function boardWalkIn(u, dt) {   // a passenger filing in through the rear doors, disappearing into the hull
+  const v = u.boarding;
+  if (!v || v.dead) { u.boarding = null; return; }
+  u.boardT = (u.boardT || 0) + dt / .7;
+  const k = Math.min(1, dt * 5);
+  u.x += (v.x - u.x) * k; u.y += (v.y - u.y) * k;
+  u.ang = angLerp(u.ang, v.ang, 1 - Math.pow(.0005, dt));
+  u.step = (u.step || 0) + dt * 6;
+  if (u.boardT >= 1 || dist2(u.x, u.y, v.x, v.y) < 12 * 12) { if ((v.cargo || (v.cargo = [])).length < v.def.carry) { v.cargo.push(u); u.inside = v; u.carriedBy = v; } else u.order = null; u.boarding = null; u.boardT = 0; }
+}
+function exitWalkOut(u, dt) {   // a passenger walking out the back to a spot behind the vehicle
+  const v = u.exiting;
+  if (!v || v.dead) { u.exiting = null; u.order = null; return; }
+  u.exitT = (u.exitT || 0) + dt / .8;
+  const lane = u._exitLane || 0;
+  const tx = v.x - Math.cos(v.ang) * (v.r + 30) + Math.cos(v.ang + Math.PI / 2) * lane * 15;
+  const ty = v.y - Math.sin(v.ang) * (v.r + 30) + Math.sin(v.ang + Math.PI / 2) * lane * 15;
+  const a = angTo(u.x, u.y, tx, ty), sp = u.def.spd * .8;
+  u.ang = angLerp(u.ang, a, 1 - Math.pow(.0004, dt));
+  tryMove(u, u.x + Math.cos(a) * sp * dt, u.y + Math.sin(a) * sp * dt, true, Math.cos(a), Math.sin(a), sp, dt);
+  u.step = (u.step || 0) + sp * dt * .17;
+  if (u.exitT >= 1) { u.exiting = null; u.order = null; unstick(u, true); }
 }
 /* rotor wash: a turbulent ring of dust blown out from under a helicopter close to the ground, then carried off on the wind */
 function rotorWash(u, k, dt) {
@@ -9880,6 +9940,25 @@ function updateWeapons(u, dt, order) {
       u.cds[i] = w.cd;
       continue;
     }
+    if (turVeh && w.airPref) {
+      /* the Bradley Mk5 gatling sentry: a hostile AIRCRAFT is always its first choice — only when no air target is in reach
+         does it fall back to ground targets. It traverses (and, in the renderer, elevates) onto its target on its own. */
+      let t = findAirEnemy(u.x, u.y, rng);
+      if (!t) { const cur = u.tgts[i]; if (cur && !cur.dead && dist2(cur.x, cur.y, u.x, u.y) < r2 && taken.indexOf(cur) < 0 && !(cur.def && cur.def.fly)) t = cur; else t = findEnemyExcept(u.x, u.y, rng, w.minRng, taken, wAir) || findEnemy(u.x, u.y, rng, w.minRng, wAir); }
+      u.tgts[i] = t;
+      if (!t) continue;
+      const d2 = dist2(t.x, t.y, u.x, u.y); if (d2 > r2 || (w.minRng && d2 < w.minRng * w.minRng)) continue;
+      taken.push(t); engaged = true;
+      const want = angTo(u.x, u.y, t.x, t.y);
+      u.aims[i] = angLerp(u.aims[i], want, 1 - Math.pow(w.slew || .0015, dt));
+      let da = ((want - u.aims[i] + Math.PI * 3) % TAU) - Math.PI; if (Math.abs(da) > .16) continue;   // still traversing onto the target
+      if (u.cds[i] > 0) continue;
+      if (w.mag && u.ammos[i] <= 0) { u.reloads[i] = w.reload; AU.reload(u.x, u.y, w.sfx); continue; }
+      fire(u, t, w, muzzleFor(u, i, w));
+      if (w.mag) u.ammos[i]--;
+      u.cds[i] = w.cd;
+      continue;
+    }
     let t = u.tgts[i];
     if (w.airOnly && t && !(t.def && t.def.fly)) t = null;                          // an air-to-air launcher keeps only aircraft
     if (!(t && !t.dead && dist2(t.x, t.y, u.x, u.y) < r2 && taken.indexOf(t) < 0)) {
@@ -9992,6 +10071,15 @@ function muzzlePos(u) {
   return { x: u.x + Math.cos(a) * off, y: u.y + Math.sin(a) * off, a };
 }
 
+/* effective damage a bullet does to a UNIT: the gatling's light rounds do little to any vehicle/airframe (vsVeh),
+   and machine-gun rounds barely scratch a heavy tank like the Abrams (its mgResist) — applied at every hit path */
+function bulletDmgVs(b, u) {
+  let d = b.dmg;
+  if (b.vsVeh && u.kind === 'unit' && u.def && (u.def.veh || u.def.fly)) d *= b.vsVeh;
+  if (b.kind === 'bullet' && u.kind === 'unit' && u.def && u.def.mgResist) d *= u.def.mgResist;
+  return d;
+}
+
 function fire(src, tgt, wep, muz) {
   const m = muz || muzzlePos(src);
   // only these sources may actually strike aircraft: a marksman/sniper, an aircraft, and (flagged on their synthetic src) the Watch Tower and MG Nest. Everyone else's rounds pass under air.
@@ -10042,9 +10130,11 @@ function fire(src, tgt, wep, muz) {
       // MUZZLE OVERPRESSURE THROUGH THE GRASS — the blast lays every tuft around the hull flat in a spreading ring and bends the
       // nearby trees away, all springing back within the second (same pressure-wave system a shell impact uses). Centred a touch
       // forward, under the muzzle, where the overpressure hits the ground hardest.
-      addShock(src.x + Math.cos(base) * src.r * .7, src.y + Math.sin(base) * src.r * .7, src.r * 6, 2.6, .8);
-      src.recoil = 1.5; src.recoilA = base;
-      addShake(src.x, src.y, wep.shake || 11);
+      addShock(src.x + Math.cos(base) * src.r * .7, src.y + Math.sin(base) * src.r * .7, src.r * 9, 3.4, .95);   // a MASSIVE pressure wave flattening the grass in a wide ring off the muzzle
+      addShock(src.x, src.y, src.r * 5, 2.4, .7);                                                                // a second wave on the hull so every tuft right around the vehicle whips flat
+      { const _fxg = G._fx; G._fx = 1; for (let k = 0; k < 44; k++) { const a = rnd(TAU), sp = rnd(120, 380); part('dust', src.x + Math.cos(a) * src.r * .6, src.y + Math.sin(a) * src.r * .5, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(1.4, 2.6), rnd(12, 24), k % 3 === 0 ? 'rgba(74,100,46,1)' : k % 3 === 1 ? 'rgba(184,172,146,1)' : 'rgba(206,196,172,1)', { z: rnd(0, 6), vz: rnd(20, 95), g: 42, grow: 46, drag: .89, wind: 1.3, a: .9 }); } G._fx = _fxg; }   // torn grass + dust blown out all around the hull
+      src.recoil = 1.6; src.recoilA = base;
+      addShake(src.x, src.y, wep.shake || 15);
       G.lights.push({ x: mtx, y: mty, r: 260, c: [255, 208, 140], i: 2.0 });
       AU.shot(mtx, mty, 'spg', wep.cd);
       AU.whistle(tx, ty, flight * .9);
@@ -10108,7 +10198,7 @@ function fire(src, tgt, wep, muz) {
       dmg: inc ? dmg * .85 : dmg, inc: inc ? 1 : 0, splash: wep.splash || 0, kind: wep.kind, life, life0: life, wc, sfx: wep.sfx, small: wep.kind === 'bullet' && !wep.pierce && (wep.dmg || 0) <= 16, pistol: !!wep.sidearm,
       lethal: wep.lethal ? 1 : 0, cluster: wep.cluster || 0, clusterDmg: wep.clusterDmg || 0, clusterSplash: wep.clusterSplash || 0,
       ang: a, smoke: wep.smokeTrail, team: 1, tm: plyOf(src).team, src, tier, pierce: wep.pierce || 0, pn: wep.pierceN || 0,
-      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0, shock: wep.shock ? 1 : 0, antiAir: antiAir ? 1 : 0,
+      z: z0, z0, zg: tz, zSlope, drop: Math.abs(z0 - tz) > 3, fly: (src.def && src.def.fly) ? 1 : 0, f3: f3 ? 1 : 0, shock: wep.shock ? 1 : 0, antiAir: antiAir ? 1 : 0, vsVeh: wep.vsVeh || 0, apVeh: wep.apVeh || 0,
       gnd: (Math.abs(z0 - tz) > 3 && tz < z0 && src.def && (src.def.fly || src.def.veh)) ? 1 : 0   // plunging fire from a vehicle or aircraft: the round ends where it meets the ground
     });
   }
@@ -11220,7 +11310,7 @@ function updateBullets(dt) {
       }
       if (!hit && G.players.length > 1) {                                 // PvP: rounds also strike the other teams' troops and structures
         const ul = G.hUnits.near(b.x, b.y, b.antiAir ? 46 : 26, _q3);     // anti-air rounds sweep a wider net so a fast round doesn't tunnel past a small airframe
-        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; if (u.def.fly && !b.antiAir) continue; const rr = u.r + (u.def.fly ? 20 : 3); if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { const ci = coverIntercept(u, b); if (ci) { hit = ci; break; } if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (!u.def.veh && !u.def.fly) netFlesh(b.x, b.y, true); } } else { hit = u; break; } } }
+        for (const u of ul) { if (u.dead || u.inside || plyOf(u).team === b.tm) continue; if (u.def.fly && !b.antiAir) continue; const rr = u.r + (u.def.fly ? 20 : 3); if (dist2(u.x, u.y, b.x, b.y) < rr * rr) { const ci = coverIntercept(u, b); if (ci) { hit = ci; break; } if (!u.def.veh && !u.def.fly && poseOf(u).ev > 0) { if (!b._ev) b._ev = {}; if (b._ev[u.id] === undefined) b._ev[u.id] = Math.random() < poseOf(u).ev ? 1 : 0; if (b._ev[u.id]) continue; } if (b.pierce) { if (!b._hit) b._hit = {}; if (!b._hit['u' + u.id]) { b._hit['u' + u.id] = 1; damage(u, bulletDmgVs(b, u), b.ang, { wc: b.wc, small: b.small, pistol: b.pistol }); if (!u.def.veh && !u.def.fly) netFlesh(b.x, b.y, true); } } else { hit = u; break; } } }
         if (!hit) { const bb = buildingAtTile((b.x / TS) | 0, (b.y / TS) | 0); if (bb && !bb.dead && !bb.def.flat && plyOf(bb).team !== b.tm) hit = bb; }
       }
     } else {
@@ -11260,7 +11350,7 @@ function updateBullets(dt) {
       if (b.splash) {
         if (b.shock) shockRim(b.x, b.y, b.splash);                                            // 30mm: whatever stands at the rim of the burst is thrown and torn
         if (b.team === 1 && b.splash <= 24) { fxRoundBurst(b.x, b.y, b.ang, b.gndHit); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm); }   // 25 mm: a tight burst — dust, sparks, a small flash — that still bites everything within a body and a half
-        else if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .49); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, b.sfx === 'tank' || b.lethal);   // the 120mm / F-16 bomb kills every enemy in its main burst outright
+        else if (b.team === 1) { fxExplosion(b.x, b.y, b.kind === 'rocket' ? 52 : 34, null, null, b.sfx); if (b.sfx === 'tank') fxShellImpact(b.x, b.y, b.splash || 60, .49); else if (b.sfx === 'howitzer') fxShellImpact(b.x, b.y, b.splash || 60, 1); areaDamage(b.x, b.y, b.splash, b.dmg, false, true, b.tm, false, b.sfx === 'tank' || b.lethal, b.apVeh);   // the 120mm / F-16 bomb kills every enemy in its main burst outright; a tank round also punches light/medium vehicles for a slice of their hull
           if (b.cluster) { const cd = b.clusterDmg || b.dmg * .2, cs = b.clusterSplash || b.splash * .6; for (let c = 0; c < b.cluster; c++) { const a2 = rnd(TAU), rr = rnd(b.splash * .35, b.splash * 1.25), cx = b.x + Math.cos(a2) * rr, cy = b.y + Math.sin(a2) * rr; fxExplosion(cx, cy, 26, '#ffd27a', '#ff7a2e'); fxShellImpact(cx, cy, cs, .4); areaDamage(cx, cy, cs, cd, false, true, b.tm); } addShake(b.x, b.y, 4); }   // and throws its bomblets across the area, each with the old three-tile impact
         }
         else { fxExplosion(b.x, b.y, 26, '#9bd15c', '#4e7a22'); areaDamage(b.x, b.y, b.splash, b.dmg, true, false);
@@ -11269,7 +11359,7 @@ function updateBullets(dt) {
       } else if (hit) {
         const arrowFoot = b.kind === 'arrow' && hit.kind === 'unit' && !hit.def.veh && !hit.def.fly;
         if (arrowFoot) hit._arrowHit = 1;                                                 // so killUnit plays "kill by archer" if this arrow drops him
-        damage(hit, b.dmg, b.ang, { wc: b.wc, small: b.small, pistol: b.pistol });
+        damage(hit, bulletDmgVs(b, hit), b.ang, { wc: b.wc, small: b.small, pistol: b.pistol });   // light rounds do little to armour/airframes; MG fire barely dents a heavy tank
         if (b.inc && hit.kind !== 'build') ignite(hit, b);
         if (arrowFoot) { if (!hit.dead) { hit._arrowHit = 0; netFlesh(b.x, b.y, false); } }   // non-lethal arrow: a flesh thud; a lethal one already sounded as the archer kill
         else if (b.kind === 'bullet' && (hit.kind === 'zed' || (hit.kind === 'unit' && !hit.def.veh && !hit.def.fly))) netFlesh(b.x, b.y, b.pierce > 0);   // a round striking a body: the flesh impact (heard by everyone in co-op)
@@ -17874,9 +17964,30 @@ function ctrlHudTick(dt) {
         g.add(box(2.5, .32, .06, ALUD, .05, .5, sd * 1.0)); for (let i = 0; i < 6; i++) g.add(box(.02, .26, .06, TRACK, -1.0 + i * .42, .5, sd * 1.03));   // panelled side skirt + panel seams
         g.add(box(.42, .3, .09, TRACK, -1.42, .34, sd * .96)); g.add(box(.4, .28, .09, TRACK, 1.5, .36, sd * .95));                          // rear + front mud flaps
       }
-      g.add(box(2.5, bLoH(.55), 1.5, ALU, -.05, bLoY(.68), 0)); g.add(box(2.44, .04, 1.46, ALUL, -.05, bLoY(.96), 0));                        // hull + deck plate (hull lowered to 2/3 height)
+      // ===== hull built as a SHELL so the rear troop bay is hollow — the open doors reveal a real, DARK compartment (floor, benches, walls) =====
+      const BAYD = matFor('#141514', { roughness: .95 });                                                                                  // near-black troop-bay interior — the bay stays dark inside
+      g.add(box(2.5, .16, 1.46, BAYD, -.05, bLoY(.46), 0));                                                                                // dark interior floor
+      for (const sd of [-1, 1]) g.add(box(2.5, bLoH(.62), .12, ALU, -.05, bLoY(.72), sd * .69));                                            // hull side walls (tan outside)
+      for (const sd of [-1, 1]) g.add(box(1.06, bLoH(.52), .04, BAYD, -.82, bLoY(.72), sd * .58));                                          // dark inner skins so the bay reads black inside
+      g.add(box(.05, bLoH(.52), 1.2, BAYD, -.27, bLoY(.72), 0));                                                                           // dark inner face of the front bulkhead
+      g.add(box(1.06, .05, 1.28, BAYD, -.82, bLoY(.99), 0));                                                                               // dark inner roof
+      g.add(box(1.5, bLoH(.55), 1.46, ALU, .45, bLoY(.68), 0));                                                                            // solid front block: engine, driver, turret basket
+      g.add(box(.12, bLoH(.62), 1.44, ALUD, -.3, bLoY(.72), 0));                                                                           // front bulkhead closing the troop bay
+      g.add(box(1.7, .04, 1.46, ALUL, .38, bLoY(.96), 0));                                                                                 // deck plate over the front
+      g.add(box(1.06, .1, 1.36, ALUL, -.82, bLoY(1.02), 0));                                                                               // thin roof over the rear bay
+      for (const sd of [-1, 1]) g.add(box(1.0, .1, .2, matFor('#1e201e', PANEL), -.82, bLoY(.6), sd * .48));                               // fold-down bench seats down each wall of the bay
       g.add(box(.9, bLoH(.5), 1.5, ALU, 1.2, bLoY(.7), 0, 0, 0, -.55)); g.add(box(.45, bLoH(.26), 1.48, ALU, 1.62, bLoY(.5), 0, 0, 0, -.35));   // sloped glacis + lower nose
-      g.add(box(2.2, bLoH(.32), 1.44, ALU, -.2, bLoY(1.1), 0)); g.add(box(.5, bLoH(.34), 1.4, ALUD, -1.35, bLoY(.78), 0, 0, 0, .35));         // upper hull, rear ramp
+      g.add(box(1.4, bLoH(.32), 1.44, ALU, .3, bLoY(1.1), 0));                                                                             // raised superstructure over the FRONT crew / turret ring (kept clear of the rear bay)
+      // rear door frame: top lintel + side posts around the opening — the centre stays open so the doors reveal the bay
+      g.add(box(.1, .12, 1.5, ALUD, -1.32, bLoY(1.0), 0)); for (const sd of [-1, 1]) g.add(box(.1, bLoH(.6), .1, ALUD, -1.32, bLoY(.72), sd * .69));
+      // red interior lighting in the troop bay — a dedicated material the render loop PULSES, so it glows red through the open doors
+      const redMat = new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: new THREE.Color(0xff2010), emissiveIntensity: 1.4, roughness: .8, metalness: 0 }); g.userData.redMat = redMat;
+      for (const sd of [-1, 1]) { g.add(box(.92, .05, .05, redMat, -.82, bLoY(.99), sd * .34)); g.add(box(.06, .05, .5, redMat, -1.24, bLoY(.99), sd * .3)); }   // roof strips + a lamp over the rear doors
+      { const rd = []; for (const sd of [-1, 1]) {                                                                                          // twin centre-split rear doors — hinged at the outer edges, swing open for boarding / unloading
+          const door = new THREE.Group(); door.position.set(-1.4, bLoY(.72), sd * .66); door.userData.sd = sd; g.add(door);
+          door.add(box(.06, bLoH(.5), .64, ALU, 0, 0, -sd * .32)); door.add(box(.05, bLoH(.42), .56, ALUL, .015, 0, -sd * .32));            // door panel + inner skin
+          door.add(box(.04, bLoH(.14), .3, GLASS, .05, bLoH(.12), -sd * .32));                                                              // small armoured vision port
+          rd.push(door); } g.userData.rearDoors = rd; }
       g.add(cyl(.14, .14, .05, ALU, 1.15, bLoY(1.13), .45, 'y')); g.add(box(.1, .04, .16, TRACK, 1.15, bLoY(1.16), .45));                     // driver's hatch (front-left) + periscope
       for (let i = 0; i < 3; i++) g.add(box(.08, .03, .05, GLASS, 1.35, bLoY(1.14), .25 + i * .18, 0, .2 * (i - 1), 0));                       // driver's vision blocks
       for (const sd of [-1, 1]) { g.add(box(.1, .12, .14, matFor('#e8e4c8', { emissive: lin('#fff2c0'), emissiveIntensity: .3 }), 1.66, bLoY(.64), sd * .5)); g.add(box(.03, .2, .22, TRACK, 1.74, bLoY(.66), sd * .5)); }   // headlights in brush guards
@@ -18180,12 +18291,13 @@ function ctrlHudTick(dt) {
           tur.add(box(.9, .05, .78, TILED, 0, .4, 0)); tur.add(box(.5, .05, .3, SENS, -.2, .43, 0));                                               // armoured roof + glowing battle-management panel
           g.add(box(.5, bLoH(.3), 1.5, TILE, 1.62, bLoY(.5), 0, 0, 0, -.35));                                                                      // heavy glacis block
           for (const sd of [-1, 1]) tur.add(sph(.035, SENS, .2, .5, sd * .5));                                                                     // active-protection sensor eyes
-          // Mk5 remote gatling sentry on the rear deck — its own group so it traverses a full 360° independently of the turret, engaging ground or air
-          const gat = new THREE.Group(); gat.position.set(-1.0, bLoY(1.28), 0); g.add(gat); g.userData.gat = gat;
+          // Mk5 compact remote gatling sentry on the TURRET ROOF — its own group (rides the turret but traverses a full 360° independently), engaging ground or air; drawn at half scale
+          const gat = new THREE.Group(); gat.position.set(.1, .44, 0); gat.scale.setScalar(.5); tur.add(gat); g.userData.gat = gat;
           gat.add(cyl(.15, .15, .08, matFor('#3a3f3c', PANEL), 0, -.02, 0, 'y'));                                                                  // ring mount
           gat.add(box(.24, .22, .28, matFor('#3a3f3c', PANEL), -.02, .12, 0)); gat.add(sph(.032, SENS, .13, .2, 0));                              // remote weapon station body + sight
-          gat.add(cyl(.055, .055, .18, matFor('#2a2c2a', { roughness: .8 }), .2, .1, 0, 'x'));                                                     // rotary breech
-          for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; gat.add(cyl(.016, .016, .5, BARREL, .52, .1 + Math.sin(a) * .034, Math.cos(a) * .034, 'x')); }   // six gatling barrels pointing forward (+x)
+          const gatEl = new THREE.Group(); gatEl.position.set(0, .1, 0); gat.add(gatEl); g.userData.gatEl = gatEl;                                // elevation trunnion — pitches the gun up toward an aircraft
+          gatEl.add(cyl(.055, .055, .18, matFor('#2a2c2a', { roughness: .8 }), .2, 0, 0, 'x'));                                                    // rotary breech
+          for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; gatEl.add(cyl(.016, .016, .5, BARREL, .52, Math.sin(a) * .034, Math.cos(a) * .034, 'x')); }   // six gatling barrels pointing forward (+x)
         }
       } else if (spr === 'humvee') {
         const t4 = tier >= 4, t5 = tier >= 5, TARM = matFor('#c2b58c', PANEL), TARMD = matFor('#a89c72', PANEL);   // desert applique armour
@@ -18238,7 +18350,7 @@ function ctrlHudTick(dt) {
         g.add(box(.6, .03, .05, ACC, 0, .66, .5));
       }
     }
-    return { g, tur, rotor, disc: rotor && rotor.userData.disc, props, tails, tier, mgs: g.userData.mgs || null, spades: g.userData.spades || null, spgGun: g.userData.spgGun || null, towG: g.userData.towG || null, stG: g.userData.stG || null, mortar: g.userData.mortar || null, gat: g.userData.gat || null };
+    return { g, tur, rotor, disc: rotor && rotor.userData.disc, props, tails, tier, mgs: g.userData.mgs || null, spades: g.userData.spades || null, spgGun: g.userData.spgGun || null, towG: g.userData.towG || null, stG: g.userData.stG || null, mortar: g.userData.mortar || null, gat: g.userData.gat || null, gatEl: g.userData.gatEl || null, rearDoors: g.userData.rearDoors || null, redMat: g.userData.redMat || null };
   }
   const WRECK = matFor('#2a2624', { map: TEX.panel, roughness: .95 });
 
@@ -19813,12 +19925,31 @@ function ctrlHudTick(dt) {
             u._pit = (u._pit || 0) + (pitT - (u._pit || 0)) * Math.min(1, rdt * 4); u._rol = (u._rol || 0) + (rolT - (u._rol || 0)) * Math.min(1, rdt * 3.2); u._yw = (u._yw || 0) + (yawT - (u._yw || 0)) * Math.min(1, rdt * 3);
             um.g.rotateY(-u._yw); um.g.rotateX(u._rol); um.g.rotateZ(-u._pit);
           } else { um.g.rotateZ(Math.sin(G.t * 2 + u.id) * .03); if (u.bank) um.g.rotateX(u.bank); } /* the gunship banks into its turns (≤70°) */ if (um.rotor) { um.rotor.rotation.z = (u.rot || G.t * 40); const parked = !!(u.landed && !u.order); if (um.disc) um.disc.visible = !parked; else um.rotor.visible = !parked; } if (um.tails) for (const tr of um.tails) tr.rotation.z = G.t * 70; if (um.props) for (const pr of um.props) pr.rotation.x = G.t * 60; if (um.g.userData.guns) aimGuns(u, um, Math.max(1e-3, render._dt || .016)); const asc = AIRSC[d.spr] || 1.45; put(P.shadow, x, gy + .03, z, -HPI, -u.ang, 0, asc * (d.spr === 'ac130' ? 1.3 : .9), asc * (d.spr === 'ac130' ? 1.5 : .55), 1, AIRSHADOW); }
-        else { const sl = elevAtW(u.x + 12, u.y) - elevAtW(u.x - 12, u.y), sf = elevAtW(u.x, u.y + 12) - elevAtW(u.x, u.y - 12); um.g.rotation.set(0, -u.ang, 0); um.g.rotateZ(-(sl * Math.cos(u.ang) + sf * Math.sin(u.ang)) * .6); um.g.rotateX((sl * -Math.sin(u.ang) + sf * Math.cos(u.ang)) * .6); const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil && !um.spgGun) um.tur.position.x = -.15 - u.recoil * .12;
+        else {
+          // ground vehicle sits on its WHOLE footprint, not its centre point: sample the terrain under the four track-contact
+          // corners (sized to the drawn body), rest the hull on that plane and pitch/roll to match — no more clipping or floating on slopes
+          const fsc = d.spr === 'abrams' ? 1.68 * Math.pow(1.1, ut - 1) : d.spr === 'stryker' ? 1.92 : d.spr === 'humvee' ? 2.0 : d.spr === 'spg' ? 1.6 : 1;
+          const hL = u.r * fsc * 1.12, hW = u.r * fsc * .6, ca = Math.cos(u.ang), sa = Math.sin(u.ang);
+          const eFL = elevAtW(u.x + ca * hL - sa * hW, u.y + sa * hL + ca * hW), eFR = elevAtW(u.x + ca * hL + sa * hW, u.y + sa * hL - ca * hW);
+          const eRL = elevAtW(u.x - ca * hL - sa * hW, u.y - sa * hL + ca * hW), eRR = elevAtW(u.x - ca * hL + sa * hW, u.y - sa * hL - ca * hW);
+          um.g.position.y = Math.max(-.06, (eFL + eFR + eRL + eRR) * .25 - .04);   // rest the body on the terrain under its footprint (bed the tracks in a touch)
+          um.g.rotation.set(0, -u.ang, 0);
+          um.g.rotateZ(clamp(-Math.atan2(((eFL + eFR) - (eRL + eRR)) * .5, 2 * hL * K), -.6, .6));   // pitch: nose up climbing, down descending
+          um.g.rotateX(clamp(Math.atan2(((eFL + eRL) - (eFR + eRR)) * .5, 2 * hW * K), -.6, .6));      // roll: bank across the slope
+          const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil && !um.spgGun) um.tur.position.x = -.15 - u.recoil * .12;
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); }
           if (um.towG) um.towG.rotation.z = (u.elev && u.elev[2] || 0) * 1.05;   // TOW launcher elevates ~60° before a ground-missile launch, then settles back
           if (um.stG) um.stG.rotation.z = (u.elev && u.elev[3] || 0) * 1.05;     // Stinger pod cranks up toward the sky before an air-to-air launch
           if (um.mortar) { const ma = (u.aims && u.aims[2] !== undefined) ? u.aims[2] : aT; um.mortar.rotation.y = -(ma - u.ang); }   // the bed mortar traverses to lay its tube on the target
-          if (um.gat) { const ga = (u.aims && u.aims[4] !== undefined) ? u.aims[4] : u.ang; um.gat.rotation.y = -(ga - u.ang); }     // the rear-deck gatling sentry traverses 360° to its own target
+          if (um.rearDoors) for (const d of um.rearDoors) d.rotation.y = d.userData.sd * 1.4 * (u.doorT || 0);   // the twin rear doors swing open while troops board / deploy
+          if (um.redMat) um.redMat.emissiveIntensity = 0.35 + 1.9 * (0.5 + 0.5 * Math.sin(G.t * 5.2));   // the bay's red lamp pulses repeatedly
+          if (um.gat) {   // the turret-roof gatling sentry traverses 360° to its own target (compensated for the turret it rides) and PITCHES UP toward an aircraft
+            const ga = (u.aims && u.aims[4] !== undefined) ? u.aims[4] : aT; um.gat.rotation.y = -(ga - aT);
+            let pit = 0; const gt4 = u.tgts && u.tgts[4];
+            if (gt4 && gt4.def && gt4.def.fly && !gt4.dead) { const dh = Math.hypot(gt4.x - u.x, gt4.y - u.y) || 1, altPx = (gt4.def.alt || 150) * ALTK * (gt4.altK === undefined ? 1 : gt4.altK); pit = Math.atan2(altPx, dh); }
+            u._gatPit = (u._gatPit || 0) + (pit - (u._gatPit || 0)) * Math.min(1, (render._dt || .016) * 8);   // smoothly raise the barrels to the aircraft, lower them back for ground work
+            if (um.gatEl) um.gatEl.rotation.z = u._gatPit;
+          }
           if (um.spades) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spades.rotation.z = -Math.max(0, Math.min(1, dep)) * 1.15; }   // the Paladin's spades dig in as it deploys
           if (um.spgGun) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spgGun.rotation.z = .2 + .82 * Math.max(0, Math.min(1, dep)); um.spgGun.position.x = .72 - (u.recoil || 0) * .3; } }   // the 155mm cranks high into the air to lob, and recoils along the barrel on fire
         if (u.order && u.order.lead && !d.fly) { const pl = G.players && G.players[u.owner || 0]; drawBanner(x, gy + u.r * K * .9, z, u.ang, 1.35 * FS, col3(pl && pl.color ? pl.color : '#7dffb2'), col3('#f2f2f2'), u.id); }   // convoy leader flies the pennant
