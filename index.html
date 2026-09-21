@@ -6270,7 +6270,7 @@ function killUnit(u) {
     // brew up: the blast instantly kills zombies in a radius that scales with the machine (ground vehicles ×2),
     // then a burning wreck smoulders and trails smoke downwind for a minute.
     const R = u.r * 2;
-    fxExplosion(u.x, u.y, u.def.heavy ? 82 : 56);
+    fxExplosion(u.x, u.y, u.def.heavy ? 82 : 56, null, null, 'tank');                          // a ground vehicle brews up with the same real explosion sound as an explosive (barrel / mine)
     fxCinematic(u.x, u.y, u.r * 1.5);                                                          // and the cinematic brew-up: fireball, dust column, burning debris — scaled 1.5× to the hull
     areaDamage(u.x, u.y, R, 999999, false, true);                 // zombies in the blast die instantly
     scorchDecal(u.x, u.y, R * .55);
@@ -6296,7 +6296,7 @@ function destroyBuilding(b) {
   b.dead = true;
   const drum = !!(b.def && b.def.drum);
   if (drum) {   // a red drum going up: a huge cook-off — 3× the blast radius, and every soul on foot inside it dies outright (armour rides it out). It chains into any drum / barrel beside it
-    fxExplosion(b.x, b.y, 60, '#ffb84a', '#ff5a1e'); if (typeof fxCinematic === 'function') fxCinematic(b.x, b.y, 15);
+    fxExplosion(b.x, b.y, 60, '#ffb84a', '#ff5a1e', 'tank'); if (typeof fxCinematic === 'function') fxCinematic(b.x, b.y, 15);
     if (typeof fxShellImpact === 'function') fxShellImpact(b.x, b.y, 54, .6); if (typeof addShake === 'function') addShake(b.x, b.y, 7);
     areaDamage(b.x, b.y, 54, 60, true, true, undefined, false, true);
   }
@@ -6579,7 +6579,7 @@ function updateProps(dt) {
   if (G.fuses && G.fuses.length) for (let i = G.fuses.length - 1; i >= 0; i--) {
     const f = G.fuses[i]; f.t -= dt;
     if (Math.random() < dt * 30) part('fire', f.x + rnd(-4, 4), f.y + rnd(-3, 3), rnd(-6, 6), rnd(-6, 6), rnd(.2, .45), rnd(3, 6), '#ffa030', { glow: 1, z: rnd(6, 16), vz: rnd(40, 90), g: -40 });
-    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 60, '#ffb84a', '#ff5a1e'); fxCinematic(f.x, f.y, 15); if (typeof fxShellImpact === 'function') fxShellImpact(f.x, f.y, 54, .6); if (typeof addShake === 'function') addShake(f.x, f.y, 7); areaDamage(f.x, f.y, 54, 60, true, true, undefined, false, true); }   // a map drum cooking off: the same lethal blast as a built one
+    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 60, '#ffb84a', '#ff5a1e', 'tank'); fxCinematic(f.x, f.y, 15); if (typeof fxShellImpact === 'function') fxShellImpact(f.x, f.y, 54, .6); if (typeof addShake === 'function') addShake(f.x, f.y, 7); areaDamage(f.x, f.y, 54, 60, true, true, undefined, false, true); }   // a map drum cooking off: the same lethal blast as a built one
   }
   // toppling trees: swing over, slam down, break into logs
   if (G.topples && G.topples.length) for (let i = G.topples.length - 1; i >= 0; i--) {
