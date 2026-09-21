@@ -3544,7 +3544,13 @@ const UDEF = {
     name: 'M2 Bradley', key: 'S', g: '🚐', hp: 720, spd: 92, r: 22, sight: 24 * 32, armor: 6, pop: 3, veh: true, carry: 16,
     cost: { s: 300, c: 260 }, time: 28, spr: 'stryker', tur: 'stryker_t', head: 1,
     wep: { dmg: 24, rng: 24 * 32, cd: .34, spread: .03, spd: 900, kind: 'shell', splash: 28, sfx: 'chain40', casings: 2 },
-    desc: 'Tracked infantry fighting vehicle: 25mm chain gun and a troop bay for 16. Right-click it with infantry selected to board; Unload deploys them around the ramp.'
+    // extra guns unlock with the Bradley's upgrades: a coaxial MG from the start, a TOW ground missile at Mk2, a Stinger air-to-air missile at Mk3
+    weps: [
+      { dmg: 10, rng: 24 * 32, cd: .09, spread: .05, spd: 1300, kind: 'bullet', sfx: 'mg', casings: 1, mag: 200, reload: 4.0, mount: [46, 4], tur: true, off: 0, mz: .2, coax: true, sustain: true },   // coaxial 7.62 beside the autocannon — rides the cannon's aim and works its target
+      { minTier: 2, dmg: 260, rng: 30 * 32, cd: 6.5, spread: .008, spd: 620, kind: 'rocket', sfx: 'hydra', splash: 1.6 * TS, casings: 0, mount: [8, -26], tur: true, off: 44, mz: .38 },                    // Mk2: TOW ground-to-ground guided missile (left cheek)
+      { minTier: 3, dmg: 190, rng: 34 * 32, cd: 5.5, spread: .006, spd: 1500, kind: 'rocket', sfx: 'hydra', splash: 26, casings: 0, mount: [8, 26], tur: true, off: 44, mz: .5, air: true, airOnly: true }    // Mk3: Stinger air-to-air missile (right cheek) — engages hostile aircraft only
+    ],
+    desc: 'Tracked infantry fighting vehicle: 25mm chain gun with a coaxial MG, and a troop bay for 16. Upgrades add a TOW ground missile (Mk2) and a Stinger air-to-air missile (Mk3), plus applique armour. Right-click it with infantry selected to board; Unload deploys them around the ramp.'
   },
   abrams: {
     name: 'M1 Abrams', key: 'M', g: '🛡️', hp: 1250, spd: 68, r: 26, sight: 32 * 32, armor: 11, pop: 4, veh: true,
@@ -5183,9 +5189,10 @@ function nearestBuilding(x, y, rings) {
 /* Which upgrade track a unit belongs to (upgraded at its production building) */
 function unitCat(t) { const d = UDEF[t]; if (!d) return 'inf'; return d.fly ? 'air' : d.veh ? 'veh' : 'inf'; }
 /* a unit's tier is the best of its category line (Infantry / Vehicles / Aircraft) and its own per-type upgrade bought at the producing building */
-function tierOfT(t) { const cat = unitCat(t), c = (G.tier && G.tier[cat]) || 1, s = (G.utier && G.utier[t]) || 1; return Math.min(cat === 'inf' ? 4 : 3, Math.max(c, s)); }   // infantry field an elite Mk4; vehicles/aircraft cap at Mk3
+function tierCap(t) { return unitCat(t) === 'inf' ? 4 : ((t === 'abrams' || t === 'stryker') ? 5 : 3); }   // the Abrams and the Bradley go to Mk5; other vehicles/aircraft cap at Mk3, infantry at Mk4
+function tierOfT(t) { const cat = unitCat(t), c = (G.tier && G.tier[cat]) || 1, s = (G.utier && G.utier[t]) || 1; return Math.min(tierCap(t), Math.max(c, s)); }
 function tierOf(u) { return (u && u.t) ? tierOfT(u.t) : 1; }
-const TIER_DMG = [1, 1.35, 1.8, 2.3], TIER_HP = [1, 1.4, 1.9, 2.5];   // Mk4: elite infantry — hardest-hitting, toughest
+const TIER_DMG = [1, 1.35, 1.8, 2.3, 2.85], TIER_HP = [1, 1.4, 1.9, 2.5, 3.2];   // Mk4: elite infantry; Mk5 (Abrams only): the apex main battle tank
 const TIER_SPG_RNG = [1, 1.2, 1.4];    // SPG tier range bonus: +20% / +40% (longer barrel / better fire-control)
 const TIER_SPG_SPLASH = [1, 1.22, 1.5]; // SPG tier splash bonus: +22% / +50% (improved shell design)
 const dmgMul = u => (1 + (G.up.rifling ? .18 : 0)) * TIER_DMG[(tierOf(u) - 1) | 0];
@@ -8351,6 +8358,13 @@ function callBigDrop() {
 
 /* ==================== TARGETING ==================== */
 function findEnemy(x, y, range, minRange, airOk) { return findEnemyExcept(x, y, range, minRange, null, airOk); }
+/* nearest HOSTILE AIRCRAFT in range — for air-to-air weapons (the Bradley's Mk3 Stinger). Air enemies are other teams' airframes (PvP / invaders). */
+function findAirEnemy(x, y, range) {
+  if (!G.players || G.players.length <= 1) return null;
+  const team = G.players[G.cur].team, ul = G.hUnits.near(x, y, range, _q3); let best = null, bd = range * range;
+  for (let i = 0; i < ul.length; i++) { const u = ul[i]; if (u.dead || u.inside || !u.def.fly || plyOf(u).team === team) continue; const d = dist2(u.x, u.y, x, y); if (d < bd) { bd = d; best = u; } }
+  return best;
+}
 /* nearest hostile structure of another team (PvP) */
 function nearestHostileBuilding(x, y, range, team) {
   let best = null, bd = range * range;
@@ -9662,11 +9676,12 @@ function findEnemyExcept(x, y, range, minRange, taken, airOk) {
 }
 function muzzleFor(u, i, w) {
   const hull = u.ang;   // mounts ride the airframe / hull, guns aim independently
+  const grow = (u.def.spr === 'abrams') ? Math.pow(1.1, (tierOf(u) - 1)) : 1;   // the Abrams model grows +10% per tier — the muzzle grows with it so the flash stays on the barrel tip
   let bx = u.x, by = u.y;
   if (w.mount) {
     if (w.tur && u.def.veh && u.aimT !== undefined) {
       // turret-mounted pintle: the mount sits on the turret (which has its own aim), the turret pivot sits on the hull
-      const vm = VMUZ[u.def.spr], tp = (VTUR[u.def.spr] || 0) * (vm ? u.r / .9 * vm[2] : 1), ta = u.aimT;
+      const vm = VMUZ[u.def.spr], tp = (VTUR[u.def.spr] || 0) * (vm ? u.r / .9 * vm[2] * grow : 1), ta = u.aimT;
       bx += Math.cos(hull) * tp + Math.cos(ta) * w.mount[0] - Math.sin(ta) * w.mount[1];
       by += Math.sin(hull) * tp + Math.sin(ta) * w.mount[0] + Math.cos(ta) * w.mount[1];
     } else {
@@ -9677,11 +9692,12 @@ function muzzleFor(u, i, w) {
   const a = u.aims[i];
   if (!w.mount && !u.def.veh && !u.def.fly) { const im = infMuzzle(u, a); if (im) return im; }   // a man on foot: the exact muzzle of the gun he is holding
   // aircraft guns leave the drawn nose; ground guns from the barrel offset
-  const off = w.off || (u.def.fly && AMUZ[u.def.spr] ? AMUZ[u.def.spr] : (u.def.veh ? u.r + 12 : u.r + 11));
+  let off = w.off || (u.def.fly && AMUZ[u.def.spr] ? AMUZ[u.def.spr] : (u.def.veh ? u.r + 12 : u.r + 11));
+  off *= grow;   // the Abrams' longer barrel at higher tiers pushes the muzzle out with the model
   // barrel height: each vehicle weapon leaves at the height of its own barrel on the drawn model
   let z = 0;
   if (u.def.fly) z = airZ(u);
-  else if (u.def.veh) { const vm = VMUZ[u.def.spr]; if (vm) z = (w.mz !== undefined ? w.mz : vm[1]) * (u.r / .9) * vm[2]; }
+  else if (u.def.veh) { const vm = VMUZ[u.def.spr]; if (vm) z = (w.mz !== undefined ? w.mz : vm[1]) * (u.r / .9) * vm[2] * grow; }
   return { x: bx + Math.cos(a) * off, y: by + Math.sin(a) * off, a, z };
 }
 
@@ -9732,6 +9748,8 @@ function updateWeapons(u, dt, order) {
   const C = (u.ctrl && u.ctrl.on && u.ctrl.u === u) ? u.ctrl : null;                        // direct control (gun camera): the player owns some of this vehicle's guns
   for (let i = 0; i < ws.length; i++) {
     const w = ws[i];
+    if (w.minTier && tierOf(u) < w.minTier) { u.tgts[i] = null; continue; }   // this gun unlocks at a higher upgrade tier (Bradley TOW at Mk2, Stinger at Mk3)
+    const wAir = canAir || !!w.air;                                           // a per-weapon air-to-air capability (the Bradley's Stinger)
     if (u.aims[i] === undefined) { u.aims[i] = u.ang; u.cds[i] = rnd(0, .3); u.ammos[i] = w.mag || 0; u.reloads[i] = 0; }
     u.cds[i] -= dt;
     if (u.reloads[i] > 0) {
@@ -9816,12 +9834,14 @@ function updateWeapons(u, dt, order) {
       continue;
     }
     let t = u.tgts[i];
+    if (w.airOnly && t && !(t.def && t.def.fly)) t = null;                          // an air-to-air launcher keeps only aircraft
     if (!(t && !t.dead && dist2(t.x, t.y, u.x, u.y) < r2 && taken.indexOf(t) < 0)) {
       const sr2 = i === 0 ? Math.max(rng, sr) : rng;
-      if (forced && dist2(forced.x, forced.y, u.x, u.y) < r2) t = forced;   // explicit order: every gun on it
+      if (w.airOnly) t = (forced && forced.def && forced.def.fly && dist2(forced.x, forced.y, u.x, u.y) < r2) ? forced : findAirEnemy(u.x, u.y, sr2);   // Stinger: hostile aircraft only
+      else if (forced && dist2(forced.x, forced.y, u.x, u.y) < r2) t = forced;   // explicit order: every gun on it
       else {
-        t = findEnemyExcept(u.x, u.y, sr2, w.minRng, taken, canAir);                // spread across separate targets...
-        if (!t) t = findEnemy(u.x, u.y, sr2, w.minRng, canAir);                     // ...but a lone target draws all guns
+        t = findEnemyExcept(u.x, u.y, sr2, w.minRng, taken, wAir);                // spread across separate targets...
+        if (!t) t = findEnemy(u.x, u.y, sr2, w.minRng, wAir);                     // ...but a lone target draws all guns
       }
     }
     u.tgts[i] = t;
@@ -14906,11 +14926,11 @@ function cardFor() {
       const ud = UDEF[t];
       // each unit's own upgrade rides ON its buy tile: hover the tile and a small green "⬆ Mk N" button slides out,
       // lit up and inviting when you can afford it (the separate per-unit upgrade rows are gone)
-      const cur = tierOfT(t), own = (G.utier && G.utier[t]) || 1, maxT = unitCat(t) === 'inf' ? 4 : 3, canUp = cur < maxT, uc = canUp ? unitTypeUpgradeCost(t, cur) : null;
+      const cur = tierOfT(t), own = (G.utier && G.utier[t]) || 1, maxT = (typeof tierCap === 'function' ? tierCap(t) : (unitCat(t) === 'inf' ? 4 : 3)), canUp = cur < maxT, uc = canUp ? unitTypeUpgradeCost(t, cur) : null;
       btns.push({
         g: unitIcon(t) || ud.g, n: ud.name, k: ud.key, cost: ud.cost, tip: ud.desc + '\n' + ud.hp + ' hp · ' + ud.wep.dmg + ' dmg · ' + Math.round(ud.wep.rng) + ' rng' + (canUp ? '\nHover → ⬆ upgrade only the ' + ud.name + ' to Mk ' + (cur + 1) + '.' : ''),
         dis: !affordable(ud.cost) || (!G.cheat.pop && G.pop + ud.pop > G.cap),
-        up: canUp ? { cur, cost: uc, dis: !affordable(uc), name: ud.name, fn: () => { if (!affordable(uc)) { AU.ui('no'); return; } pay(uc); G.utier[t] = Math.max(own, cur) + 1; applyUnitTier(null, t); alertMsg(ud.name + ' upgraded to Mk ' + (cur + 1), 'good'); AU.ui('ready'); refreshCard(true); } } : { maxed: true },
+        up: canUp ? { cur, cost: uc, dis: !affordable(uc), name: ud.name, fn: () => { if (!affordable(uc)) { AU.ui('no'); return; } pay(uc); G.utier[t] = Math.max(own, cur) + 1; applyUnitTier(null, t); alertMsg(ud.name + ' upgraded to Mk ' + (cur + 1), 'good'); AU.ui('ready'); refreshCard(true); } } : { maxed: true, maxMk: maxT },
         fn: () => {
           if (!G.cheat.pop && G.pop + ud.pop > G.cap) { alertMsg('Population cap reached — build more structures', ''); AU.ui('no'); return; }
           if (!affordable(ud.cost)) { AU.ui('no'); return; }
@@ -15237,7 +15257,7 @@ function refreshCard(force) {
       up.onclick = e => { e.stopPropagation(); if (can && b.up.fn) { b.up.fn(); pulseCard('up'); } else AU.ui('no'); };
       up.onmouseenter = e => { e.stopPropagation(); };
       el.appendChild(up);
-    } else if (b.up && b.up.maxed) { const mk = document.createElement('div'); mk.className = 'upb max'; el.classList.add('has-up'); mk.innerHTML = '★ Mk3 MAX'; el.appendChild(mk); }
+    } else if (b.up && b.up.maxed) { const mk = document.createElement('div'); mk.className = 'upb max'; el.classList.add('has-up'); mk.innerHTML = '★ Mk' + (b.up.maxMk || 3) + ' MAX'; el.appendChild(mk); }
     el.onclick = e => { e.stopPropagation(); if (!b.dis && b.fn) { const _scr = UI._screen; pokeBtn(el); b.fn(); if (UI._screen === _scr) pulseCard('buy'); } else if (b.dis) AU.ui('no'); };   // flash the panel only for an in-place action (a buy); a menu-navigation click changes the screen, so skip the flash — that surge read as an annoying flick
     el.onmouseenter = () => showTip(el, b);
     el.onmouseleave = hideTip;
@@ -16171,7 +16191,7 @@ function ctrlHudTick(dt) {
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;   // a touch brighter for the warm HD-2D look
-  const scene3 = new THREE.Scene(); scene3.background = new THREE.Color(0xb8c8d8); scene3.fog = new THREE.Fog(0xb8c8d8, 80, 260);
+  const scene3 = new THREE.Scene(); scene3.background = new THREE.Color(0xb8c8d8); scene3.fog = new THREE.Fog(0xb8c8d8, 74, 300);   // haze starts a little nearer and fades out further — more aerial depth between the foreground and the map edge
   /* HD reflections: a small procedural sky (blue zenith, warm haze at the horizon, dark ground) run through PMREM and set as
      the scene environment, so every metal/glossy surface — hulls, glass, roofs, wet concrete — picks up a real reflection */
   (function () {
@@ -16188,9 +16208,9 @@ function ctrlHudTick(dt) {
     } catch (e) { console.warn('env map skipped', e); }
   })();
   const cam3 = new THREE.PerspectiveCamera(40, 1, .3, 900);
-  const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x4a5a30, .5); scene3.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1d6, 1.3); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 1, far: 220 }); sun.shadow.bias = -.0005; sun.shadow.normalBias = .03;
+  const hemi = new THREE.HemisphereLight(0xc2d6ff, 0x554a2e, .46); scene3.add(hemi);   // a touch cooler sky, warmer ground bounce, and a hair dimmer so the sun's shadows read with more contrast
+  const sun = new THREE.DirectionalLight(0xffeecb, 1.44); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 4;   // warmer, stronger key light; radius gives PCF a soft penumbra instead of a hard shadow edge
+  Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 1, far: 220 }); sun.shadow.bias = -.0004; sun.shadow.normalBias = .028;
   scene3.add(sun); scene3.add(sun.target);
   const LIGHTS = []; for (let i = 0; i < 12; i++) { const L = new THREE.PointLight(0xffffff, 0, 10, 2); scene3.add(L); LIGHTS.push(L); }
 
@@ -16290,8 +16310,8 @@ function ctrlHudTick(dt) {
       ' c += b * kb + r * kr * vec3(1.0, .93, .78);',
       ' c = c / (1.0 + max(vec3(0.0), c - 1.0) * .35);',
       // cinematic grade: a touch more contrast and saturation, warm highlights against cool shadows, soft vignette, fine film grain
-      ' float l = dot(c, vec3(.2126, .7152, .0722)); c = mix(vec3(l), c, 1.12); c = (c - .5) * 1.06 + .5;',
-      ' c += (l - .45) * vec3(.05, .015, -.05); c = max(c, 0.0);',
+      ' float l = dot(c, vec3(.2126, .7152, .0722)); c = mix(vec3(l), c, 1.17); c = (c - .5) * 1.085 + .5;',
+      ' c += (l - .45) * vec3(.06, .018, -.055); c = max(c, 0.0);',
       ' float vg = smoothstep(.45, 1.25, length((vUv - .5) * vec2(1.25, 1.0)) * 1.55); c *= 1.0 - vg * .28;',
       ' c += (hsh(vUv * 1731.0 + fract(uT) * 7.0) - .5) * uGrain;',
       ' gl_FragColor = vec4(mix(pow(c, vec3(1.0 / 2.4)) * 1.055 - .055, c * 12.92, vec3(lessThanEqual(c, vec3(.0031308)))), 1.0); }'].join('\n'),
@@ -16380,7 +16400,7 @@ function ctrlHudTick(dt) {
     '   vec2 uv = clamp(vUv + o * vec2(uTexel.x / uTexel.y, 1.0), 0.0, 1.0);',   // a round kernel on screen (uTexel.x/uTexel.y = h/w)
     '   vec3 V = vpos(uv) - P; float vv = dot(V, V);',
     '   occ += max(0.0, dot(N, V) - 0.015 * z) / (vv + 0.02) * (1.0 - smoothstep(r2, r2 * 4.0, vv)); }',
-    ' float ao = clamp(1.0 - occ * (1.15 / 12.0) * uRad, 0.0, 1.0); ao = pow(ao, 1.3);',
+    ' float ao = clamp(1.0 - occ * (1.15 / 12.0) * uRad, 0.0, 1.0); ao = pow(ao, 1.55);',
     ' gl_FragColor = vec4(vec3(ao), 1.0); }'].join('\n'),
     { tDepth: { value: null }, uPInv: { value: new THREE.Matrix4() }, uScale: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1, 1) }, uRad: { value: 1.4 }, uNear: { value: .3 }, uFar: { value: 900 } });
   FXM.aoBlur = fxMat(['uniform sampler2D tex; uniform vec2 uTexel; varying vec2 vUv;',
@@ -16410,7 +16430,12 @@ function ctrlHudTick(dt) {
     ' vec3 rgbA = 0.5 * (texture2D(tex, vUv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tex, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);',
     ' vec3 rgbB = rgbA * 0.5 + 0.25 * (texture2D(tex, vUv + dir * -0.5).rgb + texture2D(tex, vUv + dir * 0.5).rgb);',
     ' float lB = lum(rgbB);',
-    ' gl_FragColor = vec4(grain((lB < lMin || lB > lMax) ? rgbA : rgbB), 1.0); }'].join('\n'),
+    ' vec3 res = (lB < lMin || lB > lMax) ? rgbA : rgbB;',
+    // subpixel pass: where the centre pixel differs from its neighbourhood average (fine, sub-pixel detail — grass tips, thin barrels), blend gently toward a 5-tap low-pass so it stops crawling frame to frame
+    ' float lAvg = (lNW + lNE + lSW + lSE) * 0.25; float subpix = clamp(abs(lAvg - lM) / max(1e-4, lMax - lMin), 0.0, 1.0);',
+    ' vec3 lp = (rgbM + texture2D(tex, vUv + vec2(0.0, -uTexel.y)).rgb + texture2D(tex, vUv + vec2(0.0, uTexel.y)).rgb + texture2D(tex, vUv + vec2(-uTexel.x, 0.0)).rgb + texture2D(tex, vUv + vec2(uTexel.x, 0.0)).rgb) * 0.2;',
+    ' res = mix(res, lp, subpix * 0.35);',
+    ' gl_FragColor = vec4(grain(res), 1.0); }'].join('\n'),
     { tex: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) }, uT: { value: 0 } });
   FX.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), FXM.comp); FX.quad.frustumCulled = false;
   const FX_SCENE = new THREE.Scene(); FX_SCENE.add(FX.quad);
@@ -16457,10 +16482,10 @@ function ctrlHudTick(dt) {
     const aoOn = FX_DEPTH_OK && FX.rt.depthTexture && FX.ao !== false && !(typeof UI !== 'undefined' && UI.ctrl && UI.ctrl.filt < 2);   // the thermal/IR video sees no shading
     if (aoOn) {
       const A = FXM.ao.uniforms; A.tDepth.value = FX.rt.depthTexture; A.uPInv.value.copy(cam3.projectionMatrixInverse);
-      A.uScale.value.set(sw / FX.w, sh / FX.h); A.uTexel.value.set(1 / FX.rtO.width, 1 / FX.rtO.height); A.uRad.value = FX.aoRad || 1.4;
+      A.uScale.value.set(sw / FX.w, sh / FX.h); A.uTexel.value.set(1 / FX.rtO.width, 1 / FX.rtO.height); A.uRad.value = FX.aoRad || 1.75;
       fxPass(FXM.ao, FX.rtO);
       FXM.aoBlur.uniforms.tex.value = FX.rtO.texture; FXM.aoBlur.uniforms.uTexel.value.set(1 / FX.rtO.width, 1 / FX.rtO.height); fxPass(FXM.aoBlur, FX.rtO2);
-      FXM.comp.uniforms.tAO.value = FX.rtO2.texture; FXM.comp.uniforms.kao.value = FX.aoK === undefined ? .8 : FX.aoK;
+      FXM.comp.uniforms.tAO.value = FX.rtO2.texture; FXM.comp.uniforms.kao.value = FX.aoK === undefined ? .92 : FX.aoK;
     } else { FXM.comp.uniforms.kao.value = 0; FXM.comp.uniforms.tAO.value = FX.rtO2 ? FX.rtO2.texture : null; }
     FXM.bright.uniforms.tex.value = rt.texture; fxPass(FXM.bright, FX.rtA);
     for (let i = 0; i < 2; i++) {
@@ -16523,7 +16548,7 @@ function ctrlHudTick(dt) {
   const elevV = (vx, vy) => baseElev(vx, vy) + ((CRAT && vx >= 0 && vy >= 0 && vx < VW && vy < VH) ? CRAT[vIdx(vx, vy)] : 0);
   const elevAtW = (x, y) => { const fx = x * K * RES, fy = y * K * RES; const x0 = Math.floor(fx), y0 = Math.floor(fy), u = fx - x0, v = fy - y0; const a = elevV(x0, y0), b = elevV(x0 + 1, y0), c = elevV(x0, y0 + 1), d = elevV(x0 + 1, y0 + 1); return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v; };
   const groundY = (x, y) => Math.max(elevAtW(x, y), -.06);          // entities never sink below the water surface
-  const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .105, envMapIntensity: .65 });   // the ground takes only a little sky bounce, so the HD sheen stays on the models
+  const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, bumpMap: TEX.bump, bumpScale: .14, envMapIntensity: .72 });   // a touch more surface grain and sky sheen so the ground catches the light instead of reading flat
   terrMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, { tGrass: { value: TEX.grass }, tSand: { value: TEX.sand }, tRock: { value: TEX.rock }, tRoad: { value: TEX.road }, tDirt: { value: TEX.dirt }, uWet: { value: 0 } });
     terrMat.userData.sh = sh;   // kept so the rain system can drive uWet every frame
@@ -17690,8 +17715,9 @@ function ctrlHudTick(dt) {
   /* a thin tapered flying surface from a planform polygon: 'xz' = wing/tailplane (points are x,z at height y0), 'xy' = fin (points are x,y at depth z0) */
   const plate = (pts, th, material, plane, y0, z0) => { const sh = new THREE.Shape(); pts.forEach((p, i) => i ? sh.lineTo(p[0], p[1]) : sh.moveTo(p[0], p[1])); const geo = new THREE.ExtrudeGeometry(sh, { depth: th, bevelEnabled: false }); const m = shadowed(new THREE.Mesh(geo, material)); if (plane === 'xz') { m.rotation.x = HPI; m.position.y = (y0 || 0) + th / 2; } else { m.position.z = (z0 || 0) - th / 2; } return m; };
   const sph = (r, material, x, y, z, sx, sy, sz) => { const m = shadowed(new THREE.Mesh(new THREE.SphereGeometry(r, 12, 9), material)); m.position.set(x, y, z); if (sx) m.scale.set(sx, sy, sz); return m; };
-  const HULL = matFor('#6d6a48', PANEL), OLIVE = matFor('#5c6644', PANEL), GREY = matFor('#7a8088', PANEL), LGREY = matFor('#9aa0a8', PANEL), TRACK = matFor('#1e2022', { roughness: .7, metalness: .4 }), TIRE = matFor('#17181a', { roughness: .85 }), BARREL = matFor('#24262a', { metalness: .75, roughness: .3 }), GLASS = matFor('#1c3444', { roughness: .06, metalness: .8, envMapIntensity: 1.6 }), ROTOR = new THREE.MeshBasicMaterial({ color: 0x1a1c1e, transparent: true, opacity: .4, side: THREE.DoubleSide }), RIM = matFor('#3a3c40', { metalness: .5, roughness: .5 }), SLAT = matFor('#3d4238', { roughness: .8, metalness: .3 });
+  const HULL = matFor('#cabd93', PANEL), OLIVE = matFor('#5c6644', PANEL), GREY = matFor('#7a8088', PANEL), LGREY = matFor('#9aa0a8', PANEL), TRACK = matFor('#1e2022', { roughness: .7, metalness: .4 }), TIRE = matFor('#17181a', { roughness: .85 }), BARREL = matFor('#24262a', { metalness: .75, roughness: .3 }), GLASS = matFor('#1c3444', { roughness: .06, metalness: .8, envMapIntensity: 1.6 }), ROTOR = new THREE.MeshBasicMaterial({ color: 0x1a1c1e, transparent: true, opacity: .4, side: THREE.DoubleSide }), RIM = matFor('#3a3c40', { metalness: .5, roughness: .5 }), SLAT = matFor('#3d4238', { roughness: .8, metalness: .3 });
   const wheel = (g, r, w, x, y, z) => { g.add(cyl(r, r, w, TIRE, x, y, z, 'z')); g.add(cyl(r * .55, r * .55, w * 1.05, RIM, x, y, z, 'z')); };
+  const bLoY = (y) => .40 + (y - .40) * (2 / 3), bLoH = (h) => h * (2 / 3);   // Bradley: lower the hull superstructure to 2/3 its height above the running gear (which stays on the ground)
   function mkVehicle(spr, tier) {
     const g = new THREE.Group(), tur = new THREE.Group(); let rotor = null, props = null, tails = null; tier = tier || 1;
     const BLADE = matFor('#1d1f22', { roughness: .7, metalness: .3 });
@@ -17710,12 +17736,31 @@ function ctrlHudTick(dt) {
     };
     // models face +x (east) like the 2D sprites; sizes in tiles
     if (spr === 'abrams') {
-      for (const s of [-1, 1]) { g.add(box(2.9, .42, .5, TRACK, 0, .24, s * .85)); for (let i = 0; i < 7; i++) g.add(cyl(.17, .17, .52, RIM, -1.2 + i * .4, .2, s * .85, 'z')); g.add(box(2.7, .28, .08, HULL, 0, .58, s * 1.06)); }   // tracks, road wheels, skirts
-      g.add(box(2.7, .4, 1.5, HULL, -.1, .62, 0)); g.add(box(.95, .34, 1.5, HULL, 1.3, .66, 0, 0, 0, -.45)); g.add(box(.7, .06, 1.3, TRACK, -1.0, .84, 0));
+      for (const s of [-1, 1]) {
+        g.add(box(2.9, .42, .5, TRACK, 0, .24, s * .85)); g.add(box(2.74, .06, .48, TRACK, 0, .5, s * .85));                                        // lower track run + the top run over the rollers
+        for (let i = 0; i < 7; i++) { g.add(cyl(.17, .17, .52, RIM, -1.2 + i * .4, .2, s * .85, 'z')); g.add(cyl(.1, .1, .54, TIRE, -1.2 + i * .4, .2, s * .85, 'z')); }   // seven road wheels with rubber tyres
+        g.add(cyl(.16, .16, .54, RIM, 1.5, .28, s * .85, 'z')); for (let t = 0; t < 9; t++) { const a = t / 9 * TAU; g.add(box(.05, .05, .5, TRACK, 1.5 + Math.cos(a) * .16, .28 + Math.sin(a) * .16, s * .85)); }   // front drive sprocket + teeth
+        g.add(cyl(.14, .14, .52, RIM, -1.45, .26, s * .85, 'z'));                                                                                   // rear idler
+        for (let i = 0; i < 3; i++) g.add(cyl(.055, .055, .46, RIM, -.8 + i * .8, .46, s * .85, 'z'));                                               // return rollers
+        g.add(box(2.8, .3, .07, HULL, -.05, .6, s * 1.06)); for (let i = 0; i < 6; i++) g.add(box(.02, .24, .08, TRACK, -1.15 + i * .44, .58, s * 1.1));   // panelled side skirt + panel seams
+        g.add(box(.46, .34, .1, TRACK, -1.5, .34, s * 1.02)); g.add(box(.46, .32, .1, TRACK, 1.56, .36, s * 1.0));                                  // rear + front mud flaps
+      }
+      g.add(box(2.7, .4, 1.5, HULL, -.1, .62, 0)); g.add(box(2.66, .04, 1.46, matFor('#b8ac7e', PANEL), -.1, .84, 0));                              // hull + deck plate
+      g.add(box(.95, .34, 1.5, HULL, 1.3, .66, 0, 0, 0, -.45)); g.add(box(.5, .22, 1.48, HULL, 1.72, .44, 0, 0, 0, -.3));                            // sloped glacis + lower nose
+      g.add(box(.7, .06, 1.3, TRACK, -1.0, .84, 0));                                                                                                 // rear deck grille
+      for (const s of [-1, 1]) { g.add(box(.1, .1, .12, matFor('#e8e4c8', { emissive: lin('#fff2c0'), emissiveIntensity: .3 }), 1.8, .6, s * .5)); g.add(box(.03, .18, .2, TRACK, 1.88, .62, s * .5)); }   // headlights in brush guards
+      g.add(cyl(.16, .16, .05, HULL, 1.2, .87, .42, 'y')); g.add(box(.1, .04, .18, TRACK, 1.2, .9, .42));                                            // driver's hatch + periscope
+      for (const s of [-1, 1]) { g.add(cyl(.02, .02, 1.4, TRACK, -.2, .86, s * .55, 'x')); g.add(box(.16, .1, .18, TRACK, -1.35, .78, s * .5)); }     // tow cable slung along the deck + rear stowage bins
+      g.add(box(.5, .2, .5, matFor('#2a2c2a', { roughness: .9 }), -1.42, .68, 0)); for (let i = 0; i < 4; i++) g.add(box(.02, .16, .44, TRACK, -1.32 + i * .05, .68, 0));   // rear exhaust louvers
+      for (const s of [-1, 1]) for (let i = 0; i < 3; i++) g.add(box(.02, .04, .12, TRACK, -.5 + i * .5, .84, s * .66));                             // deck grab handles
       tur.position.set(-.1, .82, 0);
       tur.add(box(1.5, .42, 1.3, HULL, 0, .21, 0)); tur.add(box(.55, .4, 1.1, HULL, .78, .2, 0, 0, 0, -.5)); tur.add(box(.55, .3, 1.3, SLAT, -.95, .3, 0));   // body, sloped front, bustle rack
       tur.add(box(.34, .3, .42, HULL, .82, .2, 0)); tur.add(cyl(.065, .075, 2.2, BARREL, 1.85, .24, 0, 'x')); tur.add(cyl(.1, .1, .3, BARREL, 1.45, .24, 0, 'x')); tur.add(cyl(.022, .022, .55, BARREL, 1.0, .2, .2, 'x')); tur.add(box(.08, .09, .09, TRACK, .96, .2, .2));   // coaxial 7.62 beside the main gun, fixed in the mantlet   // bore ends exactly at the sim's 82 px muzzle      // mantlet, gun, bore evacuator
       tur.add(cyl(.2, .2, .1, HULL, -.3, .47, .32, 'y')); tur.add(cyl(.17, .17, .08, HULL, -.25, .46, -.35, 'y'));                                                     // hatches
+      tur.add(box(.5, .04, 1.0, matFor('#a89c72', PANEL), -.95, .47, 0)); for (let i = 0; i < 3; i++) tur.add(box(.44, .05, .02, TRACK, -.95, .5, -.4 + i * .4));   // turret-roof ammo blow-off panels with seams
+      for (const s of [-1, 1]) { tur.add(box(.9, .26, .06, SLAT, -.95, .16, s * .6)); tur.add(box(.5, .16, .12, matFor('#6b7552', { roughness: .95 }), -.95, .32, s * .58)); }   // bustle-rack side baskets with stowed tarps
+      tur.add(cyl(.012, .012, .5, TRACK, .55, .55, .5, 'y')); tur.add(sph(.03, matFor('#3a3f3c', PANEL), .55, .82, .5));                             // wind sensor mast on the roof
+      for (let i = 0; i < 4; i++) tur.add(box(.28, .02, .02, TRACK, -.4 + i * .34, .43, .62));                                                       // weld-seam / grab-rail detail on the cheek
       /* the two roof machine guns each ride their own pintle group so they slew independently of the turret (sim: allWeps[1] loader side −z, allWeps[2] commander side +z).
          Commander's cupola: a soldier up in the hatch on an M2 .50 with its ammo can; loader's side: an automatic remote weapon station that slews on its own. */
       const pintle = (x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); tur.add(p); return p; };
@@ -17736,20 +17781,38 @@ function ctrlHudTick(dt) {
       tur.add(cyl(.008, .008, 1.0, TRACK, -.6, .9, -.5, 'y'));
     } else if (spr === 'stryker') {
       // M2 Bradley: tall aluminium hull with a sloped glacis, tracks with six road wheels, skirts, offset turret with 25mm + TOW box, rear ramp
-      const ALU = matFor('#6b7250', PANEL), ALUD = matFor('#565c40', PANEL);
-      for (const sd of [-1, 1]) { g.add(box(2.6, .4, .46, TRACK, 0, .23, sd * .78)); for (let i = 0; i < 6; i++) g.add(cyl(.16, .16, .48, RIM, -1.05 + i * .42, .2, sd * .78, 'z')); g.add(cyl(.12, .12, .5, RIM, 1.25, .26, sd * .78, 'z')); g.add(box(2.5, .34, .06, ALUD, .05, .5, sd * 1.0)); }
-      g.add(box(2.5, .55, 1.5, ALU, -.05, .68, 0)); g.add(box(.9, .5, 1.5, ALU, 1.2, .7, 0, 0, 0, -.55));                        // hull + glacis
-      g.add(box(2.2, .32, 1.44, ALU, -.2, 1.1, 0)); g.add(box(.5, .34, 1.4, ALUD, -1.35, .78, 0, 0, 0, .35));                    // upper hull, rear ramp
-      for (let i = 0; i < 3; i++) g.add(box(.36, .18, .14, ALUD, -.9 + i * .5, 1.0, .82));                                        // stowage bins
-      g.add(cyl(.008, .008, 1.1, TRACK, -1.0, 1.7, -.5, 'y')); g.add(box(.12, .04, .16, TRACK, 1.3, 1.0, -.5));                    // antenna, driver's hatch
-      tur.position.set(.15, 1.26, .12);
+      const ALU = matFor('#cabd93', PANEL), ALUD = matFor('#b3a879', PANEL), ALUL = matFor('#d8cca2', PANEL);   // light desert tan
+      for (const sd of [-1, 1]) {
+        g.add(box(2.6, .4, .46, TRACK, 0, .23, sd * .78)); g.add(box(2.44, .05, .44, TRACK, 0, .47, sd * .78));                            // lower track run + the top run over the rollers
+        for (let i = 0; i < 6; i++) { g.add(cyl(.16, .16, .48, RIM, -1.05 + i * .42, .2, sd * .78, 'z')); g.add(cyl(.095, .095, .5, TIRE, -1.05 + i * .42, .2, sd * .78, 'z')); }   // six road wheels with rubber tyres
+        g.add(cyl(.13, .13, .5, RIM, 1.35, .28, sd * .78, 'z')); for (let t = 0; t < 8; t++) { const a = t / 8 * TAU; g.add(box(.04, .04, .46, TRACK, 1.35 + Math.cos(a) * .13, .28 + Math.sin(a) * .13, sd * .78)); }   // front drive sprocket + teeth
+        g.add(cyl(.12, .12, .48, RIM, -1.3, .24, sd * .78, 'z'));                                                                          // rear idler
+        for (let i = 0; i < 2; i++) g.add(cyl(.05, .05, .44, RIM, -.5 + i * .9, .44, sd * .78, 'z'));                                       // return rollers
+        g.add(box(2.5, .32, .06, ALUD, .05, .5, sd * 1.0)); for (let i = 0; i < 6; i++) g.add(box(.02, .26, .06, TRACK, -1.0 + i * .42, .5, sd * 1.03));   // panelled side skirt + panel seams
+        g.add(box(.42, .3, .09, TRACK, -1.42, .34, sd * .96)); g.add(box(.4, .28, .09, TRACK, 1.5, .36, sd * .95));                          // rear + front mud flaps
+      }
+      g.add(box(2.5, bLoH(.55), 1.5, ALU, -.05, bLoY(.68), 0)); g.add(box(2.44, .04, 1.46, ALUL, -.05, bLoY(.96), 0));                        // hull + deck plate (hull lowered to 2/3 height)
+      g.add(box(.9, bLoH(.5), 1.5, ALU, 1.2, bLoY(.7), 0, 0, 0, -.55)); g.add(box(.45, bLoH(.26), 1.48, ALU, 1.62, bLoY(.5), 0, 0, 0, -.35));   // sloped glacis + lower nose
+      g.add(box(2.2, bLoH(.32), 1.44, ALU, -.2, bLoY(1.1), 0)); g.add(box(.5, bLoH(.34), 1.4, ALUD, -1.35, bLoY(.78), 0, 0, 0, .35));         // upper hull, rear ramp
+      g.add(cyl(.14, .14, .05, ALU, 1.15, bLoY(1.13), .45, 'y')); g.add(box(.1, .04, .16, TRACK, 1.15, bLoY(1.16), .45));                     // driver's hatch (front-left) + periscope
+      for (let i = 0; i < 3; i++) g.add(box(.08, .03, .05, GLASS, 1.35, bLoY(1.14), .25 + i * .18, 0, .2 * (i - 1), 0));                       // driver's vision blocks
+      for (const sd of [-1, 1]) { g.add(box(.1, .12, .14, matFor('#e8e4c8', { emissive: lin('#fff2c0'), emissiveIntensity: .3 }), 1.66, bLoY(.64), sd * .5)); g.add(box(.03, .2, .22, TRACK, 1.74, bLoY(.66), sd * .5)); }   // headlights in brush guards
+      for (let i = 0; i < 4; i++) g.add(box(.34, .18, .14, ALUD, -.95 + i * .42, bLoY(1.0), .82));                                            // side stowage bins
+      g.add(box(.5, .2, .5, matFor('#6b7552', { roughness: .95 }), -1.4, bLoY(1.02), .5));                                                    // rolled cargo tarp lashed to the rear deck
+      for (const sd of [-1, 1]) g.add(cyl(.008, .008, 1.2, TRACK, -1.05, bLoY(1.75), sd * .5, 'y'));                                          // twin whip antennas
+      tur.position.set(-.15, bLoY(1.26), .12);   // turret set slightly back of centre so the deck reads ~30% ahead / ~20% behind, and dropped with the lowered hull
       tur.add(box(.9, .34, .8, ALU, 0, .17, 0)); tur.add(box(.4, .3, .7, ALU, .55, .15, 0, 0, 0, -.5)); tur.add(cyl(.16, .16, .1, ALU, -.2, .39, .2, 'y'));   // turret, mantlet slope, cupola
       tur.add(cyl(.035, .04, 1.35, BARREL, 1.05, .2, .1, 'x')); tur.add(cyl(.02, .02, .9, BARREL, .8, .2, -.08, 'x'));                                    // 25mm chain gun + coax
       tur.add(box(.55, .22, .3, ALUD, -.05, .32, -.55, 0, 0, .12)); tur.add(box(.5, .18, .26, ALUD, -.05, .34, -.55, 0, 0, .12));                        // TOW launcher box (left)
       for (const zz of [-.3, .3]) for (let i = 0; i < 2; i++) tur.add(cyl(.028, .028, .09, TRACK, .45 - i * .07, .3, zz * 1.4, 'x'));                    // smoke launchers
+      tur.add(box(.9, .04, .78, ALUL, 0, .37, 0));                                                                                          // turret roof plate
+      tur.add(cyl(.06, .06, .18, BARREL, .58, .2, .1, 'x'));                                                                                // 25mm muzzle collar
+      tur.add(cyl(.16, .16, .18, ALUD, -.18, .42, .26, 'y')); tur.add(cyl(.12, .12, .05, matFor('#1c3444', { roughness: .1, metalness: .7 }), -.02, .43, .26, 'z'));   // commander's round GPS sight drum + glass face
+      tur.add(box(.22, .24, .26, ALUD, .28, .34, -.16)); tur.add(box(.04, .16, .18, matFor('#1c3444', { roughness: .1, metalness: .7 }), .41, .36, -.16));            // gunner's ISU thermal sight + window
     } else if (spr === 'humvee') {
+      const TANH = matFor('#cabd93', PANEL);   // light desert tan
       for (let i = 0; i < 2; i++) for (const s of [-1, 1]) wheel(g, .21, .2, -.6 + i * 1.25, .21, s * .55);
-      g.add(box(1.95, .34, 1.05, OLIVE, 0, .42, 0)); g.add(box(.75, .28, 1.0, OLIVE, .6, .74, 0)); g.add(box(1.05, .42, .96, OLIVE, -.15, .86, 0));
+      g.add(box(1.95, .34, 1.05, TANH, 0, .42, 0)); g.add(box(.75, .28, 1.0, TANH, .6, .74, 0)); g.add(box(1.05, .42, .96, TANH, -.15, .86, 0));
       g.add(box(.05, .3, .84, GLASS, .4, .92, 0, 0, 0, -.3)); for (const s of [-1, 1]) g.add(box(.6, .22, .03, GLASS, -.15, .94, s * .49));
       g.add(box(.08, .3, 1.0, SLAT, 1.03, .5, 0)); g.add(cyl(.2, .2, .1, TIRE, -.98, .78, 0, 'x')); g.add(cyl(.008, .008, .8, TRACK, -.6, 1.4, .4, 'y'));                    // brush guard, spare, antenna
       tur.position.set(-.1, 1.08, 0); tur.add(cyl(.17, .17, .06, TRACK, 0, 0, 0, 'y')); tur.add(cyl(.03, .04, .8, BARREL, .45, .1, 0, 'x')); tur.add(box(.14, .12, .1, TRACK, .05, .1, 0)); tur.add(box(.04, .22, .3, SLAT, .12, .18, 0));
@@ -17933,13 +17996,49 @@ function ctrlHudTick(dt) {
     if (tier >= 2) {
       const t3 = tier >= 3, ERA = matFor(t3 ? '#5a6266' : '#4a5248', { metalness: .35, roughness: .6 }), DKM = matFor('#1a1c1e', { metalness: .5, roughness: .4 }), ACC = matFor(t3 ? '#e8c85a' : '#c9cf8a'), SENS = matFor('#5ad0ff', { emissive: lin('#3ab0ff'), emissiveIntensity: 1.2 });
       if (spr === 'abrams') {
-        for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) tur.add(box(.26, .22, .08, ERA, -.55 + i * .36, .2, sd * .68));                       // ERA tiles on the turret cheeks
+        const t4 = tier >= 4, t5 = tier >= 5;
+        for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) tur.add(box(.26, .22, .08, ERA, -.55 + i * .36, .2, sd * .68));                       // Mk2: ERA tiles on the turret cheeks
         tur.add(box(.9, .03, .12, ACC, -.2, .43, -.45));                                                                                           // turret-roof ID stripe
-        if (t3) { for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) g.add(box(.42, .22, .06, ERA, -1.1 + i * .5, .5, sd * 1.09)); g.userData.mgs[0].add(box(.3, .16, .26, ERA, .1, .24, 0)); tur.add(box(.3, .1, .3, DKM, .2, .5, 0)); }   // TUSK skirts, armour plate on the weapon station, commander's sight
+        if (t3) { for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) g.add(box(.42, .22, .06, ERA, -1.1 + i * .5, .5, sd * 1.09)); g.userData.mgs[0].add(box(.3, .16, .26, ERA, .1, .24, 0)); tur.add(box(.3, .1, .3, DKM, .2, .5, 0)); }   // Mk3: TUSK hull skirts, armour plate on the weapon station, commander's sight
+        if (t4) {   // Mk4: cage / slat armour round the bustle, a full glacis ERA suit, a thermal shroud over the main gun, a taller sensor mast and extra smoke launchers
+          for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) tur.add(box(.03, .34, .28, SLAT, -.7 + i * .34, .34, sd * .74));
+          for (let i = 0; i < 5; i++) tur.add(box(.03, .3, .24, SLAT, -1.28, .34, -.5 + i * .25));                                                  // cage armour around the bustle rear
+          for (let i = 0; i < 3; i++) g.add(box(.42, .26, .06, ERA, 1.35, .5, (i - 1) * .5)); g.add(box(.5, .2, 1.42, ERA, 1.58, .5, 0, 0, 0, -.3));   // glacis ERA suit
+          tur.add(cyl(.11, .11, 1.3, matFor('#2a2c2e', { metalness: .4, roughness: .5 }), 1.4, .24, 0, 'x'));                                        // thermal shroud sleeve over the main gun
+          tur.add(cyl(.012, .012, .7, TRACK, .5, .7, -.5, 'y')); tur.add(box(.1, .1, .1, DKM, .5, 1.0, -.5));                                        // taller sensor / RWR mast
+          for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) tur.add(cyl(.03, .03, .1, TRACK, .5 - i * .08, .34, sd * (.7 + i * .04), 'x'));      // extra smoke launchers
+        }
+        if (t5) {   // Mk5: commander's independent thermal dome, a muzzle-reference sensor, a full-tank ERA suit, an active-protection sensor ring and a glowing battle-management panel — the apex tank
+          tur.add(cyl(.14, .12, .16, DKM, .1, .55, 0, 'y')); tur.add(sph(.07, SENS, .1, .66, 0)); tur.add(box(.1, .04, .16, DKM, .22, .62, 0));      // CITV thermal viewer
+          tur.add(box(.12, .12, .12, DKM, 1.95, .24, 0)); tur.add(sph(.03, SENS, 2.02, .24, 0));                                                    // muzzle-reference sensor at the gun tip
+          for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) tur.add(box(.24, .26, .1, ERA, -.6 + i * .32, .04, sd * .72));                       // a second, lower course of ERA on the cheeks
+          for (const sd of [-1, 1]) for (let i = 0; i < 6; i++) g.add(box(.36, .26, .08, ERA, -1.15 + i * .44, .28, sd * 1.13));                     // full-length hull ERA suit
+          tur.add(box(.9, .04, .5, DKM, -.95, .5, 0)); tur.add(box(.5, .05, .3, SENS, -.95, .53, 0));                                              // networked battle-management panel glowing on the bustle roof
+          for (const sd of [-1, 1]) tur.add(sph(.035, SENS, .3, .46, sd * .62));                                                                    // 360° active-protection sensor eyes
+        }
       } else if (spr === 'stryker') {
-        for (let i = 0; i < 6; i++) for (const sd of [-1, 1]) g.add(box(.36, .3, .05, ERA, -1.15 + i * .42, .75, sd * .78));                      // slat / reactive armour panels along the hull sides
-        g.add(box(1.6, .03, .12, ACC, -.3, 1.27, -.55));
-        if (t3) { tur.add(box(.2, .2, .2, DKM, -.35, .42, .25)); tur.add(sph(.05, SENS, -.35, .56, .25)); tur.add(box(.55, .2, .26, ERA, -.05, .34, .55, 0, 0, .12)); for (let i = 0; i < 2; i++) tur.add(cyl(.028, .028, .09, TRACK, .45 - i * .07, .3, .55 * 1.4, 'x')); }   // sight, second TOW box, launchers
+        const t4 = tier >= 4, t5 = tier >= 5, TILE = matFor(t3 ? '#d2c59a' : '#c4b78e', PANEL), TILED = matFor('#b0a478', PANEL), TUBE = matFor('#2a2c2a', { roughness: .8 });
+        // Mk2: the TOW ground-to-ground missile is fitted — twin launch tubes on the left cheek — and a first course of desert applique armour along the hull sides
+        for (const zz of [.06, -.1]) tur.add(cyl(.06, .06, .5, TUBE, -.05, .38, -.55 + zz, 'x'));
+        tur.add(box(.18, .28, .34, TILED, -.18, .34, -.55));                                                                                        // TOW reload housing
+        for (let i = 0; i < 6; i++) for (const sd of [-1, 1]) g.add(box(.36, bLoH(.3), .06, TILE, -1.15 + i * .42, bLoY(.74), sd * 1.02));           // hull-side applique armour tiles
+        g.add(box(1.6, .03, .1, ACC, -.3, bLoY(1.27), -.55));                                                                                      // roof ID stripe
+        if (t3) {   // Mk3: the Stinger air-to-air missile pod on the right cheek, plus the commander's independent sight
+          tur.add(box(.34, .3, .5, TILED, .0, .44, .5)); for (let i = 0; i < 2; i++) for (const zz of [-1, 1]) tur.add(cyl(.05, .05, .42, TUBE, .16, .38 + i * .12, .5 + zz * .1, 'x'));   // 4-tube Stinger launcher box
+          tur.add(box(.2, .2, .2, DKM, -.35, .5, .1)); tur.add(sph(.05, SENS, -.28, .58, .1));                                                     // commander's independent viewer
+        }
+        if (t4) {   // Mk4: cage armour round the turret, a second hull-armour course and glacis tiles
+          for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) tur.add(box(.03, .3, .2, SLAT, -.3 + i * .28, .3, sd * .48));
+          for (let i = 0; i < 6; i++) for (const sd of [-1, 1]) g.add(box(.36, bLoH(.26), .06, TILE, -1.15 + i * .42, bLoY(.48), sd * 1.05));         // lower hull armour course
+          for (let i = 0; i < 3; i++) g.add(box(.4, bLoH(.24), .06, TILE, 1.35, bLoY(.6), (i - 1) * .48));                                          // glacis armour tiles
+        }
+        if (t5) {   // Mk5: the full BUSK applique-armour suit — heavy tiles cladding the whole hull and turret — with networked sensors
+          for (let i = 0; i < 6; i++) for (const sd of [-1, 1]) g.add(box(.36, bLoH(.28), .08, TILE, -1.15 + i * .42, bLoY(1.0), sd * .92));         // upper hull tiles
+          for (const sd of [-1, 1]) for (let i = 0; i < 3; i++) tur.add(box(.26, .3, .08, TILE, -.3 + i * .3, .18, sd * .44));                       // turret-side tiles
+          tur.add(box(.9, .05, .78, TILED, 0, .4, 0)); tur.add(box(.5, .05, .3, SENS, -.2, .43, 0));                                               // armoured roof + glowing battle-management panel
+          g.add(box(.5, bLoH(.3), 1.5, TILE, 1.62, bLoY(.5), 0, 0, 0, -.35));                                                                      // heavy glacis block
+          for (const sd of [-1, 1]) tur.add(sph(.035, SENS, .2, .5, sd * .5));                                                                     // active-protection sensor eyes
+        }
       } else if (spr === 'humvee') {
         g.add(box(.05, .28, .98, ERA, .55, .72, .0)); for (const sd of [-1, 1]) g.add(box(1.6, .26, .04, ERA, -.05, .5, sd * .53));                // armour doors / side plates
         g.add(box(.14, .06, .9, ACC, -.6, 1.08, 0));
@@ -19539,7 +19638,7 @@ function ctrlHudTick(dt) {
       const d = u.def, vis = u.x > vx0 && u.x < vx1 && u.y > vy0 && (d.fly ? effY(u) : u.y) < vy1, x = u.x * K, z = u.y * K, gy = groundY(u.x, u.y);   // an aircraft is drawn well above its ground position: it stays on screen while either its airframe or its shadow is in the window
       if (d.veh) {
         let um = unitMeshes.get(u.id); const ut = tierOf(u); if (um && (um.tier || 1) !== ut) { scene3.remove(um.g); unitMeshes.delete(u.id); um = null; }
-        if (!um) { um = takeWarmVehicle(d.spr, ut) || mkVehicle(d.spr, ut); um.g.scale.setScalar(d.fly ? (AIRSC[d.spr] || 1.45) : (u.r * K) / .9 * (d.spr === 'abrams' ? 1.68 : d.spr === 'stryker' ? 1.92 : d.spr === 'humvee' ? 2.0 : d.spr === 'spg' ? 1.6 : 1)); scene3.add(um.g); unitMeshes.set(u.id, um); }   // a pre-warmed tier-1 mesh drops straight in; otherwise build fresh. aircraft drawn at 3x
+        if (!um) { um = takeWarmVehicle(d.spr, ut) || mkVehicle(d.spr, ut); um.g.scale.setScalar(d.fly ? (AIRSC[d.spr] || 1.45) : (u.r * K) / .9 * (d.spr === 'abrams' ? 1.68 * Math.pow(1.1, ut - 1) : d.spr === 'stryker' ? 1.92 : d.spr === 'humvee' ? 2.0 : d.spr === 'spg' ? 1.6 : 1)); scene3.add(um.g); unitMeshes.set(u.id, um); }   // a pre-warmed tier-1 mesh drops straight in; otherwise build fresh. aircraft drawn at 3x — the Abrams grows +10% per upgrade tier
         um.g.visible = vis; if (!vis) continue;
         const alt = d.fly ? (d.alt || 150) * K * ALTK * (u.altK === undefined ? 1 : u.altK) + (d.fly && u.altK !== undefined && u.altK < .02 ? .05 : 0) : 0; um.g.position.set(x, gy + alt, z);
         if (d.fly) { um.g.rotation.set(0, -u.ang, 0);
