@@ -6294,9 +6294,10 @@ function destroyBuilding(b) {
   if (b.dead) return;
   b.dead = true;
   const drum = !!(b.def && b.def.drum);
-  if (drum) {   // a red drum going up: the cook-off blast (same as a map drum) — it chains into any drum / barrel beside it
-    fxExplosion(b.x, b.y, 40, '#ffb84a', '#ff5a1e'); if (typeof fxCinematic === 'function') fxCinematic(b.x, b.y, 15);
-    areaDamage(b.x, b.y, 60, 40, true, true);
+  if (drum) {   // a red drum going up: a huge cook-off — 3× the blast radius, and every soul on foot inside it dies outright (armour rides it out). It chains into any drum / barrel beside it
+    fxExplosion(b.x, b.y, 120, '#ffb84a', '#ff5a1e'); if (typeof fxCinematic === 'function') fxCinematic(b.x, b.y, 28);
+    if (typeof fxShellImpact === 'function') fxShellImpact(b.x, b.y, 180, .8); if (typeof addShake === 'function') addShake(b.x, b.y, 11);
+    areaDamage(b.x, b.y, 180, 60, true, true, undefined, false, true);
   }
   for (const u of b.gar) { u.inside = null; u.x = b.x + rnd(-20, 20); u.y = b.y + rnd(-20, 20); }
   b.gar.length = 0;
@@ -6353,7 +6354,8 @@ function areaDamage(x, y, r, dmg, hitPlayer, hitZed, team, noBuild, lethal) {
     for (const u of G.units) if (!u.dead && !u.inside && !u.def.fly && dist2(u.x, u.y, x, y) < r2 && (hitPlayer || plyOf(u).team !== team)) {   // ground blasts never reach aircraft at altitude
       if (coverShields(u, x, y)) continue;                                            // the blast went off in front of his sandbags: they soak it up, he takes nothing
       const f = 1 - Math.sqrt(dist2(u.x, u.y, x, y)) / r;
-      damage(u, dmg * (.4 + f * .5), 0);
+      if (lethal && !u.def.veh) damage(u, 1e6, angTo(x, y, u.x, u.y), { trueDmg: true });   // a red-barrel cook-off: anyone on foot inside the ring dies outright; only armour rides it out
+      else damage(u, dmg * (.4 + f * .5), 0);
     }
     if (!noBuild) for (const b of G.builds) if (!b.dead && !(b.def && b.def.mine) && dist2(b.x, b.y, x, y) < r2 * 1.2 && (hitPlayer || plyOf(b).team !== team)) damage(b, dmg * .5, angTo(x, y, b.x, b.y), { blast: 1 });   // a landmine is never set off by a blast — only by a footstep; drums DO chain
   }
@@ -6576,7 +6578,7 @@ function updateProps(dt) {
   if (G.fuses && G.fuses.length) for (let i = G.fuses.length - 1; i >= 0; i--) {
     const f = G.fuses[i]; f.t -= dt;
     if (Math.random() < dt * 30) part('fire', f.x + rnd(-4, 4), f.y + rnd(-3, 3), rnd(-6, 6), rnd(-6, 6), rnd(.2, .45), rnd(3, 6), '#ffa030', { glow: 1, z: rnd(6, 16), vz: rnd(40, 90), g: -40 });
-    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 40, '#ffb84a', '#ff5a1e'); fxCinematic(f.x, f.y, 15); areaDamage(f.x, f.y, 60, 40, true, true); }   // + a small cinematic cook-off, 1.5× the drum
+    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 120, '#ffb84a', '#ff5a1e'); fxCinematic(f.x, f.y, 28); if (typeof fxShellImpact === 'function') fxShellImpact(f.x, f.y, 180, .8); if (typeof addShake === 'function') addShake(f.x, f.y, 11); areaDamage(f.x, f.y, 180, 60, true, true, undefined, false, true); }   // a map drum cooking off: the same huge 3× lethal blast as a built one
   }
   // toppling trees: swing over, slam down, break into logs
   if (G.topples && G.topples.length) for (let i = G.topples.length - 1; i >= 0; i--) {
@@ -14572,6 +14574,19 @@ function issueCover(foot, b, wx, wy) {
   }
   return true;
 }
+/* the nearest live explosive drum SITTING ON THE MAP (a terrain prop from the rubble fields, not a built Red Barrel) under a
+   world point — so a right-click on any barrel, spawned or built, can order fire onto it. Scans the click's chunk and its
+   neighbours (a barrel can sit near a chunk edge) and ignores ones already lit/gone. */
+function barrelPropAt(wx, wy) {
+  if (typeof chunkProps !== 'function') return null;
+  const ccx = (wx / CH) | 0, ccy = (wy / CH) | 0; let best = null, bd = 22 * 22;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+    const ps = chunkProps(ccx + dx, ccy + dy);
+    for (let i = 0; i < ps.length; i++) { const q = ps[i]; if (q.s !== 'barrel' || G.deadProps.has(q.id)) continue; const d = dist2(q.x, q.y, wx, wy); if (d < bd) { bd = d; best = q; } }
+  }
+  return best;
+}
+
 function issueOrder(wx, wy, shift, fast) {
   const units = G.sel.filter(e => e.kind === 'unit');
   const blds = G.sel.filter(e => e.kind === 'build');
@@ -14584,6 +14599,15 @@ function issueOrder(wx, wy, shift, fast) {
   for (const u of units) { u.stance = 'aggr'; u.guardX = undefined; }
   const tgt = pickAt(wx, wy);
   let done = false;
+  // a red barrel sitting on the map (a terrain prop, not a built structure): right-click it and every selected unit shoots it until it cooks off
+  if (!(tgt && !tgt.dead && (tgt.kind === 'zed' || tgt.kind === 'unit' || tgt.kind === 'build'))) {
+    const bp = barrelPropAt(wx, wy);
+    if (bp) {
+      const tb = { x: bp.x, y: bp.y, kind: 'prop', teamOv: 'X', propId: bp.id, get dead() { return G.deadProps.has(this.propId); } };
+      for (const u of units) { u.wallCover = null; u.order = { type: 'attack', target: tb }; }
+      popText(wx, wy - 10, 'SHOOT BARREL', '#ffb84a'); UI.attackMove = false; AU.ui('ok'); return;
+    }
+  }
   // Blackhawk troop-lift: right-click a friendly foot soldier to load, right-click open ground to drop
   if (tgt && tgt.kind !== 'zed' && !tgt.dead && !sameTeam(tgt)) {          // an enemy player's unit or structure: engage it
     for (const u of units) u.order = { type: 'attack', target: tgt };
