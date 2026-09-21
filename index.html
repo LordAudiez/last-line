@@ -9024,10 +9024,10 @@ function updateUnits(dt) {
           if (v.landed && dist2(u.x, u.y, v.x, v.y) < Math.pow(v.r + 26, 2)) { (v.cargo = v.cargo || []).push(u); u.inside = v; u.carriedBy = v; u.order = null; AU.ui('ok'); }
           else steer(u, dt, v.x, v.y, true, v.r + 14);
         } else {
-          // a ground carrier (the Bradley): walk to the rear doors and wait — updateVehLoad admits people two at a time
-          const rx = v.x - Math.cos(v.ang) * (v.r + 24), ry = v.y - Math.sin(v.ang) * (v.r + 24);
-          if (dist2(u.x, u.y, rx, ry) < 30 * 30) u.ang = angLerp(u.ang, v.ang, 1 - Math.pow(.0006, dt));   // at the door — face the ramp and hold for a slot
-          else steer(u, dt, rx, ry, true, 10);
+          // a ground carrier (the Bradley): fall into the double column behind the doors and hold — updateVehLoad admits the front pair
+          const sx = u._stageX !== undefined ? u._stageX : v.x - Math.cos(v.ang) * (v.r + 22), sy = u._stageY !== undefined ? u._stageY : v.y - Math.sin(v.ang) * (v.r + 22);
+          if (dist2(u.x, u.y, sx, sy) < 16 * 16) u.ang = angLerp(u.ang, v.ang, 1 - Math.pow(.0006, dt));   // in the column, facing the ramp
+          else steer(u, dt, sx, sy, true, 7);
         }
       } else if (o.type === 'enter') {
         const b = o.b;
@@ -9284,32 +9284,41 @@ function unloadCargo(v) {
   return n;
 }
 
+/* the staging position of slot i in the DOUBLE COLUMN drawn up behind the rear doors: two files, filling front row first */
+function stageSlotPos(v, i) {
+  const doorX = v.x - Math.cos(v.ang) * (v.r + 18), doorY = v.y - Math.sin(v.ang) * (v.r + 18);
+  const bx = -Math.cos(v.ang), by = -Math.sin(v.ang);       // backward, away from the vehicle
+  const sx = -Math.sin(v.ang), sy = Math.cos(v.ang);         // across the rear
+  const lane = (i % 2) ? 1 : -1, row = (i / 2) | 0;
+  return { x: doorX + bx * (7 + row * 21) + sx * lane * 13, y: doorY + by * (7 + row * 21) + sy * lane * 13 };
+}
 /* ground troop carrier (the Bradley): the twin rear doors open whenever anyone is boarding or the ramp is unloading, and the
-   passengers walk IN and OUT through them two at a time — nobody teleports. Approach, queue at the rear, and file aboard in pairs. */
+   passengers form up in a DOUBLE COLUMN behind the doors, then file IN two at a time — and deploy back out into the same
+   double-column formation. Nobody teleports. */
 function updateVehLoad(v, dt) {
   if (!v.cargo) v.cargo = [];
   const boarding = v._boarding || (v._boarding = []);
   for (let k = boarding.length - 1; k >= 0; k--) if (!boarding[k].boarding || boarding[k].dead) boarding.splice(k, 1);
   const exiting = v._exiting || (v._exiting = []);
   for (let k = exiting.length - 1; k >= 0; k--) if (!exiting[k].exiting || exiting[k].dead) exiting.splice(k, 1);
-  const rx = v.x - Math.cos(v.ang) * (v.r + 24), ry = v.y - Math.sin(v.ang) * (v.r + 24);   // the point just behind the rear doors
-  const waiting = [];
-  for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (u.dead || u.inside || u.boarding || u.exiting) continue; if (u.order && u.order.type === 'board' && u.order.v === v && dist2(u.x, u.y, rx, ry) < 42 * 42) waiting.push(u); }
-  const wantLoad = (waiting.length > 0 || boarding.length > 0) && v.cargo.length + boarding.length < v.def.carry;
+  // gather everyone queued to board this vehicle and lay them out as a double column behind the doors
+  const queue = [];
+  for (let i = 0; i < G.units.length; i++) { const u = G.units[i]; if (u.dead || u.inside || u.boarding || u.exiting) continue; if (u.order && u.order.type === 'board' && u.order.v === v) queue.push(u); }
+  queue.sort((a, b) => a.id - b.id);
+  for (let i = 0; i < queue.length; i++) { const s = stageSlotPos(v, i); queue[i]._stageX = s.x; queue[i]._stageY = s.y; queue[i]._stageSlot = i; }
+  const wantLoad = (queue.length > 0 || boarding.length > 0) && v.cargo.length + boarding.length < v.def.carry;
   const wantUnload = !!v._unloading && (v.cargo.length > 0 || exiting.length > 0);
-  const want = (wantLoad || wantUnload) ? 1 : 0;
-  v.doorT = (v.doorT || 0) + (want - (v.doorT || 0)) * Math.min(1, dt * 4);   // ease the doors open / shut
+  v.doorT = (v.doorT || 0) + ((wantLoad || wantUnload ? 1 : 0) - (v.doorT || 0)) * Math.min(1, dt * 4);   // ease the doors open / shut
   const open = v.doorT > .55;
-  if (open && wantLoad && boarding.length === 0) {                            // admit the next pair only once the last pair is aboard
-    waiting.sort((a, b) => dist2(a.x, a.y, rx, ry) - dist2(b.x, b.y, rx, ry));
-    for (let k = 0; k < waiting.length && boarding.length < 2 && v.cargo.length + boarding.length < v.def.carry; k++) { const u = waiting[k]; u.boarding = v; u.boardT = 0; u.order = null; boarding.push(u); }
+  if (open && wantLoad && boarding.length === 0) {                            // admit the FRONT pair (slots 0/1) once they've reached their spot in the column
+    for (const u of queue) { if (u._stageSlot < 2 && dist2(u.x, u.y, u._stageX, u._stageY) < 22 * 22 && boarding.length < 2 && v.cargo.length + boarding.length < v.def.carry) { u.boarding = v; u.boardT = 0; u.order = null; boarding.push(u); } }
   }
   if (v._unloading) {
-    if (open && v.cargo.length && exiting.length === 0) {                     // release the next pair only once the last pair has cleared the doors
-      for (let k = 0; k < 2 && v.cargo.length; k++) { const u = v.cargo.shift(); u.inside = null; u.carriedBy = null; u.exiting = v; u.exitT = 0; u._exitLane = k ? 1 : -1; u.x = rx + Math.cos(v.ang + Math.PI / 2) * u._exitLane * 8; u.y = ry + Math.sin(v.ang + Math.PI / 2) * u._exitLane * 8; exiting.push(u); }
+    if (open && v.cargo.length && exiting.length === 0) {                     // deploy the next pair only once the last pair has cleared the doors, into the double column
+      for (let k = 0; k < 2 && v.cargo.length; k++) { const u = v.cargo.shift(); u.inside = null; u.carriedBy = null; u.exiting = v; u.exitT = 0; u._exitSlot = (v._exitCount = (v._exitCount || 0)); v._exitCount++; const dx = v.x - Math.cos(v.ang) * (v.r + 16), dy = v.y - Math.sin(v.ang) * (v.r + 16); u.x = dx + Math.cos(v.ang + Math.PI / 2) * (k ? 8 : -8); u.y = dy + Math.sin(v.ang + Math.PI / 2) * (k ? 8 : -8); exiting.push(u); }
       AU.ui && AU.ui('ok');
     }
-    if (!v.cargo.length && exiting.length === 0) { v._unloading = false; popText(v.x, v.y - 20, 'DEPLOYED', '#7dffb2'); }
+    if (!v.cargo.length && exiting.length === 0) { v._unloading = false; v._exitCount = 0; popText(v.x, v.y - 20, 'DEPLOYED', '#7dffb2'); }
   }
 }
 function boardWalkIn(u, dt) {   // a passenger filing in through the rear doors, disappearing into the hull
@@ -9322,18 +9331,15 @@ function boardWalkIn(u, dt) {   // a passenger filing in through the rear doors,
   u.step = (u.step || 0) + dt * 6;
   if (u.boardT >= 1 || dist2(u.x, u.y, v.x, v.y) < 12 * 12) { if ((v.cargo || (v.cargo = [])).length < v.def.carry) { v.cargo.push(u); u.inside = v; u.carriedBy = v; } else u.order = null; u.boarding = null; u.boardT = 0; }
 }
-function exitWalkOut(u, dt) {   // a passenger walking out the back to a spot behind the vehicle
+function exitWalkOut(u, dt) {   // a passenger walking out the back into the double-column deploy formation
   const v = u.exiting;
   if (!v || v.dead) { u.exiting = null; u.order = null; return; }
-  u.exitT = (u.exitT || 0) + dt / .8;
-  const lane = u._exitLane || 0;
-  const tx = v.x - Math.cos(v.ang) * (v.r + 30) + Math.cos(v.ang + Math.PI / 2) * lane * 15;
-  const ty = v.y - Math.sin(v.ang) * (v.r + 30) + Math.sin(v.ang + Math.PI / 2) * lane * 15;
-  const a = angTo(u.x, u.y, tx, ty), sp = u.def.spd * .8;
-  u.ang = angLerp(u.ang, a, 1 - Math.pow(.0004, dt));
-  tryMove(u, u.x + Math.cos(a) * sp * dt, u.y + Math.sin(a) * sp * dt, true, Math.cos(a), Math.sin(a), sp, dt);
-  u.step = (u.step || 0) + sp * dt * .17;
-  if (u.exitT >= 1) { u.exiting = null; u.order = null; unstick(u, true); }
+  u.exitT = (u.exitT || 0) + dt / 1.0;
+  const s = stageSlotPos(v, u._exitSlot || 0);              // deploy into the same double column, filling back from the doors
+  const a = angTo(u.x, u.y, s.x, s.y), sp = u.def.spd * .8, near = dist2(u.x, u.y, s.x, s.y) < 12 * 12;
+  u.ang = angLerp(u.ang, near ? v.ang + Math.PI : a, 1 - Math.pow(.0004, dt));
+  if (!near) { tryMove(u, u.x + Math.cos(a) * sp * dt, u.y + Math.sin(a) * sp * dt, true, Math.cos(a), Math.sin(a), sp, dt); u.step = (u.step || 0) + sp * dt * .17; }
+  if (u.exitT >= 2.6 || (u.exitT >= 1 && near)) { u.exiting = null; u.order = null; unstick(u, true); }
 }
 /* rotor wash: a turbulent ring of dust blown out from under a helicopter close to the ground, then carried off on the wind */
 function rotorWash(u, k, dt) {
@@ -19930,12 +19936,14 @@ function ctrlHudTick(dt) {
           // corners (sized to the drawn body), rest the hull on that plane and pitch/roll to match — no more clipping or floating on slopes
           const fsc = d.spr === 'abrams' ? 1.68 * Math.pow(1.1, ut - 1) : d.spr === 'stryker' ? 1.92 : d.spr === 'humvee' ? 2.0 : d.spr === 'spg' ? 1.6 : 1;
           const hL = u.r * fsc * 1.12, hW = u.r * fsc * .6, ca = Math.cos(u.ang), sa = Math.sin(u.ang);
-          const eFL = elevAtW(u.x + ca * hL - sa * hW, u.y + sa * hL + ca * hW), eFR = elevAtW(u.x + ca * hL + sa * hW, u.y + sa * hL - ca * hW);
-          const eRL = elevAtW(u.x - ca * hL - sa * hW, u.y - sa * hL + ca * hW), eRR = elevAtW(u.x - ca * hL + sa * hW, u.y - sa * hL - ca * hW);
-          um.g.position.y = Math.max(-.06, (eFL + eFR + eRL + eRR) * .25 - .04);   // rest the body on the terrain under its footprint (bed the tracks in a touch)
+          // sample the SMOOTH base terrain (surfY ignores craters / trenches) at the four track-contact corners, so a vehicle rides
+          // the real hills but never nose-dives into a shell crater or a dug trench; the tilt is damped so gentle ground stays level
+          const eFL = surfY(u.x + ca * hL - sa * hW, u.y + sa * hL + ca * hW), eFR = surfY(u.x + ca * hL + sa * hW, u.y + sa * hL - ca * hW);
+          const eRL = surfY(u.x - ca * hL - sa * hW, u.y - sa * hL + ca * hW), eRR = surfY(u.x - ca * hL + sa * hW, u.y - sa * hL - ca * hW);
+          um.g.position.y = Math.max(-.06, (eFL + eFR + eRL + eRR) * .25 - .03);   // rest the body on the terrain under its footprint (bed the tracks in a touch)
           um.g.rotation.set(0, -u.ang, 0);
-          um.g.rotateZ(clamp(-Math.atan2(((eFL + eFR) - (eRL + eRR)) * .5, 2 * hL * K), -.6, .6));   // pitch: nose up climbing, down descending
-          um.g.rotateX(clamp(Math.atan2(((eFL + eRL) - (eFR + eRR)) * .5, 2 * hW * K), -.6, .6));      // roll: bank across the slope
+          um.g.rotateZ(clamp(-Math.atan2(((eFL + eFR) - (eRL + eRR)) * .5, 2 * hL * K) * .75, -.42, .42));   // pitch: nose up climbing, down descending (damped)
+          um.g.rotateX(clamp(Math.atan2(((eFL + eRL) - (eFR + eRR)) * .5, 2 * hW * K) * .75, -.42, .42));      // roll: bank across the slope (damped)
           const aT = u.aimT !== undefined ? u.aimT : u.ang; um.tur.rotation.y = -(aT - u.ang); if (u.recoil && !um.spgGun) um.tur.position.x = -.15 - u.recoil * .12;
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); }
           if (um.towG) um.towG.rotation.z = (u.elev && u.elev[2] || 0) * 1.05;   // TOW launcher elevates ~60° before a ground-missile launch, then settles back
