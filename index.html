@@ -3553,7 +3553,8 @@ const UDEF = {
     weps: [
       { dmg: 10, rng: 24 * 32, cd: .09, spread: .05, spd: 1300, kind: 'bullet', sfx: 'mg', casings: 1, mag: 200, reload: 4.0, mount: [46, 4], tur: true, off: 0, mz: .2, coax: true, sustain: true },   // coaxial 7.62 beside the autocannon — rides the cannon's aim and works its target
       { minTier: 2, dmg: 260, rng: 30 * 32, cd: 6.5, spread: .008, spd: 620, kind: 'rocket', sfx: 'hydra', splash: 1.6 * TS, casings: 0, mount: [8, -26], tur: true, off: 44, mz: .38 },                    // Mk2: TOW ground-to-ground guided missile (left cheek)
-      { minTier: 3, dmg: 190, rng: 34 * 32, cd: 5.5, spread: .006, spd: 1500, kind: 'rocket', sfx: 'hydra', splash: 26, casings: 0, mount: [8, 26], tur: true, off: 44, mz: .5, air: true, airOnly: true }    // Mk3: Stinger air-to-air missile (right cheek) — engages hostile aircraft only
+      { minTier: 3, dmg: 190, rng: 88 * 32, cd: 5.5, spread: .006, spd: 1500, kind: 'rocket', sfx: 'hydra', splash: 26, casings: 0, mount: [8, 26], tur: true, off: 44, mz: .5, air: true, airOnly: true, aamsl: true },    // Mk3: Stinger air-to-air missile (right cheek) — fires the AA battery's guided homing seeker at the battery's full reach (climbs to altitude, flares can decoy it, two hits down any airframe)
+      { minTier: 5, tiers: [5], dmg: 12, rng: 88 * 32 * 0.4, cd: .035, spread: .09, spd: 1500, kind: 'bullet', sfx: 'minigun', casings: 1, mag: 300, reload: 3.5, mount: [-52, 0], off: 30, mz: 1.55, antiAir: true, air: true, sentry: true, sustain: true }   // Mk5: a 360° gatling sentry on the rear deck — engages ground OR air on its own, out to 40% of the AA battery's reach
     ],
     desc: 'Tracked infantry fighting vehicle: 25mm chain gun with a coaxial MG, and a troop bay for 16. Upgrades add a TOW ground missile (Mk2) and a Stinger air-to-air missile (Mk3), plus applique armour. Right-click it with infantry selected to board; Unload deploys them around the ramp.'
   },
@@ -9994,13 +9995,21 @@ function muzzlePos(u) {
 function fire(src, tgt, wep, muz) {
   const m = muz || muzzlePos(src);
   // only these sources may actually strike aircraft: a marksman/sniper, an aircraft, and (flagged on their synthetic src) the Watch Tower and MG Nest. Everyone else's rounds pass under air.
-  const antiAir = !!(src.antiAir || (src.def && src.def.fly) || src.t === 'marksman' || src.t === 'sniper');
+  const antiAir = !!(src.antiAir || (wep && wep.antiAir) || (src.def && src.def.fly) || src.t === 'marksman' || src.t === 'sniper');
   if (typeof npRecordShot === 'function') npRecordShot(src, tgt, wep, m);   // co-op: let allies see this shot
   // fire out of the airframe, not the ground shadow: the aircraft is drawn at height alt*ALTK*altK tiles up,
   // so the round (and tracer) must start at that same height, matching the model exactly.
   const srcZ = (src.def && src.def.fly) ? airZ(src) : (m.z || 0);
   const tier = src.tier || (src.t ? tierOf(src) : 1);
   const bd = src.bDmg || 1;
+
+  /* --------- guided air-to-air missile (Bradley's Stinger) — the same homing seeker the AA battery fires --------- */
+  if (wep.aamsl && tgt) {
+    launchAAMissile(src, tgt, m.x, m.y, m.z || 30);                      // homing, climbs to altitude, flare-decoyable, two hits down any airframe
+    if (tgt.kind === 'unit') { tgt._aaInbound = (tgt._aaInbound || 0) + 1;   // mark it inbound like the battery does, so airframes pop flares and aren't over-shot
+      for (const u of G.units) { if (u.dead || u.landed || !u.def.fly) continue; if (u === tgt || (teamOf(u) === teamOf(tgt) && dist2(u.x, u.y, tgt.x, tgt.y) < (36 * TS) * (36 * TS))) u.autoFlareT = Math.max(u.autoFlareT || 0, 5); } }
+    return;
+  }
 
   /* --------- lobbed mortar shell --------- */
   if (wep.kind === 'mortar') {
@@ -10050,12 +10059,20 @@ function fire(src, tgt, wep, muz) {
     fxSmoke(m.x, m.y, rnd(-30, 30), rnd(-30, 30), 11, 1.5, 'rgba(180,176,166,1)');
     fxSmoke(m.x, m.y, rnd(-20, 20), rnd(-20, 20), 8, 1.1, 'rgba(150,146,138,1)');
     part('flash', m.x, m.y, 0, -60, .1, 10, '#ffe9a8', { rot: -Math.PI / 2, glow: 1, z: 8 });
-    const bigM = !!wep.big; src.aimT = angTo(m.x, m.y, tx, ty);                                          // the tube is laid onto the target (the battery model turns to it)
+    const bigM = !!wep.big; if (!(src.def && src.def.veh)) src.aimT = angTo(m.x, m.y, tx, ty);            // the tube is laid onto the target (a mortar crew turns to it); on a vehicle the bed mortar has its own traverse, so it must NOT drag the roof turret round
     { const _fx = G._fx; G._fx = 1; const nD = bigM ? 26 : 14, rD = bigM ? 26 : 14;                    // the blast off the muzzle slams the ground: a ring of dust thrown out around the tube / the crew
       for (let k = 0; k < nD; k++) { const a = rnd(TAU), sp = rnd(50, 150) * (bigM ? 1.4 : 1); part('dust', src.x + Math.cos(a) * rD * .4, src.y + Math.sin(a) * rD * .3, Math.cos(a) * sp, Math.sin(a) * sp * .65, rnd(.7, 1.3), rnd(6, 11) * (bigM ? 1.5 : 1), k & 1 ? 'rgba(178,166,140,1)' : 'rgba(200,190,166,1)', { z: rnd(0, 4), vz: rnd(10, 40), g: 30, grow: bigM ? 26 : 16, drag: .9, wind: 1 }); }
       for (let k = 0; k < (bigM ? 10 : 5); k++) part('dust', m.x + rnd(-6, 6), m.y + rnd(-6, 6), rnd(-20, 20), rnd(-20, 20), rnd(.9, 1.6), rnd(8, 14), 'rgba(160,150,128,1)', { z: rnd(6, 16), vz: rnd(90, 220) * (bigM ? 1.3 : 1), g: 60, grow: 22, drag: .92, wind: 1 });   // and a column straight up out of the tube
       G._fx = _fx; }
+    if (src.def && src.def.veh) {   // the mortar going off in the truck bed throws a broad ring of dust up around the whole vehicle, and the overpressure lays the grass flat
+      const _fxv = G._fx; G._fx = 1; const rr = src.r || 22;
+      for (let k = 0; k < 44; k++) { const a = rnd(TAU), sp = rnd(90, 300); part('dust', src.x + Math.cos(a) * rr * .5, src.y + Math.sin(a) * rr * .4, Math.cos(a) * sp, Math.sin(a) * sp * .6, rnd(1.1, 2.1), rnd(11, 22), k % 3 === 0 ? 'rgba(184,172,146,1)' : k % 3 === 1 ? 'rgba(206,196,172,1)' : 'rgba(150,140,118,1)', { z: rnd(0, 6), vz: rnd(16, 62), g: 36, grow: 36, drag: .89, wind: 1, a: .9 }); }
+      for (let k = 0; k < 22; k++) { const a = rnd(TAU), sp = rnd(150, 400); part('dust', src.x + Math.cos(a) * rr * .32, src.y + Math.sin(a) * rr * .26, Math.cos(a) * sp, Math.sin(a) * sp * .55, rnd(1.7, 3.0), rnd(15, 28), k & 1 ? 'rgba(196,180,148,1)' : 'rgba(138,126,102,1)', { z: rnd(0, 8), vz: rnd(20, 74), g: 40, grow: 46, drag: .88, wind: 1, a: .9 }); }
+      addShock(src.x, src.y, rr * 3.4, 1.7, .6);
+      G._fx = _fxv;
+    }
     if (!src.def.veh && src.kind === 'unit') addShake(src.x, src.y, 1.2);
+    if (src.def && src.def.veh) addShake(src.x, src.y, 5);
     G.lights.push({ x: m.x, y: m.y, r: 130, c: [255, 214, 150], i: .8 });
     addShake(m.x, m.y, wep.big ? 6 : 2.5);
     AU.mortarLaunch(m.x, m.y, wep.big);
@@ -12101,7 +12118,7 @@ function launchAAMissile(b, tgt, x, y, z) {
   part('flash', x, y, 0, 0, .09, 12, '#ffe9a8', { glow: 1, z });
   G.lights.push({ x, y, r: 150, c: [255, 200, 130], i: 1.2 });
   // a thick expanding RING OF DUST thrown out around the station on launch, hanging for ~3 s (no flat ring sprite — real dust)
-  { const _fx = G._fx; G._fx = 1; const rr = Math.max(b.w, b.h) * TS * .38;
+  { const _fx = G._fx; G._fx = 1; const rr = (b.w && b.h) ? Math.max(b.w, b.h) * TS * .38 : (b.r || 22) * .5;   // a building sizes the ring from its footprint; a vehicle from its radius
     for (let k = 0; k < 40; k++) { const a = rnd(TAU), sp = rnd(90, 220); part('dust', b.x + Math.cos(a) * rr, b.y + Math.sin(a) * rr * .7, Math.cos(a) * sp + G.wind.x * .3, Math.sin(a) * sp * .6 + G.wind.y * .3, rnd(2.6, 3.6), rnd(9, 17), k & 1 ? 'rgba(180,168,144,1)' : 'rgba(202,192,168,1)', { z: rnd(0, 5), vz: rnd(6, 26), g: 16, grow: 34, drag: .95, wind: 1, a: .85 }); }
     for (let k = 0; k < 14; k++) { const a = rnd(TAU); part('dust', b.x + rnd(-8, 8), b.y + rnd(-6, 6), Math.cos(a) * rnd(40, 110), Math.sin(a) * rnd(30, 80) * .6, rnd(2.4, 3.4), rnd(7, 12), 'rgba(196,186,162,1)', { z: rnd(2, 8), vz: rnd(10, 30), g: 12, grow: 26, drag: .94, wind: 1, a: .7 }); }
     G._fx = _fx; }
@@ -17934,9 +17951,10 @@ function ctrlHudTick(dt) {
       } else {   // single MG: receiver + barrel + jacket
         tur.add(box(.14, .12, .1, TRACK, .05, .14, 0)); tur.add(cyl(.03, .04, .72, BARREL, .5, .14, 0, 'x')); tur.add(cyl(.05, .05, .1, BARREL, .2, .14, 0, 'x'));
       }
-      if (t5) {   // Mk5: the mortar tube in the rear cargo bed, elevated to lob
-        const mrt = new THREE.Group(); mrt.position.set(-.86, .9, 0); mrt.rotation.z = .8; g.add(mrt);
-        mrt.add(box(.36, .06, .36, matFor('#2a2c2a', PANEL), 0, 0, 0));                                          // baseplate
+      if (t5) {   // Mk5: the mortar in the rear cargo bed — a traversing group (yaws to lay on the target) with the tube elevated to lob
+        const mtrav = new THREE.Group(); mtrav.position.set(-.86, .9, 0); g.add(mtrav); g.userData.mortar = mtrav;
+        mtrav.add(box(.4, .06, .4, matFor('#2a2c2a', PANEL), 0, 0, 0));                                          // baseplate (stays flat on the bed, turns with the tube)
+        const mrt = new THREE.Group(); mrt.rotation.z = -.72; mtrav.add(mrt);                                    // the tube leans toward +x (local forward); the traverse group aims that lean at the target
         mrt.add(cyl(.055, .062, .86, BARREL, 0, .5, 0)); mrt.add(cyl(.075, .075, .08, BARREL, 0, .12, 0));       // tube + muzzle collar
         for (const s of [-1, 1]) mrt.add(cyl(.012, .012, .5, TRACK, 0, .3, s * .12, 0, 0, .5));                  // bipod legs
       }
@@ -18162,6 +18180,12 @@ function ctrlHudTick(dt) {
           tur.add(box(.9, .05, .78, TILED, 0, .4, 0)); tur.add(box(.5, .05, .3, SENS, -.2, .43, 0));                                               // armoured roof + glowing battle-management panel
           g.add(box(.5, bLoH(.3), 1.5, TILE, 1.62, bLoY(.5), 0, 0, 0, -.35));                                                                      // heavy glacis block
           for (const sd of [-1, 1]) tur.add(sph(.035, SENS, .2, .5, sd * .5));                                                                     // active-protection sensor eyes
+          // Mk5 remote gatling sentry on the rear deck — its own group so it traverses a full 360° independently of the turret, engaging ground or air
+          const gat = new THREE.Group(); gat.position.set(-1.0, bLoY(1.28), 0); g.add(gat); g.userData.gat = gat;
+          gat.add(cyl(.15, .15, .08, matFor('#3a3f3c', PANEL), 0, -.02, 0, 'y'));                                                                  // ring mount
+          gat.add(box(.24, .22, .28, matFor('#3a3f3c', PANEL), -.02, .12, 0)); gat.add(sph(.032, SENS, .13, .2, 0));                              // remote weapon station body + sight
+          gat.add(cyl(.055, .055, .18, matFor('#2a2c2a', { roughness: .8 }), .2, .1, 0, 'x'));                                                     // rotary breech
+          for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; gat.add(cyl(.016, .016, .5, BARREL, .52, .1 + Math.sin(a) * .034, Math.cos(a) * .034, 'x')); }   // six gatling barrels pointing forward (+x)
         }
       } else if (spr === 'humvee') {
         const t4 = tier >= 4, t5 = tier >= 5, TARM = matFor('#c2b58c', PANEL), TARMD = matFor('#a89c72', PANEL);   // desert applique armour
@@ -18214,7 +18238,7 @@ function ctrlHudTick(dt) {
         g.add(box(.6, .03, .05, ACC, 0, .66, .5));
       }
     }
-    return { g, tur, rotor, disc: rotor && rotor.userData.disc, props, tails, tier, mgs: g.userData.mgs || null, spades: g.userData.spades || null, spgGun: g.userData.spgGun || null, towG: g.userData.towG || null, stG: g.userData.stG || null };
+    return { g, tur, rotor, disc: rotor && rotor.userData.disc, props, tails, tier, mgs: g.userData.mgs || null, spades: g.userData.spades || null, spgGun: g.userData.spgGun || null, towG: g.userData.towG || null, stG: g.userData.stG || null, mortar: g.userData.mortar || null, gat: g.userData.gat || null };
   }
   const WRECK = matFor('#2a2624', { map: TEX.panel, roughness: .95 });
 
@@ -19793,6 +19817,8 @@ function ctrlHudTick(dt) {
           if (um.mgs) for (let k = 0; k < um.mgs.length; k++) { const a = u.aims && u.aims[k + 1] !== undefined ? u.aims[k + 1] : aT; um.mgs[k].rotation.y = -(a - aT); }
           if (um.towG) um.towG.rotation.z = (u.elev && u.elev[2] || 0) * 1.05;   // TOW launcher elevates ~60° before a ground-missile launch, then settles back
           if (um.stG) um.stG.rotation.z = (u.elev && u.elev[3] || 0) * 1.05;     // Stinger pod cranks up toward the sky before an air-to-air launch
+          if (um.mortar) { const ma = (u.aims && u.aims[2] !== undefined) ? u.aims[2] : aT; um.mortar.rotation.y = -(ma - u.ang); }   // the bed mortar traverses to lay its tube on the target
+          if (um.gat) { const ga = (u.aims && u.aims[4] !== undefined) ? u.aims[4] : u.ang; um.gat.rotation.y = -(ga - u.ang); }     // the rear-deck gatling sentry traverses 360° to its own target
           if (um.spades) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spades.rotation.z = -Math.max(0, Math.min(1, dep)) * 1.15; }   // the Paladin's spades dig in as it deploys
           if (um.spgGun) { const dep = u.spgDeployed ? 1 : (u.spgDeploy > 0 ? 1 - Math.max(0, u.spgDeploy) / 5 : (u.spgUndeploy > 0 ? Math.max(0, u.spgUndeploy) / 1.4 : 0)); um.spgGun.rotation.z = .2 + .82 * Math.max(0, Math.min(1, dep)); um.spgGun.position.x = .72 - (u.recoil || 0) * .3; } }   // the 155mm cranks high into the air to lob, and recoils along the barrel on fire
         if (u.order && u.order.lead && !d.fly) { const pl = G.players && G.players[u.owner || 0]; drawBanner(x, gy + u.r * K * .9, z, u.ang, 1.35 * FS, col3(pl && pl.color ? pl.color : '#7dffb2'), col3('#f2f2f2'), u.id); }   // convoy leader flies the pennant
