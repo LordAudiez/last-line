@@ -6295,9 +6295,9 @@ function destroyBuilding(b) {
   b.dead = true;
   const drum = !!(b.def && b.def.drum);
   if (drum) {   // a red drum going up: a huge cook-off — 3× the blast radius, and every soul on foot inside it dies outright (armour rides it out). It chains into any drum / barrel beside it
-    fxExplosion(b.x, b.y, 120, '#ffb84a', '#ff5a1e'); if (typeof fxCinematic === 'function') fxCinematic(b.x, b.y, 28);
-    if (typeof fxShellImpact === 'function') fxShellImpact(b.x, b.y, 180, .8); if (typeof addShake === 'function') addShake(b.x, b.y, 11);
-    areaDamage(b.x, b.y, 180, 60, true, true, undefined, false, true);
+    fxExplosion(b.x, b.y, 60, '#ffb84a', '#ff5a1e'); if (typeof fxCinematic === 'function') fxCinematic(b.x, b.y, 15);
+    if (typeof fxShellImpact === 'function') fxShellImpact(b.x, b.y, 54, .6); if (typeof addShake === 'function') addShake(b.x, b.y, 7);
+    areaDamage(b.x, b.y, 54, 60, true, true, undefined, false, true);
   }
   for (const u of b.gar) { u.inside = null; u.x = b.x + rnd(-20, 20); u.y = b.y + rnd(-20, 20); }
   b.gar.length = 0;
@@ -6578,7 +6578,7 @@ function updateProps(dt) {
   if (G.fuses && G.fuses.length) for (let i = G.fuses.length - 1; i >= 0; i--) {
     const f = G.fuses[i]; f.t -= dt;
     if (Math.random() < dt * 30) part('fire', f.x + rnd(-4, 4), f.y + rnd(-3, 3), rnd(-6, 6), rnd(-6, 6), rnd(.2, .45), rnd(3, 6), '#ffa030', { glow: 1, z: rnd(6, 16), vz: rnd(40, 90), g: -40 });
-    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 120, '#ffb84a', '#ff5a1e'); fxCinematic(f.x, f.y, 28); if (typeof fxShellImpact === 'function') fxShellImpact(f.x, f.y, 180, .8); if (typeof addShake === 'function') addShake(f.x, f.y, 11); areaDamage(f.x, f.y, 180, 60, true, true, undefined, false, true); }   // a map drum cooking off: the same huge 3× lethal blast as a built one
+    if (f.t <= 0) { G.fuses.splice(i, 1); fxExplosion(f.x, f.y, 60, '#ffb84a', '#ff5a1e'); fxCinematic(f.x, f.y, 15); if (typeof fxShellImpact === 'function') fxShellImpact(f.x, f.y, 54, .6); if (typeof addShake === 'function') addShake(f.x, f.y, 7); areaDamage(f.x, f.y, 54, 60, true, true, undefined, false, true); }   // a map drum cooking off: the same lethal blast as a built one
   }
   // toppling trees: swing over, slam down, break into logs
   if (G.topples && G.topples.length) for (let i = G.topples.length - 1; i >= 0; i--) {
@@ -14599,12 +14599,15 @@ function issueOrder(wx, wy, shift, fast) {
   for (const u of units) { u.stance = 'aggr'; u.guardX = undefined; }
   const tgt = pickAt(wx, wy);
   let done = false;
-  // a red barrel sitting on the map (a terrain prop, not a built structure): right-click it and every selected unit shoots it until it cooks off
-  if (!(tgt && !tgt.dead && (tgt.kind === 'zed' || tgt.kind === 'unit' || tgt.kind === 'build'))) {
-    const bp = barrelPropAt(wx, wy);
-    if (bp) {
-      const tb = { x: bp.x, y: bp.y, kind: 'prop', teamOv: 'X', propId: bp.id, get dead() { return G.deadProps.has(this.propId); } };
-      for (const u of units) { u.wallCover = null; u.order = { type: 'attack', target: tb }; }
+  // right-click ANY red barrel — one built by an engineer or one that spawned on the map — and every selected unit shoots it until it cooks off.
+  // a drum is drawn raised, so the click can land a little off its ground tile: match a built drum within a small radius (and any map-drum prop), not just the exact tile.
+  const clickedElse = tgt && !tgt.dead && (tgt.kind === 'zed' || tgt.kind === 'unit' || (tgt.kind === 'build' && !tgt.def.drum));
+  if (!clickedElse) {
+    let barTgt = null, bd2 = 28 * 28;
+    for (const bb of G.builds) { if (bb.dead || !bb.done || !bb.def || !bb.def.drum) continue; const dd = dist2(bb.x, bb.y, wx, wy); if (dd < bd2) { bd2 = dd; barTgt = bb; } }
+    if (!barTgt) { const bp = barrelPropAt(wx, wy); if (bp) barTgt = { x: bp.x, y: bp.y, kind: 'prop', teamOv: 'X', propId: bp.id, get dead() { return G.deadProps.has(this.propId); } }; }
+    if (barTgt) {
+      for (const u of units) { u.wallCover = null; u.order = { type: 'attack', target: barTgt }; }
       popText(wx, wy - 10, 'SHOOT BARREL', '#ffb84a'); UI.attackMove = false; AU.ui('ok'); return;
     }
   }
@@ -14631,11 +14634,7 @@ function issueOrder(wx, wy, shift, fast) {
     for (const u of units) u.order = { type: 'attack', target: tgt };
     popText(wx, wy - 10, 'ENGAGE', '#ff8a6a'); done = true;
   } else if (tgt && tgt.kind === 'build' && !tgt.dead) {
-    if (tgt.def.drum && tgt.done) {   // a red barrel of ours: shoot it (a couple of rifle hits cook it off)
-      for (const u of units) { u.wallCover = null; u.order = { type: 'attack', target: tgt }; }
-      popText(wx, wy - 10, 'SHOOT BARREL', '#ffb84a'); done = true;
-    }
-    if (!done && tgt.def.cover && tgt.done) {   // a sandbag / concrete wall: engineers patch it up if it's damaged, everyone else takes cover on the clicked side
+    if (tgt.def.cover && tgt.done) {   // a sandbag / concrete wall: engineers patch it up if it's damaged, everyone else takes cover on the clicked side
       const foot = units.filter(u => !u.def.veh && !u.def.fly);
       const fixers = tgt.hp < tgt.maxHp ? foot.filter(u => u.def.builder) : [], coverers = foot.filter(u => !fixers.includes(u));
       for (const u of fixers) { u.wallCover = null; u.order = { type: 'repair', b: tgt }; }
@@ -16901,7 +16900,8 @@ function ctrlHudTick(dt) {
     c.layerEnd.length = 0; c.layerEndW = c.layerEndW || []; c.layerEndW.length = 0;
     for (let k = 0; k < gd; k++) {                         // blade layers interleaved so lowering count thins the carpet evenly (density LOD)
       for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
-        const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
+        const ti = tileIdx(tx, ty), t = MAP.t[ti];
+        if (G.gridB[ti]) { const _bb = G.builds[G.gridB[ti] - 1]; if (!(_bb && !_bb.dead && _bb.def && (_bb.def.mine || _bb.def.trap))) continue; }   // a landmine / flush trap hides IN the grass: tufts keep growing over it. Every other structure clears them.
         if (G.noTuft && G.noTuft.has(ti)) continue;                                                   // engineer brushed the tufts away here
         if (!(G.forceTuft && G.forceTuft.has(ti)) && t !== T_GRASS && t !== T_FOREST && t !== T_SWAMP) continue;   // brushed-in tufts grow on any ground
         const h1 = hash2(tx * 3 + k * 5, ty * 7 + k), h2 = hash2(tx * 11 + k, ty * 13 + k * 3);
@@ -19356,7 +19356,8 @@ function ctrlHudTick(dt) {
       } else if (grassChunks.size) for (const c of grassChunks.values()) { if (c.mesh) c.mesh.visible = false; if (c.meshW) c.meshW.visible = false; }   // CPU fallback active: park the GPU chunks
       const swayBase = tt * 2.4, swayKx = TS * .02, swayKy = TS * .017;                        // wind sway is computed once per tile (not per blade) — one Math.sin instead of thousands, identical-looking ripple
       outer: for (let ty = gty0; ty <= gty1; ty++) for (let tx = gtx0; tx <= gtx1; tx++) {
-        const ti = tileIdx(tx, ty), t = MAP.t[ti]; if (G.gridB[ti]) continue;
+        const ti = tileIdx(tx, ty), t = MAP.t[ti];
+        if (G.gridB[ti]) { const _bb = G.builds[G.gridB[ti] - 1]; if (!(_bb && !_bb.dead && _bb.def && (_bb.def.mine || _bb.def.trap))) continue; }   // a landmine / flush trap hides IN the grass: tufts keep growing over it. Every other structure clears them.
         if (clutter) {
           const hA = hash2(tx * 5 + 1, ty * 3 + 7), hB = hash2(tx * 9 + 3, ty * 5 + 1), hC = hash2(tx * 7 + 5, ty * 11 + 9);
           if (t === T_DIRT || t === T_SAND || t === T_RUBBLE) {                                   // pebbles
