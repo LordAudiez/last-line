@@ -6124,8 +6124,9 @@ function refreshCap() {
 /* ---------------- damage & death ---------------- */
 function damage(e, amt, srcAng, opts) {
   if (!e || e.dead) return;
-  // god-mode cheat: only YOUR OWN units and structures are invulnerable — dev-spawned ally or enemy troops still take damage
-  if (G.cheat.god && (e.kind === 'unit' || e.kind === 'build') && (e.owner || 0) === G.me) return;
+  // god-mode cheat: only YOUR OWN units and structures are invulnerable — dev-spawned ally or enemy troops still take damage.
+  // Red barrels are exempt: they are meant to be shot and cooked off, so unlimited-health must never make your own drums indestructible.
+  if (G.cheat.god && (e.kind === 'unit' || (e.kind === 'build' && !(e.def && e.def.drum))) && (e.owner || 0) === G.me) return;
   opts = opts || {};
   if (opts.blast && (e.kind === 'build' || (e.kind === 'zed' && e.def && e.def.struct)) && srcAng !== undefined) brickBlast(e, amt, srcAng);   // a blast: the struck side sheds bricks
   // co-op: ally units/buildings are ghosts — the owner is authoritative, so never damage them locally.
