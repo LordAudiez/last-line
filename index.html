@@ -1315,6 +1315,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
     <button class="sbtn spdtog" id="spdtog" title="Hide / show speed bar">⏱</button>
     <span id="speedbtns">
       <button class="sbtn pz" data-sp="0" title="Pause (P)">❚❚</button>
+      <button class="sbtn" data-sp="0.25" title="Quarter speed">¼×</button>
       <button class="sbtn" data-sp="0.5">½×</button>
       <button class="sbtn on" data-sp="1">1×</button>
       <button class="sbtn" data-sp="2">2×</button>
@@ -3854,7 +3855,7 @@ const BDEF = {
     desc: 'A large concrete landing pad with a marked circle, edge lights and a blinking beacon. While it stands, supply drops come down on the pad instead of scattered around your HQ, and each crate is collected automatically 3 seconds after it touches down — no unit needed.'
   },
   deliverydepot: {
-    name: 'Supply Delivery Depot', key: 'K', g: '🚁', cat: 'spec', w: 5, h: 5, mw: 3, mh: 3, hgt: 6, hp: 1600, armor: 3, cost: { s: 40000, c: 12000, o: 5000 }, time: 60, needs: 'airbase',
+    name: 'Supply Delivery Depot', key: 'K', g: '🚁', cat: 'spec', w: 7, h: 7, mw: 5, mh: 5, hgt: 6, hp: 1900, armor: 3, cost: { s: 40000, c: 12000, o: 5000 }, time: 60, needs: 'airbase',
     col: ['#3f4b3a', '#2a3227'], roof: '#4e5c46', light: 110, flat: true, pad: 1, delivery: true,
     desc: 'A heavy-lift resupply pad. A CH-47 Chinook cycles in every 45s, drops its ramp and off-loads three forklift loads of stores, then lifts off. Each load banks supply (×5 an airdrop), scrap (half the supply) and oil (half the scrap). Replaces all air-drops. Requires an Airbase.'
   }
@@ -20127,36 +20128,42 @@ function ctrlHudTick(dt) {
       }
       if (b.done && g.userData.chk && b.deliv) {   // Supply Delivery Depot: fly the CH-47 through its resupply cycle
         const CK = g.userData.chk, D = b.deliv, DR = deliveryDurations(), HI = 12, FAR = 48, p = D.phase, tt = Math.max(0, D.t);
-        const dyD = CK.deckY, fH = CK.fH, RL = CK.RL;
+        const dyD = CK.deckY, fH = CK.fH, RL = CK.RL, CX = 0.35;   // park the Chinook a touch forward so its tail ramp lands on the deck
         const smooth = k => { k = clamp(k, 0, 1); return k * k * k * (k * (k * 6 - 15) + 10); };   // 5th-order smootherstep for a soft descent/climb
-        const rampOpen = -Math.asin(Math.min(.95, fH / RL)), rampShut = 0.9;                        // open ramp slopes down to touch the deck; shut ramp seals up
-        let alt = HI, ox = 0, vis = true, spin = 1, pitch = 0, rampA = rampShut;
+        // ramp: OPEN drops the tail door down onto the deck (positive angle → far end below the hinge); SHUT folds it up to seal.
+        //   During flight it stays SHUT; it opens only once the aircraft is down.
+        const rampOpen = Math.asin(Math.min(.95, fH / RL)), rampShut = -1.05;
+        let alt = HI, ox = 0, vis = true, spin = 1, pitch = 0, rampA = rampShut, grounded = false;
         if (p === 'wait') { vis = false; spin = 0; }
-        else if (p === 'in') { const k = smooth(1 - tt / DR.in); ox = FAR * (1 - k); alt = HI * (1 - k); pitch = (k < .7 ? -.16 * (1 - k / .7) : .14 * ((k - .7) / .3)); }   // sweep in nose-down, flare nose-up on the last stretch
-        else if (p === 'ramp') { const k = 1 - tt / DR.ramp; alt = 0; rampA = rampShut + (rampOpen - rampShut) * smooth(k); pitch = .14 * (1 - k); }   // settle level, drop the ramp
-        else if (p === 'unload') { alt = 0; rampA = rampOpen; }
-        else if (p === 'close') { const k = 1 - tt / DR.close; alt = 0; rampA = rampShut + (rampOpen - rampShut) * (1 - smooth(k)); }                    // raise the ramp
-        else { const k = smooth(1 - tt / DR.out); ox = -FAR * k; alt = HI * k; pitch = (k < .4 ? .14 * (k / .4) : -.16 * ((k - .4) / .6)); }             // lift off nose-up, then nose-down and away
-        CK.CH.visible = vis; CK.CH.position.set(ox, dyD + alt, 0); CK.CH.rotation.set(pitch, Math.PI, Math.sin(G.t * 1.3 + b.id) * (alt > .2 ? .02 : 0));   // hover wobble only while airborne
+        else if (p === 'in') { const k = smooth(1 - tt / DR.in); ox = FAR * (1 - k); alt = HI * (1 - k); pitch = (k < .7 ? -.16 * (1 - k / .7) : .14 * ((k - .7) / .3)); }   // sweep in nose-down, flare nose-up, ramp stays shut
+        else if (p === 'ramp') { const k = 1 - tt / DR.ramp; alt = 0; grounded = true; rampA = rampShut + (rampOpen - rampShut) * smooth(k); pitch = .14 * (1 - k); }   // settled: drop the ramp open
+        else if (p === 'unload') { alt = 0; grounded = true; rampA = rampOpen; }
+        else if (p === 'close') { const k = 1 - tt / DR.close; alt = 0; grounded = true; rampA = rampShut + (rampOpen - rampShut) * (1 - smooth(k)); }                    // raise the ramp shut before lift-off
+        else { const k = smooth(1 - tt / DR.out); ox = -FAR * k; alt = HI * k; pitch = (k < .4 ? .14 * (k / .4) : -.16 * ((k - .4) / .6)); }             // lift off nose-up, then nose-down and away, ramp shut
+        CK.CH.visible = vis; CK.CH.position.set(CX + ox, dyD + alt, 0); CK.CH.rotation.set(pitch, Math.PI, Math.sin(G.t * 1.3 + b.id) * (alt > .2 ? .02 : 0));   // hover wobble only while airborne
         if (spin) { const s = G.t * 30; CK.rotF.rotation.z = s; CK.rotR.rotation.z = -s * 1.02;
           for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = .34; }
         else for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = 0;
         if (CK.ramp) CK.ramp.rotation.z = rampA;
-        // forklifts: up the rear ramp into the cabin, pick up a crate, back down the ramp and out onto the deck to set it down
-        const ramp0 = -(1.5 + RL * Math.cos(rampOpen)), ramp1 = -1.5;                               // ramp foot (on deck) .. hinge (x, aircraft-local)
+        // forklifts: three of them WAIT lined up beside the pad, in front of the Chinook's rear door. When the aircraft is down
+        //   and the ramp is open, the on-duty one drives up the ramp INTO the cabin, hooks a crate, comes back down and sets it
+        //   on the deck, then returns to its standby slot. Off duty (or the ship airborne), every forklift sits at its slot.
+        const ramp1 = CX - 1.5, ramp0 = CX - 1.5 - RL * Math.cos(rampOpen);                        // hinge .. ramp foot (x, on the deck)
         const yOnRamp = x => (x <= ramp0 ? dyD : x >= ramp1 ? dyD + fH : dyD + fH * (x - ramp0) / (ramp1 - ramp0));
+        const cab = CX - 0.55, drop = ramp0 - 0.35;                                                 // pick-up point inside the cabin; crate drop just behind the ramp foot
+        const rampOpenEnough = grounded && rampA > rampOpen * .55;                                  // only run the loop once the ramp is actually down
         for (let i = 0; i < CK.forks.length; i++) {
-          const F = CK.forks[i], active = (p === 'unload' && D.fork === i);
-          if (!active) { F.g.visible = false; continue; }
-          F.g.visible = true;
-          const s = 1 - tt / DR.unload, start = ramp0 - .5, cab = -.7, dz = (i - 1) * .7, drop = 0.85;
-          let x = start, y = dyD, z = 0, ang = 0, loaded = false, onRamp = false;
-          if (s < .26) { const k = s / .26; x = start + (cab - start) * k; onRamp = true; ang = 0; }                         // drive up the ramp INTO the cabin (empty)
-          else if (s < .38) { x = cab; onRamp = true; loaded = s > .32; ang = 0; }                                          // hook a crate
-          else if (s < .56) { const k = (s - .38) / .18; x = cab + (ramp0 - cab) * k; onRamp = true; loaded = true; ang = Math.PI; }   // reverse back down the ramp
-          else if (s < .80) { const k = (s - .56) / .24; x = ramp0 + (drop - ramp0) * k; z = dz * k; y = dyD; loaded = true; ang = Math.PI * (1 - k); }   // wheel out across the deck, turning
-          else if (s < .90) { x = drop; z = dz; y = dyD; loaded = s < .85; ang = 0; }                                       // set the crate down on the pad
-          else { const k = (s - .90) / .10; x = drop + (start - drop) * k; z = dz * (1 - k); y = dyD; ang = Math.PI; }        // trundle back for the next load
+          const F = CK.forks[i]; F.g.visible = true;
+          const sbX = ramp0 - 0.55, sbZ = (i - 1) * 0.95;                                           // standby slot: in a row in front of the rear door
+          const active = (p === 'unload' && D.fork === i && rampOpenEnough);
+          if (!active) { F.g.position.set(sbX, dyD + .02, sbZ); F.g.rotation.y = 0; F.load.visible = false; continue; }   // waiting, facing the door
+          const s = 1 - tt / DR.unload; let x = sbX, y = dyD, z = sbZ, ang = 0, loaded = false, onRamp = false;
+          if (s < .10) { const k = s / .10; z = sbZ * (1 - k); x = sbX; ang = 0; }                                         // pull out and line up on the ramp centre
+          else if (s < .34) { const k = (s - .10) / .24; x = sbX + (cab - sbX) * k; z = 0; onRamp = true; ang = 0; }        // climb the ramp INTO the cabin (empty)
+          else if (s < .46) { x = cab; z = 0; onRamp = true; loaded = s > .40; ang = 0; }                                  // hook a crate
+          else if (s < .66) { const k = (s - .46) / .20; x = cab + (drop - cab) * k; z = 0; onRamp = true; loaded = true; ang = Math.PI; }   // reverse back down the ramp with the load
+          else if (s < .78) { x = drop; z = sbZ * ((s - .66) / .12); y = dyD; loaded = s < .74; ang = Math.PI; }           // set the crate down beside the door
+          else { const k = (s - .78) / .22; x = drop + (sbX - drop) * k; z = sbZ; y = dyD; ang = Math.PI * (1 - k); }        // trundle back to the standby slot
           if (onRamp) y = yOnRamp(x);
           F.g.position.set(x, y + .02, z); F.g.rotation.y = ang; F.load.visible = loaded;
         }
