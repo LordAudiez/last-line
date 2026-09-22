@@ -7294,7 +7294,7 @@ const plyOf = e => G.players[(e && e.owner) || 0] || G.players[0];
 /* teamOv is a dev-cheat override: a unit or a zombie can be forced onto any team ('A'..'D'), so a zombie can
    fight FOR you (teamOv = your team) or a soldier can be turned against you (teamOv = a rival team). Without it,
    a zed is always the horde ('Z') and a unit follows its owner's team. */
-const teamOf = e => e.teamOv || (e.kind === 'zed' ? 'Z' : plyOf(e).team);
+const teamOf = e => e.teamOv || (e.kind === 'zed' ? (e.med ? 'M' : 'Z') : plyOf(e).team);   // medieval faction units are their own team 'M' — hostile to both the player AND the 'Z' zombie horde (3-way)
 /* hostile: different teams, or anything vs the horde */
 function hostile(a, b) { const ta = teamOf(a), tb = teamOf(b); return ta !== tb; }
 /* ---- dev-cheat role players: a persistent ALLY (my team) and ENEMY (a rival team) commander, added on demand so
@@ -8117,6 +8117,28 @@ function seedWorld(n) {
     made++;
   }
   G.waveAlive = 0;      // world population is not a wave
+  // a SMALL medieval warband also stalks this land: it musters ~100 fighters, then marches on the player. The zombie
+  //   horde treats it as prey (kills its fighters before the player), and the warband fights both the horde and the player.
+  { let cp = null; for (let i = 0; i < 40; i++) { const q = randomLandPoint(); if (q && dist2(q.x, q.y, bx, by) > 2600 * 2600) { cp = q; break; } }
+    if (!cp) cp = { x: bx + 3200, y: by }; G.zmFaction = { idx: 1, x: cp.x, y: cp.y, cap: 150, rate: 2.0, spawnT: 8 }; }
+}
+/* the zombie-mode warband: spawn a few medieval fighters at a time and fold them into the muster; when it reaches 100 it marches */
+function zmFactionPick() { const r = Math.random(); return r < .46 ? 'infantry' : r < .64 ? 'archer' : r < .80 ? 'duelist' : r < .93 ? 'cavalry' : 'siege'; }
+function updateZmFaction(dt) {
+  const F = G.zmFaction; if (!F) return;
+  F.spawnT = (F.spawnT || 0) - dt; if (F.spawnT > 0) return; F.spawnT = F.rate || 2.0;
+  let alive = 0; for (const z of G.zeds) if (!z.dead && z.med && z.faction === F.idx && !z.def.worker && !z.def.struct) alive++;
+  if (alive >= (F.cap || 150)) return;
+  const M = G.musters && G.musters[F.idx];
+  const ox = M ? M.x : F.x, oy = M ? M.y : F.y;
+  for (let i = 0; i < 3; i++) {
+    const t = zmFactionPick();
+    const p = randomLandPoint(ox, oy, 24, 180) || { x: ox, y: oy };
+    if (typeof IMPASSABLE === 'function' && IMPASSABLE(terrainAt(p.x, p.y))) continue;
+    const z = spawnZed(t, p.x, p.y); if (!z) continue;
+    z.faction = F.idx; z.mode = 'hunt';
+    musterJoin(z);
+  }
 }
 
 const MTYPES = ['infantry', 'cavalry', 'archer', 'siege'];
@@ -8176,7 +8198,6 @@ function startWave(forceHorde) {
   else { count = 200 + (w - 100) * 6; spec = Math.min(.45, .30 + (w - 100) * .005); }
   if (G.night) count = Math.round(count * 1.1);
   const elite = w > 100 && w % 10 === 0;
-  if (horde) count = Math.round(count * .5);
   // normal pool: walkers, with runners mixed in from wave 2 (more of them as the waves climb)
   const norm = [['walker', 60], ['runner', w >= 2 ? Math.min(45, 20 + w * .5) : 0]];
   // special pool: splitters / brutes / predators (bloaters are handled separately — see below)
@@ -8189,15 +8210,22 @@ function startWave(forceHorde) {
   }
   let gap = 0;                                              // a regular wave arrives all at once — one body, one direction
   if (horde) {
-    // the flood: one full minute of normal zombies at a fixed rate, interleaved with the regular column
-    const rate = w > 100 ? 5 : 3, n = rate * HORDE_SPAWN_T;   // pours in for 40 s, then the alarm waits on the last body
-    const flood = []; for (let i = 0; i < n; i++) flood.push(Math.random() < .35 && w >= 2 ? 'runner' : 'walker');
-    // spread the column's specials evenly through the flood so the minute never goes quiet
-    const merged = [], step = Math.max(1, Math.floor(flood.length / Math.max(1, list.length))); let j = 0;
-    for (let i = 0; i < flood.length; i++) { merged.push(flood[i]); if (j < list.length && (i + 1) % step === 0) merged.push(list[j++]); }
-    while (j < list.length) merged.push(list[j++]);
-    list.length = 0; for (const t of merged) list.push(t);
-    gap = HORDE_SPAWN_T / list.length;
+    // ── HORDE: a huge, mixed body. 100 strong at the first horde (wave 15), scaling up to a hard cap of 400. ──
+    //    Both the SHARE of special zombies and the weight of the nastier specials climb with the wave number, so a
+    //    deep-wave horde is not just bigger but far tougher in composition.
+    const hordeCount = Math.round(clamp(100 + Math.max(0, w - 15) * 4, 100, 400));
+    const specFrac = clamp(0.10 + Math.max(0, w - 15) * 0.006, 0.10, 0.55);       // 10% special at wave 15 → up to 55% deep in
+    const hNorm = [['walker', Math.max(30, 100 - w * 0.5)], ['runner', w >= 2 ? 30 + w * 0.6 : 0]];
+    const hSpec = [                                                                // per-type spawn chance rises with the wave
+      ['splitter', 20 + w * 0.18],
+      ['brute',    (w >= 20 ? 10 : 5) + w * 0.24],
+      ['predator', (w >= 25 ? 9 : 4) + w * 0.20],
+      ['bloater',  w >= 30 ? 6 + w * 0.12 : 0]
+    ];
+    const hlist = [];
+    for (let i = 0; i < hordeCount; i++) hlist.push(Math.random() < specFrac ? pick(hSpec) : pick(hNorm));
+    list.length = 0; for (const t of hlist) list.push(t);
+    gap = HORDE_SPAWN_T / Math.max(1, list.length);          // pour the whole horde in over the spawn window
   }
   G.waveElite = elite;
   // every column brings a few levy builders to raise camps in the field
@@ -8414,7 +8442,7 @@ function callAirdrop(manual) {
   for (let i = 0; i < n; i++) {
     let cx, cy, onPad = false;
     if (pad) {
-      const rad = Math.min(pad.w, pad.h) * TS * .38;             // scatter within the pad's marked circle
+      const rad = Math.min(pad.w, pad.h) * TS * .30;             // scatter tight, well inside the pad deck so every crate lands on the model
       const a = rnd(TAU), r = Math.sqrt(Math.random()) * rad;
       cx = pad.x + Math.cos(a) * r; cy = pad.y + Math.sin(a) * r; onPad = true;
     } else {
@@ -10409,11 +10437,20 @@ function pickZedTarget(z) {
     const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u);
     if (d < bd && d < sr * sr) { bd = d; best = u; }
   }
-  // once any friendly zed is on the field, every zed also treats the OTHER side's zombies as targets — the horde and
-  // the turned undead tear into each other. (Gated so the ordinary game never pays for this scan.)
-  if (G._friendlyZeds) {
+  // cross-pool combat: a zed can also fight the OTHER kind of zed. This covers the dev friendly-zed mode AND the
+  //   zombie-mode 3-way, where the horde ('Z') and the medieval faction ('M') are mutually hostile. A PURE zombie
+  //   PRIORITISES faction units — it kills the nearest one it can see before turning back to the player.
+  if (G._friendlyZeds || (G.zmFaction && z.kind === 'zed')) {
     const zl = G.hZeds.near(z.x, z.y, R, _q3);
-    for (let i = 0; i < zl.length; i++) { const o = zl[i]; if (o === z || o.dead || o.def.struct || o.def.worker || !hostile(z, o)) continue; const d = dist2(o.x, o.y, z.x, z.y); if (d < bd) { bd = d; best = o; } }
+    const pureZ = !z.med && !foe && z.faction == null;          // an ordinary zombie of the horde
+    let mbest = null, mbd = R * R;                               // nearest hostile faction unit (a pure zombie's first priority)
+    for (let i = 0; i < zl.length; i++) {
+      const o = zl[i]; if (o === z || o.dead || o.def.struct || o.def.worker || !hostile(z, o)) continue;
+      const d = dist2(o.x, o.y, z.x, z.y);
+      if (pureZ && o.med) { if (d < mbd) { mbd = d; mbest = o; } }   // save the nearest faction fighter for priority targeting
+      else if (d < bd) { bd = d; best = o; }                        // everyone else: fold into the general nearest-hostile pick
+    }
+    if (pureZ && mbest) return mbest;                            // faction unit in sight → deal with it FIRST, then the player
   }
   if (best) return best;
   if (foe) return null;                                        // a friendly zed with nothing hostile in sight just holds/wanders — it never marches on your base
@@ -10547,7 +10584,8 @@ function updateMuster(dt) {
     musterLayout(M);
     // the main host waits for its full 200; a rival faction gathers a ~100-strong column before it steps off (or marches with
     // whatever it has after a long muster, so a boxed-in faction still comes)
-    const march = M.faction > 0 ? (M.n >= 95 || (M.t > 150 && M.n >= 40)) : (M.n >= MUSTER_FULL);
+    const rivalFull = G.zmFaction ? 100 : 95;   // the zombie-mode warband marches at exactly 100; invader rivals keep ~95
+    const march = M.faction > 0 ? (M.n >= rivalFull || (M.t > 150 && M.n >= 40)) : (M.n >= MUSTER_FULL);
     if (march) musterMarch(M);
   };
   tick(G.muster);
@@ -10995,6 +11033,13 @@ function updateZeds(dt) {
       for (let k = 0; k < ul.length; k++) { const u = ul[k]; if (u.dead || u.inside || u.def.fly || !hostile(z, u)) continue; const d = dist2(u.x, u.y, z.x, z.y), sr = R * spotMul(u); if (d < bd && d < sr * sr) { bd = d; best = u; } }
       if (best) z.target = best;
     }
+    // zombie-mode 3-way: a pure zombie keeps watch for faction troops and breaks off to cut them down FIRST, before the player
+    if (G.zmFaction && z.kind === 'zed' && !z.med && !z.teamOv && z.faction == null && ((i + G.frame) % 15) === 0 &&
+        !(z.target && z.target.kind === 'zed' && z.target.med)) {
+      const R = zedSense(z), zl = G.hZeds.near(z.x, z.y, R, _q3); let mb = null, mbd = R * R;
+      for (let k = 0; k < zl.length; k++) { const o = zl[k]; if (o.dead || !o.med || o.def.struct || o.def.worker || !hostile(z, o)) continue; const d = dist2(o.x, o.y, z.x, z.y); if (d < mbd) { mbd = d; mb = o; } }
+      if (mb) z.target = mb;
+    }
     if (z.target && z.mode === 'roam') z.mode = 'hunt';
     // capture mission fulfilled or void → switch to seek-and-destroy
     if (z.mission === 'capture' && (!z.missionTarget || z.missionTarget.dead || z.missionTarget.owner === 'invader')) z.mission = 'raid';
@@ -11210,6 +11255,12 @@ function updateBuildings(dt) {
       const a = Math.PI / 2 + (b.facing || 0), gx = b.x + Math.cos(a) * (b.def.w * TS * .55 + 5.2 * TS), gy2 = b.y + Math.sin(a) * (b.def.w * TS * .55 + 5.2 * TS);
       if (typeof clearTerrainAt === 'function') clearTerrainAt(gx, gy2, 5.5);
       if (typeof paintGround === 'function') paintGround(gx, gy2, 5, 'concrete');
+    }
+    // landing pads sit on a levelled apron: clear the grass tufts under the footprint once, so nothing pokes up through the deck
+    if (b.def.pad && !b._paved) {
+      b._paved = 1; const pr = Math.max(b.w, b.h) * .5 + .4;
+      if (typeof clearTerrainAt === 'function') clearTerrainAt(b.x, b.y, pr);
+      if (typeof paintGround === 'function') paintGround(b.x, b.y, pr - .4, 'concrete');
     }
     if (b.def.scrapGen) G.scr += b.def.scrapGen * (b.tier || 1) * dt;   // scrap refinery / factory income — scales with its upgrade tier
     if (b.def.supGen) G.sup += b.def.supGen * (b.tier || 1) * dt;       // supply depot / warehouse income
@@ -12452,7 +12503,8 @@ function step(dt) {
   if (G.players.length > 1 && G.frame % 30 === 0) checkVictory();
   /* horde alarm: from the horde call until EVERY horde body is down (spawning runs for 40 s, then the alarm holds until the last one dies) */
   if (G.hordeEv) updateHordeEvent(dt);
-  if (G.mode === 'invaders') updateHosts(dt);
+  if (G.zmFaction) updateZmFaction(dt);                          // zombie-mode medieval warband: spawn + muster
+  if (G.mode === 'invaders' || G.zmFaction) updateHosts(dt);    // run the muster/march machinery for the warband too
   if (G.hordeAlert) {
     const queued = G.waveQueue && G.wave === G.hordeWave && G.waveQueue.list.length > 0;
     const spawning = !!(G.hordeEv && G.hordeEv.t < HORDE_SPAWN_T);
@@ -16530,9 +16582,10 @@ function ctrlHudTick(dt) {
   const gl = document.createElement('canvas'); gl.id = 'gl';
   gl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0';
   cv.parentNode.insertBefore(gl, cv); cv.style.background = 'transparent'; cv.style.zIndex = '1'; cv.style.position = 'absolute';
-  const renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true, alpha: false });
+  const renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true, alpha: false, powerPreference: 'high-performance' });   // ask the OS for the discrete GPU on dual-GPU laptops
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;   // we drive shadow updates ourselves (staggered) — the sun and world change slowly, so re-rendering the shadow map every other frame is invisible but frees a whole pass on the frames between
   renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;   // a touch brighter for the warm HD-2D look
   const scene3 = new THREE.Scene(); scene3.background = new THREE.Color(0xb8c8d8); scene3.fog = new THREE.Fog(0xb8c8d8, 74, 300);   // haze starts a little nearer and fades out further — more aerial depth between the foreground and the map edge
   /* HD reflections: a small procedural sky (blue zenith, warm haze at the horizon, dark ground) run through PMREM and set as
@@ -16802,6 +16855,9 @@ function ctrlHudTick(dt) {
   const _sunV = new THREE.Vector3();
   function renderFrame(day) {
     srUpdate();
+    // staggered shadows: with autoUpdate off, refresh the shadow map every other rendered frame. Half the shadow passes
+    //   disappear; because the sun and most geometry move slowly the 1-frame shadow lag on movers is imperceptible.
+    if (renderer.shadowMap.enabled) { renderer.shadowMap.needsUpdate = (((renderFrame._shf = (renderFrame._shf | 0) + 1) & 1) === 0); }
     const useSR = SR.mode !== 'off' && SR.scale < .995;
     if (!FX.on && !useSR) { renderer.setRenderTarget(null); renderer.render(scene3, cam3); return; }
     if (!FX.rt || FX.w !== Math.floor(renderer.domElement.width) || FX.h !== Math.floor(renderer.domElement.height)) fxResize();
@@ -18674,57 +18730,79 @@ function ctrlHudTick(dt) {
       g.add(cyl(.02, .02, .02, matFor('#ff3a2a', { emissive: lin('#ff3a2a'), emissiveIntensity: .9 }), .11, .08, 0, 'y'));
     }
     else if (b.t === 'helipad' || b.t === 'deliverydepot') {
-      // a concrete landing pad: apron slab, a painted touchdown circle + H, edge lights and blinking beacons. The Supply
-      // Delivery Depot additionally carries a CH-47 Chinook (2× a Blackhawk) that cycles in to off-load stores by forklift —
-      // the aircraft, its ramp, rotors, forklifts and the pad beacons are all posed by the building animation loop from userData.chk
+      // a raised concrete landing pad that sits fully ON the ground (a plinth skirts down to the terrain so no corner sinks),
+      // with a painted touchdown circle + H, edge lights and blinking beacons. The Supply Delivery Depot also carries a
+      // redesigned CH-47 Chinook — realistic tandem rotors, a nose-down flight attitude, a rear ramp that drops on landing,
+      // and forklifts that run up the ramp INTO the cabin and back down. All of it is posed by the building loop from userData.chk.
       const delivery = b.t === 'deliverydepot';
-      const APR = matFor('#7d8188', { map: TEX.road, roughness: .95 }), APRD = matFor('#54585e', PANEL), PAINT = matFor('#e8e8de', { roughness: .8 });
-      const R = Math.min(w, h) * .42;
-      g.add(box(w * .96, .06, h * .96, APR, 0, .03, 0));                                                                        // apron slab
-      g.add(box(w * .96, .07, .12, APRD, 0, .035, h * .48)); g.add(box(w * .96, .07, .12, APRD, 0, .035, -h * .48));            // kerb front/back
-      g.add(box(.12, .07, h * .96, APRD, w * .48, .035, 0)); g.add(box(.12, .07, h * .96, APRD, -w * .48, .035, 0));            // kerb sides
-      { const ring = new THREE.Mesh(new THREE.RingGeometry(R - .1, R, 40), PAINT); ring.rotation.x = -HPI; ring.position.y = .065; g.add(ring); }   // touchdown circle
-      g.add(box(.14, .012, R * .9, PAINT, -R * .28, .07, 0)); g.add(box(.14, .012, R * .9, PAINT, R * .28, .07, 0)); g.add(box(R * .56, .012, .14, PAINT, 0, .07, 0));   // the "H"
-      for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; g.add(cyl(.03, .03, .04, matFor('#cfe6ff', { emissive: lin('#7fc0ff'), emissiveIntensity: .9 }), Math.cos(a) * R * 1.02, .06, Math.sin(a) * R * 1.02, 'y')); }   // edge lights
-      // blinking beacons on posts: a red one, and (delivery pad) a green one on the opposite corner
-      const beacon = (col, glow, cx, cz) => { g.add(cyl(.03, .03, .34, matFor('#2a2e32', PANEL), cx, .17, cz, 'y')); const lamp = sph(.07, matFor(col, { emissive: lin(glow), emissiveIntensity: 1 }), cx, .38, cz); g.add(lamp); return lamp; };
-      const beR = beacon('#ff5a4a', '#ff2a1a', -w * .42, -h * .42);
-      const beG = delivery ? beacon('#54ff88', '#22e060', w * .42, h * .42) : null;
+      const APR = matFor('#83878e', { map: TEX.road, roughness: .95 }), APRD = matFor('#33373d', PANEL), SKIRT = matFor('#26292e', PANEL), PAINT = matFor('#ecece4', { roughness: .8 });
+      const YEL = matFor('#ffcf5a', { emissive: lin('#c99a20'), emissiveIntensity: .35 });
+      const BH = 0.34;                                                            // plinth height — the pad stands proud of the grass
+      const R = Math.min(w, h) * .40;
+      g.add(box(w * .995, BH * .5, h * .995, SKIRT, 0, BH * .25, 0));             // buried-looking base skirt (its underside at y=0 sits on the terrain)
+      g.add(box(w * .96, BH, h * .96, APRD, 0, BH * .5 + .02, 0));                // plinth block
+      g.add(box(w * .95, .08, h * .95, APR, 0, BH + .04, 0));                      // deck slab
+      const D = BH + .08;                                                          // deck-top height
+      for (const s of [-1, 1]) { g.add(box(w * .95, .05, .10, YEL, 0, D + .02, s * h * .46)); g.add(box(.10, .05, h * .95, YEL, s * w * .46, D + .02, 0)); }   // yellow kerb rails
+      { const ring = new THREE.Mesh(new THREE.RingGeometry(R - .12, R, 48), PAINT); ring.rotation.x = -HPI; ring.position.y = D + .012; g.add(ring); }         // touchdown circle
+      g.add(box(.17, .014, R * .92, PAINT, -R * .28, D + .014, 0)); g.add(box(.17, .014, R * .92, PAINT, R * .28, D + .014, 0)); g.add(box(R * .56, .014, .17, PAINT, 0, D + .014, 0));   // "H"
+      for (let i = 0; i < 16; i++) { const a = i / 16 * TAU; g.add(cyl(.032, .032, .05, matFor('#cfe6ff', { emissive: lin('#7fc0ff'), emissiveIntensity: .9 }), Math.cos(a) * R * 1.03, D + .02, Math.sin(a) * R * 1.03, 'y')); }   // edge lights
+      const beacon = (col, glow, cx, cz) => { g.add(cyl(.035, .035, .42, matFor('#2a2e32', PANEL), cx, D + .21, cz, 'y')); const lamp = sph(.085, matFor(col, { emissive: lin(glow), emissiveIntensity: 1 }), cx, D + .46, cz); g.add(lamp); return lamp; };
+      const beR = beacon('#ff5a4a', '#ff2a1a', -w * .43, -h * .43);
+      const beG = delivery ? beacon('#54ff88', '#22e060', w * .43, h * .43) : null;
       g.userData.padBeacons = { r: beR, g: beG };
       if (delivery) {
-        // ---- the CH-47 Chinook: a tandem-rotor heavy-lifter, roughly twice a Blackhawk. Built facing +x; parked/animated by the loop. ----
-        const CH = new THREE.Group();
-        const HULL2 = matFor('#4a5140', PANEL), HULD = matFor('#363b2e', PANEL), DK = matFor('#1e2124', { metalness: .5, roughness: .5 }), GLS = matFor('#1c3444', { roughness: .06, metalness: .8 });
-        CH.add(box(3.0, .7, .82, HULL2, 0, .95, 0)); CH.add(box(3.0, .12, .78, HULD, 0, .56, 0));                                 // long fuselage + belly
-        CH.add(sph(.42, HULL2, 1.5, .95, 0, .9, 1, 1)); CH.add(box(.5, .34, .78, GLS, 1.45, 1.06, 0, 0, 0, -.35));                // rounded nose + cockpit glass
-        for (const s of [-1, 1]) { for (let i = 0; i < 4; i++) CH.add(box(.03, .2, .24, GLS, -.9 + i * .5, .98, s * .41)); }      // cabin windows both sides
-        // aft pylon (raised) + forward pylon (low)
-        CH.add(box(.5, .5, .7, HULL2, -1.15, 1.5, 0)); CH.add(box(.55, .28, .74, HULD, -1.15, 1.78, 0));                          // rear pylon
-        CH.add(box(.42, .3, .6, HULL2, 1.05, 1.32, 0));                                                                          // forward pylon
-        for (const s of [-1, 1]) CH.add(cyl(.13, .12, 1.0, DK, -.7, 1.2, s * .3, 'x'));                                          // twin engine nacelles on the aft deck
-        // rear loading ramp — hinged at the aft belly; userData refs it so the loop can lower/raise it
-        const ramp = new THREE.Group(); ramp.position.set(-1.5, .62, 0); ramp.add(box(.7, .06, .74, HULD, -.35, 0, 0)); CH.add(ramp);
-        CH.add(box(.12, .5, .78, HULD, -1.52, .9, 0));                                                                            // aft bulkhead (ramp opening)
-        // tandem rotors: front and rear 3-blade heads with blur discs
-        const BLD = matFor('#1a1c1e', { roughness: .7 });
-        const mkHead = (cx, cy, Rr) => { const grp = new THREE.Group(); grp.rotation.x = -HPI; grp.position.set(cx, cy, 0); for (let i = 0; i < 3; i++) { const a = i / 3 * TAU; grp.add(box(Rr * .96, Rr * .06, .02, BLD, Math.cos(a) * Rr * .5, Math.sin(a) * Rr * .5, 0, 0, 0, a)); } grp.add(cyl(.06, .06, .12, DK, 0, 0, 0, 'z')); const disc = new THREE.Mesh(new THREE.CircleGeometry(Rr, 24), ROTOR); grp.add(disc); CH.add(grp); return grp; };
-        const rotR = mkHead(-1.15, 1.98, 1.5), rotF = mkHead(1.05, 1.66, 1.5);
-        for (const s of [-1, 1]) { CH.add(box(.04, .3, .04, DK, .6, .5, s * .34)); CH.add(cyl(.13, .13, .12, TIRE, .6, .28, s * .38, 'z')); CH.add(box(.04, .3, .04, DK, -.95, .5, s * .34)); CH.add(cyl(.13, .13, .12, TIRE, -.95, .28, s * .38, 'z')); }   // four-wheel gear
-        CH.add(cyl(.02, .02, .5, DK, -1.7, 1.05, 0, 'x'));                                                                       // tail fairing / antenna
+        // ================= CH-47 CHINOOK (redesigned) — built facing +x, wheels resting at local y = 0 =================
+        const CH = new THREE.Group(); CH.rotation.order = 'YXZ';                   // YXZ lets us yaw then pitch cleanly for a realistic flight attitude
+        const OL = matFor('#48533f', PANEL), OD = matFor('#333c2b', PANEL), HULD = matFor('#252c1e', PANEL), DK = matFor('#181a1d', { metalness: .55, roughness: .42 });
+        const GLS = matFor('#123049', { roughness: .05, metalness: .85, emissive: lin('#0b1c28'), emissiveIntensity: .35 }), STL = matFor('#6a7076', { metalness: .6, roughness: .35 });
+        const fH = 0.40;                                                           // cabin-floor height above the wheels
+        // fuselage: long body with a boat-tailed aft, a rounded nose and a raked cockpit
+        CH.add(box(3.0, .82, .94, OL, -.05, fH + .5, 0)); CH.add(box(3.0, .2, .84, HULD, -.05, fH + .06, 0));    // body + belly keel
+        CH.add(box(.8, .5, .9, OD, -1.35, fH + .34, 0, 0, 0, .18));                                              // up-swept boat tail
+        CH.add(sph(.48, OL, 1.5, fH + .5, 0, .95, 1, 1)); CH.add(box(.22, .3, .7, OD, 1.86, fH + .4, 0));        // rounded nose + chin
+        CH.add(box(.58, .42, .88, GLS, 1.46, fH + .66, 0, 0, 0, -.34)); CH.add(box(.06, .44, .9, DK, 1.75, fH + .66, 0, 0, 0, -.34));   // raked cockpit glass + windscreen post
+        for (const s of [-1, 1]) { CH.add(box(.34, .26, .04, GLS, 1.2, fH + .58, s * .45)); for (let i = 0; i < 5; i++) CH.add(box(.03, .22, .26, GLS, -1.0 + i * .42, fH + .56, s * .47)); }   // cockpit side + cabin windows
+        // twin rotor pylons: forward low, aft tall (on the boat tail), with engine nacelles on the aft deck
+        CH.add(box(.5, .34, .66, OD, 1.0, fH + 1.02, 0)); CH.add(box(.6, .62, .78, OD, -1.28, fH + 1.16, 0)); CH.add(box(.66, .16, .82, HULD, -1.28, fH + 1.5, 0));   // fwd pylon, aft pylon + cap
+        for (const s of [-1, 1]) { CH.add(cyl(.15, .13, 1.1, DK, -.75, fH + .92, s * .34, 'x')); CH.add(cyl(.11, .1, .16, matFor('#0e0f11'), -1.34, fH + .92, s * .34, 'x')); }   // engine nacelles + exhausts
+        // REAR RAMP — a hinge group at the aft cabin floor; closed = sealed up, open = a down-slope onto the deck (the loop sets .rotation.z)
+        const RL = 1.15;
+        const ramp = new THREE.Group(); ramp.position.set(-1.5, fH + .02, 0);
+        ramp.add(box(RL, .07, .82, OD, -RL / 2, 0, 0)); ramp.add(box(RL, .03, .12, YEL, -RL / 2, .05, .35)); ramp.add(box(RL, .03, .12, YEL, -RL / 2, .05, -.35));   // ramp deck + edge stripes
+        CH.add(ramp); CH.userData.ramp = ramp;
+        CH.add(box(.14, .5, .86, HULD, -1.5, fH + .3, 0));                                                       // aft bulkhead / cargo-door frame
+        // tandem rotors — proper heads: mast, hub, three tapered drooping blades, and a soft blur disc that the loop fades in with rpm
+        const BLD = matFor('#141618', { roughness: .6, metalness: .3 });
+        const mkHead = (cx, cy, Rr) => {
+          const mast = cyl(.05, .05, .34, STL, cx, cy - .17, 0, 'y'); CH.add(mast); CH.add(sph(.12, DK, cx, cy, 0));
+          const grp = new THREE.Group(); grp.rotation.x = -HPI; grp.position.set(cx, cy, 0);
+          for (let i = 0; i < 3; i++) { const a = i / 3 * TAU;
+            grp.add(box(Rr * .96, Rr * .052, .022, BLD, Math.cos(a) * Rr * .52, Math.sin(a) * Rr * .52, -.015, 0, 0, a));   // blade (drooped via z offset)
+            grp.add(box(Rr * .26, Rr * .08, .03, DK, Math.cos(a) * Rr * .14, Math.sin(a) * Rr * .14, 0, 0, 0, a)); }       // root cuff
+          const disc = new THREE.Mesh(new THREE.CircleGeometry(Rr, 28), new THREE.MeshBasicMaterial({ color: 0x1a1c1e, transparent: true, opacity: .0, side: THREE.DoubleSide })); grp.add(disc); grp.userData.disc = disc;
+          CH.add(grp); return grp;
+        };
+        const rotF = mkHead(1.0, fH + 1.24, 1.55), rotR = mkHead(-1.28, fH + 1.62, 1.55);
+        // landing gear — four wheels on short struts reaching down to y = 0
+        for (const s of [-1, 1]) for (const cx of [.62, -.9]) { CH.add(box(.05, fH * .8, .05, DK, cx, fH * .4, s * .38)); CH.add(cyl(.15, .15, .13, TIRE, cx, .15, s * .42, 'z')); CH.add(cyl(.07, .07, .14, RIM, cx, .15, s * .42, 'z')); }
+        CH.add(cyl(.02, .02, .55, DK, -1.9, fH + .55, 0, 'x')); CH.add(sph(.04, matFor('#ff3a2a', { emissive: lin('#ff3a2a'), emissiveIntensity: 1 }), -1.28, fH + 1.62, 0));   // tail probe + anti-collision beacon
         CH.visible = false; g.add(CH);
-        // three forklifts that shuttle stores off the ramp onto the pad
+        // three forklifts (start hidden) — the loop drives them up the ramp into the cabin and back down onto the deck
         const forks = [];
         for (let i = 0; i < 3; i++) {
-          const F = new THREE.Group(); const body = matFor('#d8a12a', { roughness: .6 });
-          F.add(box(.26, .18, .2, body, 0, .16, 0)); F.add(box(.14, .16, .2, matFor('#2a2c28', PANEL), -.12, .2, 0));            // chassis + cab back
-          F.add(cyl(.07, .07, .06, TIRE, .1, .07, .11, 'z')); F.add(cyl(.07, .07, .06, TIRE, .1, .07, -.11, 'z')); F.add(cyl(.05, .05, .06, TIRE, -.1, .06, .11, 'z')); F.add(cyl(.05, .05, .06, TIRE, -.1, .06, -.11, 'z'));   // wheels
-          F.add(box(.02, .34, .02, matFor('#3a3c38', PANEL), .16, .2, .07)); F.add(box(.02, .34, .02, matFor('#3a3c38', PANEL), .16, .2, -.07));   // mast
-          const forkY = new THREE.Group(); forkY.add(box(.18, .02, .04, matFor('#c8ccd0', PANEL), .26, 0, .07)); forkY.add(box(.18, .02, .04, matFor('#c8ccd0', PANEL), .26, 0, -.07)); forkY.position.y = .08; F.add(forkY);
-          const load = box(.2, .18, .22, matFor('#5c6a48', { map: TEX.panel, roughness: .9 }), .3, .1, 0); forkY.add(load);      // the crate on the forks
+          const F = new THREE.Group(); const body = matFor('#e2ac2c', { roughness: .55 });
+          F.add(box(.3, .2, .24, body, 0, .17, 0)); F.add(box(.16, .22, .24, matFor('#2a2c28', PANEL), -.13, .24, 0)); F.add(box(.16, .02, .24, DK, -.13, .36, 0));   // chassis, cab, roof
+          F.add(box(.02, .04, .26, DK, .16, .3, 0));                                                                                     // headlight bar
+          for (const wz of [.13, -.13]) { F.add(cyl(.08, .08, .06, TIRE, .11, .08, wz, 'z')); F.add(cyl(.055, .055, .06, TIRE, -.11, .07, wz, 'z')); }               // wheels
+          F.add(box(.02, .4, .02, STL, .18, .24, .08)); F.add(box(.02, .4, .02, STL, .18, .24, -.08));                                   // mast rails
+          const forkY = new THREE.Group(); forkY.add(box(.22, .02, .05, matFor('#c8ccd0', PANEL), .3, 0, .08)); forkY.add(box(.22, .02, .05, matFor('#c8ccd0', PANEL), .3, 0, -.08)); forkY.position.y = .07; F.add(forkY);
+          const load = box(.24, .2, .26, matFor('#5c6a48', { map: TEX.panel, roughness: .9 }), .34, .11, 0); forkY.add(load);
           F.visible = false; g.add(F); forks.push({ g: F, forks: forkY, load });
         }
-        g.userData.chk = { CH, rotF, rotR, ramp, forks };
+        g.userData.chk = { CH, rotF, rotR, ramp, forks, fH, deckY: D, RL };
       }
+      g.userData.padClear = true;   // tell the sim step to flatten + clear tufts under the footprint so nothing pokes through the deck
     }
     else if (d.flat) { g.add(box(w * .9, .05, h * .9, matFor(d.col[0], { map: TEX.panel }), 0, .03, 0)); for (let i = 0; i < 6; i++) g.add(cyl(.02, 0, .16, BARREL, (i % 3 - 1) * .28, .1, (i < 3 ? -.2 : .2), 'y')); }
     else if (d.wall) {
@@ -20048,27 +20126,39 @@ function ctrlHudTick(dt) {
         if (pb.g) pb.g.material.emissiveIntensity = on ? .1 : 1.7;
       }
       if (b.done && g.userData.chk && b.deliv) {   // Supply Delivery Depot: fly the CH-47 through its resupply cycle
-        const CK = g.userData.chk, D = b.deliv, DR = deliveryDurations(), HI = 11, FAR = 46, p = D.phase, tt = Math.max(0, D.t);
-        let alt = HI, ox = 0, vis = true, rampA = 0, spin = true;
-        if (p === 'wait') { vis = false; spin = false; }
-        else if (p === 'in') { const k = 1 - tt / DR.in; ox = FAR * (1 - k); alt = HI * (1 - k * k); }               // descend in from the east
-        else if (p === 'ramp') { const k = 1 - tt / DR.ramp; alt = 0; rampA = -1.0 * k; }                            // set down, drop the ramp
-        else if (p === 'unload') { alt = 0; rampA = -1.0; }
-        else if (p === 'close') { const k = 1 - tt / DR.close; alt = 0; rampA = -1.0 * (1 - k); }                     // raise the ramp
-        else { const k = 1 - tt / DR.out; ox = -FAR * k; alt = HI * (k * k); }                                        // lift off and away to the west
-        CK.CH.visible = vis; CK.CH.position.set(ox, alt, 0); CK.CH.rotation.y = Math.PI;
-        if (spin) { const s = G.t * 26; CK.rotF.rotation.z = s; CK.rotR.rotation.z = -s; }
+        const CK = g.userData.chk, D = b.deliv, DR = deliveryDurations(), HI = 12, FAR = 48, p = D.phase, tt = Math.max(0, D.t);
+        const dyD = CK.deckY, fH = CK.fH, RL = CK.RL;
+        const smooth = k => { k = clamp(k, 0, 1); return k * k * k * (k * (k * 6 - 15) + 10); };   // 5th-order smootherstep for a soft descent/climb
+        const rampOpen = -Math.asin(Math.min(.95, fH / RL)), rampShut = 0.9;                        // open ramp slopes down to touch the deck; shut ramp seals up
+        let alt = HI, ox = 0, vis = true, spin = 1, pitch = 0, rampA = rampShut;
+        if (p === 'wait') { vis = false; spin = 0; }
+        else if (p === 'in') { const k = smooth(1 - tt / DR.in); ox = FAR * (1 - k); alt = HI * (1 - k); pitch = (k < .7 ? -.16 * (1 - k / .7) : .14 * ((k - .7) / .3)); }   // sweep in nose-down, flare nose-up on the last stretch
+        else if (p === 'ramp') { const k = 1 - tt / DR.ramp; alt = 0; rampA = rampShut + (rampOpen - rampShut) * smooth(k); pitch = .14 * (1 - k); }   // settle level, drop the ramp
+        else if (p === 'unload') { alt = 0; rampA = rampOpen; }
+        else if (p === 'close') { const k = 1 - tt / DR.close; alt = 0; rampA = rampShut + (rampOpen - rampShut) * (1 - smooth(k)); }                    // raise the ramp
+        else { const k = smooth(1 - tt / DR.out); ox = -FAR * k; alt = HI * k; pitch = (k < .4 ? .14 * (k / .4) : -.16 * ((k - .4) / .6)); }             // lift off nose-up, then nose-down and away
+        CK.CH.visible = vis; CK.CH.position.set(ox, dyD + alt, 0); CK.CH.rotation.set(pitch, Math.PI, Math.sin(G.t * 1.3 + b.id) * (alt > .2 ? .02 : 0));   // hover wobble only while airborne
+        if (spin) { const s = G.t * 30; CK.rotF.rotation.z = s; CK.rotR.rotation.z = -s * 1.02;
+          for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = .34; }
+        else for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = 0;
         if (CK.ramp) CK.ramp.rotation.z = rampA;
+        // forklifts: up the rear ramp into the cabin, pick up a crate, back down the ramp and out onto the deck to set it down
+        const ramp0 = -(1.5 + RL * Math.cos(rampOpen)), ramp1 = -1.5;                               // ramp foot (on deck) .. hinge (x, aircraft-local)
+        const yOnRamp = x => (x <= ramp0 ? dyD : x >= ramp1 ? dyD + fH : dyD + fH * (x - ramp0) / (ramp1 - ramp0));
         for (let i = 0; i < CK.forks.length; i++) {
           const F = CK.forks[i], active = (p === 'unload' && D.fork === i);
           if (!active) { F.g.visible = false; continue; }
           F.g.visible = true;
-          const subK = 1 - tt / DR.unload, x0 = -1.5, z0 = 0, dx = .2, dz = (i - 1) * .5;
-          let x, z, ang, loaded = true;
-          if (subK < .4) { const k = subK / .4; x = x0 + (dx - x0) * k; z = z0 + (dz - z0) * k; ang = 0; }             // drive the load out onto the pad
-          else if (subK < .55) { x = dx; z = dz; ang = 0; loaded = subK < .5; }                                       // set the crate down
-          else { const k = (subK - .55) / .45; x = dx + (x0 - dx) * k; z = dz + (z0 - dz) * k; ang = Math.PI; loaded = false; }   // reverse back to the ramp
-          F.g.position.set(x, .02, z); F.g.rotation.y = ang; F.load.visible = loaded;
+          const s = 1 - tt / DR.unload, start = ramp0 - .5, cab = -.7, dz = (i - 1) * .7, drop = 0.85;
+          let x = start, y = dyD, z = 0, ang = 0, loaded = false, onRamp = false;
+          if (s < .26) { const k = s / .26; x = start + (cab - start) * k; onRamp = true; ang = 0; }                         // drive up the ramp INTO the cabin (empty)
+          else if (s < .38) { x = cab; onRamp = true; loaded = s > .32; ang = 0; }                                          // hook a crate
+          else if (s < .56) { const k = (s - .38) / .18; x = cab + (ramp0 - cab) * k; onRamp = true; loaded = true; ang = Math.PI; }   // reverse back down the ramp
+          else if (s < .80) { const k = (s - .56) / .24; x = ramp0 + (drop - ramp0) * k; z = dz * k; y = dyD; loaded = true; ang = Math.PI * (1 - k); }   // wheel out across the deck, turning
+          else if (s < .90) { x = drop; z = dz; y = dyD; loaded = s < .85; ang = 0; }                                       // set the crate down on the pad
+          else { const k = (s - .90) / .10; x = drop + (start - drop) * k; z = dz * (1 - k); y = dyD; ang = Math.PI; }        // trundle back for the next load
+          if (onRamp) y = yOnRamp(x);
+          F.g.position.set(x, y + .02, z); F.g.rotation.y = ang; F.load.visible = loaded;
         }
       }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
