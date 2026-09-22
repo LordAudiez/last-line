@@ -8450,7 +8450,9 @@ function callAirdrop(manual) {
       const p = dropPoint(bx, by, 4 * TS, 9 * TS) || { x: bx, y: by };
       cx = p.x; cy = p.y;
     }
-    G.crates.push({ x: cx, y: cy, z: 360 + i * 40, vz: 0, amt: (manual ? 90 : 110) * 15, chute: 1, flare: onPad ? 0 : 1, claimed: null, life: 999, bob: rnd(TAU), landed: false, onPad: onPad, padT: 0 });
+    const padZ = onPad ? 0.42 / K : 0;   // rest height = the helipad deck top (plinth 0.34 + slab 0.08 units), so the crate sits ON the pad, not sunk in the terrain
+    const padMul = onPad ? (pad.tier || 1) : 1;   // each helipad upgrade tier multiplies the value of the crate it brings in
+    G.crates.push({ x: cx, y: cy, z: 360 + i * 40, vz: 0, amt: (manual ? 90 : 110) * 15 * padMul, chute: 1, flare: onPad ? 0 : 1, claimed: null, life: 999, bob: rnd(TAU), landed: false, onPad: onPad, padT: 0, padZ: padZ });
   }
   alertMsg(pad ? (manual ? 'Emergency drop inbound — landing on the pad' : 'Supply drop inbound — landing on the pad') : (manual ? 'Emergency drop inbound' : 'Supply drop inbound at the base'), 'info');
   AU.ui('ready');
@@ -8464,7 +8466,8 @@ function callAirdrop(manual) {
 const AIRBOX = 110 * 15;   // the value of one ordinary air-drop crate — the unit the depot's yield is quoted against
 function deliveryDurations() { return { in: 6, ramp: 1.4, unload: 3, close: 1.4, out: 6, wait: 21 }; }
 function creditDelivery(b) {
-  const sup = AIRBOX * 5, scr = sup * .5, oil = scr * .5;   // one forklift load: supply ×5 a box, scrap = ½ supply, oil = ½ scrap
+  const tier = b.tier || 1;                                  // each upgrade tier multiplies the depot's yield (Mk1 ×1, Mk2 ×2, Mk3 ×3)
+  const sup = AIRBOX * 5 * tier, scr = sup * .5, oil = scr * .5;   // one forklift load: supply ×5 a box, scrap = ½ supply, oil = ½ scrap
   G.sup += sup; G.scr += scr; G.oil += oil;
   if (typeof popText === 'function') { try { popText(b.x, b.y - b.h * TS * .3, '+' + Math.round(sup) + '▲  +' + Math.round(scr) + '◆  +' + Math.round(oil) + '⬢', '#8fe6b0'); } catch (e) {} }
 }
@@ -11554,8 +11557,9 @@ function updateItems(dt) {
       c.vz -= 140 * dt;
       if (c.chute) c.vz = Math.max(c.vz, -66);
       c.z += c.vz * dt;
-      if (c.z <= 0) {
-        c.z = 0; c.landed = true; c.chute = 0;
+      const floor = c.padZ || 0;                                 // a pad crate comes to rest ON the raised deck, not the terrain below it
+      if (c.z <= floor) {
+        c.z = floor; c.landed = true; c.chute = 0;
         part('dust', c.x, c.y, 0, 0, .8, 12, 'rgba(170,158,140,1)', { grow: 46 });
         AU.ui('build');
         if (c.onPad) c.padT = 0;   // start the 3-second auto-collect countdown the moment it touches the pad
@@ -18764,6 +18768,17 @@ function ctrlHudTick(dt) {
         CH.add(sph(.48, OL, 1.5, fH + .5, 0, .95, 1, 1)); CH.add(box(.22, .3, .7, OD, 1.86, fH + .4, 0));        // rounded nose + chin
         CH.add(box(.58, .42, .88, GLS, 1.46, fH + .66, 0, 0, 0, -.34)); CH.add(box(.06, .44, .9, DK, 1.75, fH + .66, 0, 0, 0, -.34));   // raked cockpit glass + windscreen post
         for (const s of [-1, 1]) { CH.add(box(.34, .26, .04, GLS, 1.2, fH + .58, s * .45)); for (let i = 0; i < 5; i++) CH.add(box(.03, .22, .26, GLS, -1.0 + i * .42, fH + .56, s * .47)); }   // cockpit side + cabin windows
+        // door gatling guns on BOTH flanks (like the Blackhawk's), splayed outward to cover the aircraft — the loop spins the barrels
+        const mkGat = (s) => {
+          const G2 = new THREE.Group(); G2.position.set(.45, fH + .34, s * .5); G2.rotation.y = s * .5;                 // mounted at the door sill, splayed out + forward
+          G2.add(box(.08, .3, .08, DK, 0, .0, 0)); G2.add(box(.18, .12, .14, matFor('#20242a', PANEL), .06, .16, 0));   // pintle post + receiver
+          G2.add(box(.12, .16, .04, matFor('#20242a', PANEL), .02, .16, s * .1));                                       // ammo can
+          const bar = new THREE.Group(); bar.position.set(.14, .16, 0);
+          for (let bd = 0; bd < 6; bd++) { const a = bd / 6 * TAU; bar.add(cyl(.014, .014, .5, matFor('#0e0f11', { metalness: .6, roughness: .3 }), .27, Math.cos(a) * .035, Math.sin(a) * .035, 'x')); }   // 6 rotary barrels
+          bar.add(cyl(.05, .05, .12, DK, .04, 0, 0, 'x'));                                                              // barrel clamp
+          G2.add(bar); G2.rotation.z = -.14; CH.add(G2); return bar;                                                    // muzzles depressed a touch
+        };
+        const gatL = mkGat(-1), gatR = mkGat(1);
         // twin rotor pylons: forward low, aft tall (on the boat tail), with engine nacelles on the aft deck
         CH.add(box(.5, .34, .66, OD, 1.0, fH + 1.02, 0)); CH.add(box(.6, .62, .78, OD, -1.28, fH + 1.16, 0)); CH.add(box(.66, .16, .82, HULD, -1.28, fH + 1.5, 0));   // fwd pylon, aft pylon + cap
         for (const s of [-1, 1]) { CH.add(cyl(.15, .13, 1.1, DK, -.75, fH + .92, s * .34, 'x')); CH.add(cyl(.11, .1, .16, matFor('#0e0f11'), -1.34, fH + .92, s * .34, 'x')); }   // engine nacelles + exhausts
@@ -18789,9 +18804,9 @@ function ctrlHudTick(dt) {
         for (const s of [-1, 1]) for (const cx of [.62, -.9]) { CH.add(box(.05, fH * .8, .05, DK, cx, fH * .4, s * .38)); CH.add(cyl(.15, .15, .13, TIRE, cx, .15, s * .42, 'z')); CH.add(cyl(.07, .07, .14, RIM, cx, .15, s * .42, 'z')); }
         CH.add(cyl(.02, .02, .55, DK, -1.9, fH + .55, 0, 'x')); CH.add(sph(.04, matFor('#ff3a2a', { emissive: lin('#ff3a2a'), emissiveIntensity: 1 }), -1.28, fH + 1.62, 0));   // tail probe + anti-collision beacon
         CH.visible = false; g.add(CH);
-        // three forklifts (start hidden) — the loop drives them up the ramp into the cabin and back down onto the deck
+        // ONE forklift — it waits behind the Chinook and runs the whole load loop each time (three loads per resupply cycle)
         const forks = [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 1; i++) {
           const F = new THREE.Group(); const body = matFor('#e2ac2c', { roughness: .55 });
           F.add(box(.3, .2, .24, body, 0, .17, 0)); F.add(box(.16, .22, .24, matFor('#2a2c28', PANEL), -.13, .24, 0)); F.add(box(.16, .02, .24, DK, -.13, .36, 0));   // chassis, cab, roof
           F.add(box(.02, .04, .26, DK, .16, .3, 0));                                                                                     // headlight bar
@@ -18801,7 +18816,7 @@ function ctrlHudTick(dt) {
           const load = box(.24, .2, .26, matFor('#5c6a48', { map: TEX.panel, roughness: .9 }), .34, .11, 0); forkY.add(load);
           F.visible = false; g.add(F); forks.push({ g: F, forks: forkY, load });
         }
-        g.userData.chk = { CH, rotF, rotR, ramp, forks, fH, deckY: D, RL };
+        g.userData.chk = { CH, rotF, rotR, ramp, forks, fH, deckY: D, RL, gatL, gatR };
       }
       g.userData.padClear = true;   // tell the sim step to flatten + clear tufts under the footprint so nothing pokes through the deck
     }
@@ -20128,7 +20143,7 @@ function ctrlHudTick(dt) {
       }
       if (b.done && g.userData.chk && b.deliv) {   // Supply Delivery Depot: fly the CH-47 through its resupply cycle
         const CK = g.userData.chk, D = b.deliv, DR = deliveryDurations(), HI = 12, FAR = 48, p = D.phase, tt = Math.max(0, D.t);
-        const dyD = CK.deckY, fH = CK.fH, RL = CK.RL, CX = 0.35;   // park the Chinook a touch forward so its tail ramp lands on the deck
+        const dyD = CK.deckY, fH = CK.fH, RL = CK.RL, CX = -0.35;   // park the Chinook so its tail ramp lands ON the deck (the aircraft is yaw-flipped, so +CX shifts it toward the nose/left)
         const smooth = k => { k = clamp(k, 0, 1); return k * k * k * (k * (k * 6 - 15) + 10); };   // 5th-order smootherstep for a soft descent/climb
         // ramp: OPEN drops the tail door down onto the deck (positive angle → far end below the hinge); SHUT folds it up to seal.
         //   During flight it stays SHUT; it opens only once the aircraft is down.
@@ -20144,28 +20159,32 @@ function ctrlHudTick(dt) {
         if (spin) { const s = G.t * 30; CK.rotF.rotation.z = s; CK.rotR.rotation.z = -s * 1.02;
           for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = .34; }
         else for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = 0;
+        if (CK.gatL) CK.gatL.rotation.x = G.t * 22; if (CK.gatR) CK.gatR.rotation.x = -G.t * 22;   // the door-gun barrels spin
         if (CK.ramp) CK.ramp.rotation.z = rampA;
-        // forklifts: three of them WAIT lined up beside the pad, in front of the Chinook's rear door. When the aircraft is down
-        //   and the ramp is open, the on-duty one drives up the ramp INTO the cabin, hooks a crate, comes back down and sets it
-        //   on the deck, then returns to its standby slot. Off duty (or the ship airborne), every forklift sits at its slot.
-        const ramp1 = CX - 1.5, ramp0 = CX - 1.5 - RL * Math.cos(rampOpen);                        // hinge .. ramp foot (x, on the deck)
-        const yOnRamp = x => (x <= ramp0 ? dyD : x >= ramp1 ? dyD + fH : dyD + fH * (x - ramp0) / (ramp1 - ramp0));
-        const cab = CX - 0.55, drop = ramp0 - 0.35;                                                 // pick-up point inside the cabin; crate drop just behind the ramp foot
+        // one forklift, parked behind the Chinook AT THE RAMP FOOT (on the ramp side of the aircraft). Coordinates are in the
+        //   building frame; because the Chinook is yaw-flipped, its rear ramp lands on the +x (right) side, so the forklift and
+        //   its whole loop live on +x too. It climbs the ramp riding its exact surface (tilted to match), hooks a crate, comes
+        //   back down and sets it on the deck, then returns to the ramp foot. Three loads per cycle.
+        const hingeX = CX + ox + 1.5;                                                              // ramp hinge (rear of the flipped aircraft, +x)
+        const footX = hingeX + RL * Math.cos(rampOpen);                                            // ramp foot resting on the deck
+        const rampTopY = x => (x >= footX ? dyD : x <= hingeX ? dyD + fH : dyD + fH * (footX - x) / (footX - hingeX)) + .04;   // the ramp/cabin floor surface at world-x
+        const deckHalf = (b.def.mw || b.def.w) * .95 * .5;
+        const cabX = hingeX - 0.55, dropX = Math.min(footX + 0.10, deckHalf - .2), sbX = Math.min(footX + 0.22, deckHalf - .1);   // clamp the drop + standby onto the deck
         const rampOpenEnough = grounded && rampA > rampOpen * .55;                                  // only run the loop once the ramp is actually down
-        for (let i = 0; i < CK.forks.length; i++) {
-          const F = CK.forks[i]; F.g.visible = true;
-          const sbX = ramp0 - 0.55, sbZ = (i - 1) * 0.95;                                           // standby slot: in a row in front of the rear door
-          const active = (p === 'unload' && D.fork === i && rampOpenEnough);
-          if (!active) { F.g.position.set(sbX, dyD + .02, sbZ); F.g.rotation.y = 0; F.load.visible = false; continue; }   // waiting, facing the door
-          const s = 1 - tt / DR.unload; let x = sbX, y = dyD, z = sbZ, ang = 0, loaded = false, onRamp = false;
-          if (s < .10) { const k = s / .10; z = sbZ * (1 - k); x = sbX; ang = 0; }                                         // pull out and line up on the ramp centre
-          else if (s < .34) { const k = (s - .10) / .24; x = sbX + (cab - sbX) * k; z = 0; onRamp = true; ang = 0; }        // climb the ramp INTO the cabin (empty)
-          else if (s < .46) { x = cab; z = 0; onRamp = true; loaded = s > .40; ang = 0; }                                  // hook a crate
-          else if (s < .66) { const k = (s - .46) / .20; x = cab + (drop - cab) * k; z = 0; onRamp = true; loaded = true; ang = Math.PI; }   // reverse back down the ramp with the load
-          else if (s < .78) { x = drop; z = sbZ * ((s - .66) / .12); y = dyD; loaded = s < .74; ang = Math.PI; }           // set the crate down beside the door
-          else { const k = (s - .78) / .22; x = drop + (sbX - drop) * k; z = sbZ; y = dyD; ang = Math.PI * (1 - k); }        // trundle back to the standby slot
-          if (onRamp) y = yOnRamp(x);
-          F.g.position.set(x, y + .02, z); F.g.rotation.y = ang; F.load.visible = loaded;
+        const face = Math.PI;                                                                       // the forklift always faces the door (−x)
+        { const F = CK.forks[0]; F.g.visible = true;
+          let x = sbX, y = dyD + .02, tilt = 0, loaded = false, onRamp = false;
+          const active = (p === 'unload' && rampOpenEnough);
+          if (active) {
+            const s = 1 - tt / DR.unload;
+            if (s < .30) { const k = s / .30; x = sbX + (cabX - sbX) * k; onRamp = true; }                                 // climb the ramp into the cabin (empty)
+            else if (s < .42) { x = cabX; onRamp = true; loaded = s > .37; }                                              // hook a crate
+            else if (s < .66) { const k = (s - .42) / .24; x = cabX + (dropX - cabX) * k; onRamp = true; loaded = true; }  // reverse back down the ramp
+            else if (s < .80) { x = dropX; loaded = s < .75; }                                                            // set the crate on the deck
+            else { const k = (s - .80) / .20; x = dropX + (sbX - dropX) * k; }                                            // return to the ramp foot
+          }
+          if (onRamp && x < footX) { y = rampTopY(x); tilt = -rampOpen; }                            // ride the ramp surface, pitched up along the incline
+          F.g.position.set(x, y, 0); F.g.rotation.set(0, face, tilt); F.load.visible = loaded;
         }
       }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
