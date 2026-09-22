@@ -8450,7 +8450,8 @@ function callAirdrop(manual) {
       const p = dropPoint(bx, by, 4 * TS, 9 * TS) || { x: bx, y: by };
       cx = p.x; cy = p.y;
     }
-    const padZ = onPad ? 0.42 / K : 0;   // rest height = the helipad deck top (plinth 0.34 + slab 0.08 units), so the crate sits ON the pad, not sunk in the terrain
+    const padZ = onPad ? 0.42 * TS : 0;   // rest height = the helipad deck top (plinth 0.34 + slab 0.08 units) in world-px; TS is global (K = 1/TS is render-only), so this stays in the sim scope
+
     const padMul = onPad ? (pad.tier || 1) : 1;   // each helipad upgrade tier multiplies the value of the crate it brings in
     G.crates.push({ x: cx, y: cy, z: 360 + i * 40, vz: 0, amt: (manual ? 90 : 110) * 15 * padMul, chute: 1, flare: onPad ? 0 : 1, claimed: null, life: 999, bob: rnd(TAU), landed: false, onPad: onPad, padT: 0, padZ: padZ });
   }
@@ -9174,7 +9175,7 @@ function updateUnits(dt) {
         } else steerRoute(u, dt, o, b.x, b.y, 10);
       } else if (o.type === 'gather') {
         const c = o.c;
-        if (!c || c.taken) u.order = null;
+        if (!c || c.taken || c.onPad) u.order = null;   // pad crates auto-collect; don't leave a unit stuck steering at the unreachable pad
         else if (dist2(u.x, u.y, c.x, c.y) < 30 * 30 && c.landed) {
           c.taken = true; G.sup += c.amt; popText(c.x, c.y - 14, '+' + c.amt, '#7dffb2'); AU.ui('ok'); u.order = null;
         } else steerRoute(u, dt, o, c.x, c.y, 10);
@@ -9192,7 +9193,7 @@ function updateUnits(dt) {
          has to be told. They range a long way to do it. */
       let best = null, bd = u.def.hauler ? 9000 * 9000 : 0;
       if (u.def.hauler) for (const c of G.crates) {
-        if (c.taken || !c.landed) continue;
+        if (c.taken || !c.landed || c.onPad) continue;   // pad crates auto-collect on the helipad — never send a hauler onto the (unreachable) pad after one
         if (c.claimed && c.claimed !== u && !c.claimed.dead) continue;
         const d = dist2(c.x, c.y, u.x, u.y); if (d < bd) { bd = d; best = c; }
       }
@@ -10447,14 +10448,15 @@ function pickZedTarget(z) {
   if (G._friendlyZeds || (G.zmFaction && z.kind === 'zed')) {
     const zl = G.hZeds.near(z.x, z.y, R, _q3);
     const pureZ = !z.med && !foe && z.faction == null;          // an ordinary zombie of the horde
-    let mbest = null, mbd = R * R;                               // nearest hostile faction unit (a pure zombie's first priority)
+    const FR = 150;                                             // faction-priority range: a zombie only breaks off for faction troops right in its path (≈5 tiles), so it keeps advancing on the player instead of chasing the warband across the map
+    let mbest = null, mbd = FR * FR;                            // nearest CLOSE hostile faction unit (a pure zombie's first priority)
     for (let i = 0; i < zl.length; i++) {
       const o = zl[i]; if (o === z || o.dead || o.def.struct || o.def.worker || !hostile(z, o)) continue;
       const d = dist2(o.x, o.y, z.x, z.y);
-      if (pureZ && o.med) { if (d < mbd) { mbd = d; mbest = o; } }   // save the nearest faction fighter for priority targeting
-      else if (d < bd) { bd = d; best = o; }                        // everyone else: fold into the general nearest-hostile pick
+      if (pureZ && o.med) { if (d < mbd) { mbd = d; mbest = o; } }   // save the nearest faction fighter within FR for priority targeting
+      else if (!pureZ && d < bd) { bd = d; best = o; }               // a faction unit: fold hostile zombies into its general nearest-hostile pick
     }
-    if (pureZ && mbest) return mbest;                            // faction unit in sight → deal with it FIRST, then the player
+    if (pureZ && mbest) return mbest;                            // a faction unit right in the way → deal with it first, then press on to the player
   }
   if (best) return best;
   if (foe) return null;                                        // a friendly zed with nothing hostile in sight just holds/wanders — it never marches on your base
@@ -11040,7 +11042,7 @@ function updateZeds(dt) {
     // zombie-mode 3-way: a pure zombie keeps watch for faction troops and breaks off to cut them down FIRST, before the player
     if (G.zmFaction && z.kind === 'zed' && !z.med && !z.teamOv && z.faction == null && ((i + G.frame) % 15) === 0 &&
         !(z.target && z.target.kind === 'zed' && z.target.med)) {
-      const R = zedSense(z), zl = G.hZeds.near(z.x, z.y, R, _q3); let mb = null, mbd = R * R;
+      const FR = 150, zl = G.hZeds.near(z.x, z.y, FR, _q3); let mb = null, mbd = FR * FR;   // only break off for faction troops right in its path, so the horde still flows to the player
       for (let k = 0; k < zl.length; k++) { const o = zl[k]; if (o.dead || !o.med || o.def.struct || o.def.worker || !hostile(z, o)) continue; const d = dist2(o.x, o.y, z.x, z.y); if (d < mbd) { mbd = d; mb = o; } }
       if (mb) z.target = mb;
     }
@@ -11173,7 +11175,16 @@ function updateZeds(dt) {
         }
       }
     } else {
-      steerZ(z, dtz, t.x, t.y, reach * .8);
+      let gx = t.x, gy = t.y;
+      // HORDE PATH VARIETY: marching on a distant structure (the player's HQ), each zombie aims at its OWN point spread to
+      //   one side of it, so the horde fans out across the map into many approach lanes instead of funnelling down one path.
+      //   As they close in (within ~8 tiles) the offset fades and they converge on the actual target to attack.
+      if (t.kind === 'build' && d > 8 * TS) {
+        if (z._lane === undefined) z._lane = rnd(-1, 1);
+        const perp = angTo(z.x, z.y, t.x, t.y) + Math.PI / 2, spread = Math.max(t.w || 1, t.h || 1) * TS * .5 + 11 * TS;
+        gx = t.x + Math.cos(perp) * z._lane * spread; gy = t.y + Math.sin(perp) * z._lane * spread;
+      }
+      steerZ(z, dtz, gx, gy, reach * .8);
     }
     z.lunge = Math.max(0, z.lunge - dtz);
     z.bob += dtz * (z.def.spd > 60 ? 14 : 6);
