@@ -40,10 +40,11 @@ html,body{width:100%;height:100%;height:100dvh;position:relative;overflow:hidden
 #convBtns button:hover{background:#1a2f28}#convBtns button:active{transform:scale(.96)}
 #convDo{border-color:#4f8a72!important;color:#dfffee!important}
 .res{font-weight:800;font-variant-numeric:tabular-nums;font-size:21px;line-height:1}
-.res.sup{color:#8dffbe}.res.scr{color:#ffbe63}
+.res.sup{color:#8dffbe}.res.scr{color:#ffbe63}.res.oil{color:#c9a6ff}
 .ico{width:16px;height:16px;border-radius:3px;box-shadow:0 0 10px currentColor;flex:none}
 .ico.sup{background:#3ddc84;color:#3ddc84}
 .ico.scr{background:#ff9f2e;color:#ff9f2e}
+.ico.oil{background:#9b6bf0;color:#9b6bf0}
 .lbl{color:#7ea294;font-size:11px;text-transform:uppercase;letter-spacing:1.3px;font-weight:600}
 #sun{width:22px;height:22px;border-radius:50%;background:#ffd67a;box-shadow:0 0 18px #ffb02e;transition:all .6s;flex:none}
 #sun.night{background:#c3d8ec;box-shadow:0 0 18px #7fa0c8}
@@ -125,6 +126,14 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
   font-weight:700;margin-bottom:4px;padding-bottom:5px;position:relative;z-index:2;text-shadow:0 0 8px rgba(226,234,240,.4)}
 #cmdtitle::before{content:"";position:absolute;left:0;bottom:0;width:100%;height:1px;
   background:linear-gradient(90deg,rgba(236,241,245,.65),rgba(236,241,245,.05))}
+/* resource section header inside the build grid — spans the full row, not a clickable tile */
+.btn.sect{grid-column:1/-1;height:auto;min-height:0;padding:5px 4px 4px;cursor:default;flex-direction:row;justify-content:flex-start;gap:8px;margin-top:2px}
+.btn.sect::before,.btn.sect::after{display:none}
+.btn.sect .g{font-size:14px;filter:drop-shadow(0 0 5px currentColor)}
+.btn.sect .n{font-size:10px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;opacity:.95}
+.btn.sect .ln{flex:1;height:1px;align-self:center;background:linear-gradient(90deg,currentColor,transparent);opacity:.5}
+.btn.sect.rSup{color:#8fe6b0}.btn.sect.rScr{color:#f2b45c}.btn.sect.rOil{color:#c9a6ff}
+.btn.sect:hover{transform:none;filter:none}
 /* holographic beveled tile: content sits above two pseudo layers; corners notched top-right + bottom-left */
 .btn{position:relative;height:68px;padding:7px 2px 14px;border:0;background:transparent;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;overflow:visible;z-index:1;
@@ -241,6 +250,7 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 .btn .k{position:absolute;top:3px;left:5px;font-size:10px;color:#ffbe63;font-weight:800}
 .btn .c{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:10px;color:#8dffbe;font-weight:700}
 .btn .c em{color:#ffbe63;font-style:normal;margin-left:5px}
+.btn .c i{color:#c9a6ff;font-style:normal;margin-left:5px}
 .btn .fill{position:absolute;inset:auto 0 0 0;height:4px;background:#3ea0ff}
 /* per-unit upgrade pill: rides on the buy tile and EXTENDS UPWARD above it on hover, an up-arrow pointing the way;
    glows and invites a click when you can afford it, with a little tail pointing down to its tile */
@@ -1290,6 +1300,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   <div id="topbar" class="pan">
     <div class="cell conv" id="cellSup" title="Convert scrap → supply"><span class="ico sup"></span><div><div class="res sup" id="rSup">0</div><div class="lbl">supply ⇄</div></div></div>
     <div class="cell conv" id="cellScr" title="Convert supply → scrap"><span class="ico scr"></span><div><div class="res scr" id="rScr">0</div><div class="lbl">scrap ⇄</div></div></div>
+    <div class="cell conv" id="cellOil" title="Convert scrap ⇄ oil"><span class="ico oil"></span><div><div class="res oil" id="rOil">0</div><div class="lbl">oil ⇄</div></div></div>
     <div class="cell"><div id="sun"></div><div><div id="clock">06:00</div><div class="lbl" id="phase">day</div></div></div>
     <div class="cell" id="wavebox"><div><div class="lbl">wave <span id="wavenum">0</span></div><div id="wavebar"><div id="wavefill"></div></div></div><div id="wavetxt">scouting</div></div>
     <div class="cell"><div><div id="rPop">0/0</div><div class="lbl">pop</div></div></div>
@@ -1297,7 +1308,7 @@ window.__FB_CONFIG = /*FBCONFIG*/{
   <div id="convpop" class="pan" style="display:none">
     <div id="convTitle">Convert</div>
     <input type="range" id="convAmt" min="0" max="100" value="50">
-    <div id="convOut"><span id="convSpend">0</span> <span id="convArrow">→</span> <span id="convGet">0</span></div>
+    <div id="convOut"><span id="convSpend">0</span> <span id="convArrow" title="Swap direction" style="cursor:pointer;padding:0 4px">⇄</span> <span id="convGet">0</span></div>
     <div id="convBtns"><button id="convDo">Convert</button><button id="convX">✕</button></div>
   </div>
   <div id="speed" class="pan">
@@ -2098,6 +2109,29 @@ const AU = {
         v.g.gain.setTargetAtTime(vol, c.currentTime, .12);
         v.lp.frequency.value = clamp(11000 / (1 + d / 240), 500, 11000);
         if (v.pan) v.pan.pan.value = clamp((u.x - (CAM.x + CAM.vw / 2)) / ((CAM.vw || 800) * .55), -1, 1);
+      }
+      // the Supply Delivery Depot's CH-47 gets its own looping rotor voice whenever it is airborne or on the pad running
+      if (G.builds) for (const b of G.builds) {
+        if (b.dead || b.t !== 'deliverydepot' || !b.deliv || b.deliv.phase === 'wait') continue;
+        const buf = smp.heli; if (!buf) continue;
+        const id = 'chk' + b.id; seen[id] = 1;
+        let v = voices[id];
+        if (!v || v.key !== 'heli') {
+          if (v) { try { v.g.gain.setTargetAtTime(0, c.currentTime, .05); v.s.stop(c.currentTime + .2); } catch (e) {} }
+          const s = c.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = .82 * (0.98 + Math.random() * .04);   // slower, heavier than a Blackhawk
+          const g = c.createGain(); g.gain.value = 0;
+          const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 9000;
+          const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+          s.connect(g); g.connect(lp); if (pan) { lp.connect(pan); pan.connect(this.bus); } else lp.connect(this.bus);
+          try { s.start(c.currentTime, Math.random() * (buf.duration - .1)); } catch (e) {}
+          v = voices[id] = { s, g, lp, pan, key: 'heli' };
+        }
+        const d = this.distTo(b.x, b.y), fall = 1 / (1 + Math.pow(d / (3400 * .55), 1.6));
+        const grounded = b.deliv.phase === 'ramp' || b.deliv.phase === 'unload' || b.deliv.phase === 'close';
+        const base = 0.52 * (this.sfxVol == null ? 1 : this.sfxVol);
+        v.g.gain.setTargetAtTime(clamp(base * fall * (grounded ? .8 : 1), 0, .6), c.currentTime, .15);
+        v.lp.frequency.value = clamp(9000 / (1 + d / 240), 500, 9000);
+        if (v.pan) v.pan.pan.value = clamp((b.x - (CAM.x + CAM.vw / 2)) / ((CAM.vw || 800) * .55), -1, 1);
       }
     }
     for (const id in voices) {
@@ -3484,34 +3518,34 @@ const UDEF = {
   },
   littlebird1: {
     name: 'Little Bird MK1', key: 'Z', g: '🚁', hp: 260, spd: 175, r: 15, sight: 380, armor: 1, pop: 3, veh: true, fly: 1, alt: 450, fixedGuns: true,
-    cost: { s: 270, c: 190 }, time: 22, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
+    cost: { s: 270, c: 190, o: 45 }, time: 22, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
     wep: { dmg: 9, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true, fixed: true },   // forward-fixed: the whole helicopter turns to bring it on
     desc: 'Light scout helicopter with a single minigun. Fast, fragile, engages one target.'
   },
   littlebird2: {
     name: 'Little Bird MK2', key: 'X', g: '🚁', hp: 300, spd: 168, r: 15, sight: 390, armor: 1, pop: 4, veh: true, fly: 1, alt: 450, fixedGuns: true,
-    cost: { s: 390, c: 310 }, time: 28, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
+    cost: { s: 390, c: 310, o: 70 }, time: 28, spr: 'littlebird', rotor: 'rotorS', needs: 'airbase',
     wep: { dmg: 10, rng: 300, cd: .05, spread: .09, spd: 1400, kind: 'bullet', sfx: 'minigun', sustain: true, fixed: true },
     weps: [{ dmg: 46, rng: 340, cd: .28, spread: .05, spd: 700, kind: 'rocket', splash: 46, sfx: 'hydra', mag: 12, reload: 6, off: 14, slew: .002, fixed: true }],
     desc: 'Minigun plus a 12-round Hydra rocket pod that reloads after emptying. Hits one target with each weapon.'
   },
   blackhawk: {
     name: 'Blackhawk', key: 'C', g: '🚁', hp: 620, spd: 150, r: 20, sight: 380, armor: 3, pop: 5, veh: true, fly: 1, alt: 480, carry: 11,
-    cost: { s: 540, c: 400 }, time: 34, spr: 'blackhawk', rotor: 'rotorM', needs: 'airbase',
+    cost: { s: 540, c: 400, o: 95 }, time: 34, spr: 'blackhawk', rotor: 'rotorM', needs: 'airbase',
     wep: { dmg: 11, rng: 340, cd: .03, spread: .08, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, casings: 2, mount: [-2, -18], off: 6, slew: .002 },
     weps: [{ dmg: 11, rng: 340, cd: .03, spread: .08, spd: 1500, kind: 'bullet', sfx: 'minigun', sustain: true, casings: 2, mount: [-2, 18], off: 6, slew: .002 }],
     desc: 'Twin door-mounted Vulcan miniguns on separate targets — a wall of fire. Can land to pick up and airlift infantry across the map — right-click troops to load, right-click ground to drop them.'
   },
   apache: {
     name: 'AH-64 Apache', key: 'V', g: '🚁', hp: 880, spd: 140, r: 22, sight: 420, armor: 5, pop: 6, veh: true, fly: 1, alt: 495,
-    cost: { s: 640, c: 540 }, time: 42, spr: 'apache', rotor: 'rotorM', needs: 'airbase',
+    cost: { s: 640, c: 540, o: 130 }, time: 42, spr: 'apache', rotor: 'rotorM', needs: 'airbase',
     wep: { dmg: 4000, rng: 360, cd: .16, spread: .03, spd: 1100, kind: 'shell', splash: TS * 1.5, sfx: 'chain40', casings: 1, off: 30, slew: .003, arc: 2.356, shock: 1 },   // 30mm: one round kills anything; the burst's rim throws and tears whatever stands at its edge; the gun traverses 135° either side of the nose
     weps: [{ dmg: 50, rng: 400, cd: .3, spread: .04, spd: 720, kind: 'rocket', splash: 50, sfx: 'hydra', mag: 12, reload: 7, off: 16, slew: .002, fixed: true }],   // Hydra pods fire straight ahead: the airframe turns its nose onto the rocket target
     desc: '30mm chain gun — one round kills anything it lands on, and the blast rim knocks back and tears apart whatever stands at its edge — traversing 135° either side of the nose. The 12-round Hydra pod fires straight ahead, so the Apache swings its nose onto the rocket target while the gun keeps working on its own.'
   },
   ac130: {
     name: 'AC-130 Gunship', key: 'B', g: '✈️', hp: 2600, spd: 205, r: 40, sight: 620, armor: 6, pop: 10, veh: true, fly: 1, alt: 630, orbit: 1, heavy: 1,
-    cost: { s: 1150, c: 1050 }, time: 72, spr: 'ac130', needs: 'airbase',
+    cost: { s: 1150, c: 1050, o: 230 }, time: 72, spr: 'ac130', needs: 'airbase',
     wep: { dmg: 900, rng: 560, cd: 5.0, spread: .006, spd: 2000, kind: 'shell', splash: 5 * TS, sfx: 'howitzer', trueDmg: 1, off: 20, slew: .004, shake: 6 },   // 105mm: biggest blast in the game — the old five-tile Abrams area
     weps: [
       { dmg: 60, rng: 540, cd: .5, spread: .02, spd: 1600, kind: 'shell', splash: TS, sfx: 'chain40', off: 20, slew: .006 },
@@ -3522,7 +3556,7 @@ const UDEF = {
   f16: {
     name: 'F-16 Falcon', key: 'N', g: '🛩️', hp: 1500, spd: 410, r: 26, sight: 660, armor: 5, pop: 8,
     veh: true, fly: 1, jet: 1, alt: 714, turnR: 15 * TS / 2, needs: 'airbase',
-    cost: { s: 1350, c: 1250 }, time: 80, spr: 'f16',
+    cost: { s: 1350, c: 1250, o: 270 }, time: 80, spr: 'f16',
     // M61 Vulcan cannon — fast forward gun
     wep: { dmg: 30, rng: 560, cd: .045, spread: .02, spd: 2000, kind: 'shell', splash: 18, sfx: 'chain40', casings: 2, smokeTrail: true, off: 26 },
     weps: [
@@ -3704,18 +3738,33 @@ const BDEF = {
   },
   refinery: {
     name: 'Scrap Refinery', key: 'R', g: '♻️', cat: 'infra', w: 5, h: 5, mw: 3, mh: 3, hgt: 56, hp: 900, armor: 2, cost: { s: 200, c: 40 }, time: 20,
-    col: ['#4a4238', '#332e28'], roof: '#5b5245', light: 120, scrapGen: 3,
+    col: ['#4a4238', '#332e28'], roof: '#5b5245', light: 120, scrapGen: 3, res: 'scr',
     desc: 'Smelts salvage into scrap around the clock — a steady ◆ income with no walking over drops. Reinforce it (Mk 2 / Mk 3) to raise the yield; every refinery stacks.'
   },
   factory: {
     name: 'Scrap Factory', key: 'N', g: '🏭', w: 7, h: 5, mw: 4, mh: 3, hgt: 66, hp: 1300, armor: 3, cost: { s: 320, c: 140 }, time: 26, needs: 'refinery',
-    col: ['#5a5650', '#3d3a36'], roof: '#6a6660', light: 150, scrapGen: 6, cat: 'infra',
+    col: ['#5a5650', '#3d3a36'], roof: '#6a6660', light: 150, scrapGen: 6, cat: 'infra', res: 'scr',
     desc: 'Industrial plant: a sawtooth-roofed hall, twin stacks and a conveyor that turns salvage into ◆ scrap at twice a refinery\'s rate. Requires a Scrap Refinery; every factory stacks.'
   },
   warehouse: {
     name: 'Supply Warehouse', key: 'H', g: '📦', w: 7, h: 5, mw: 4, mh: 3, hgt: 58, hp: 1100, armor: 2, cost: { s: 260, c: 60 }, time: 22,
-    col: ['#556058', '#3a423c'], roof: '#66706a', light: 140, supGen: 1.6, cat: 'infra',
-    desc: 'Steel-framed depot with pallet racks of supply cages and a forklift shuttling them to the loading dock — a steady ▮ supply income on top of the Command Post\'s. Every warehouse stacks.'
+    col: ['#556058', '#3a423c'], roof: '#66706a', light: 140, supGen: 3, cat: 'infra', res: 'sup',
+    desc: 'Steel-framed depot with pallet racks of supply cages and a forklift shuttling them to the loading dock — a heavy ▲ supply income on top of the Command Post\'s. Every warehouse stacks.'
+  },
+  supdepot: {
+    name: 'Supply Depot', key: 'D', g: '📦', w: 1, h: 1, mw: 1, mh: 1, hgt: 24, hp: 500, armor: 1, cost: { s: 120, c: 0 }, time: 12,
+    col: ['#4c5a4a', '#333d31'], roof: '#5e6e58', light: 90, supGen: 1, cat: 'infra', res: 'sup',
+    desc: 'A one-tile supply cache — a small ▲ supply trickle for the price of supply alone. Reinforce it (Mk2 / Mk3) to raise the yield; every depot stacks.'
+  },
+  oilrig: {
+    name: 'Oil Rig', key: 'I', g: '🛢️', w: 1, h: 1, mw: 1, mh: 1, hgt: 48, hp: 640, armor: 1, cost: { s: 150, c: 100 }, time: 16,
+    col: ['#3a3d42', '#26282c'], roof: '#4a4e54', light: 100, oilGen: 1, cat: 'infra', res: 'oil',
+    desc: 'A one-tile derrick pumping crude — a steady ⬢ oil income. Reinforce it (Mk2 / Mk3) to raise the yield; every rig stacks.'
+  },
+  oilfactory: {
+    name: 'Oil Factory', key: 'J', g: '🏭', w: 6, h: 6, mw: 2, mh: 2, hgt: 62, hp: 1300, armor: 3, cost: { s: 320, c: 260 }, time: 28, needs: 'oilrig',
+    col: ['#43474e', '#2c2f34'], roof: '#545961', light: 130, oilGen: 3, cat: 'infra', res: 'oil',
+    desc: 'A cracking plant with storage tanks and a flare stack: ⬢ oil at three times a rig\'s rate. Requires an Oil Rig; every factory stacks.'
   },
   turret: {
     name: 'MG Nest', key: 'G', g: '🎯', cat: 'def', w: 3, h: 3, mw: 2, mh: 2, hgt: 34, hp: 540, armor: 3, cost: { s: 120, c: 60 }, time: 12,
@@ -3798,6 +3847,16 @@ const BDEF = {
     name: 'Airspace Command', key: 'J', g: '🛰️', cat: 'spec', w: 7, h: 6, mw: 4, mh: 3, hgt: 70, hp: 2200, armor: 4, cost: { s: 520, c: 420 }, time: 40, needs: 'airbase',
     col: ['#4a5344', '#37402f'], roof: '#5d6a52', light: 220, ability: 'strikes',
     desc: 'Air-force headquarters with a long-range radar tower and a transport on station overhead. Calls in the napalm run, the artillery barrage and — at a price — the nuclear strike. Requires an Airbase.'
+  },
+  helipad: {
+    name: 'Helipad', key: 'H', g: '🚁', cat: 'spec', w: 3, h: 3, mw: 2, mh: 2, hgt: 6, hp: 700, armor: 2, cost: { s: 120, c: 60 }, time: 12,
+    col: ['#43474d', '#2c2f34'], roof: '#565b62', light: 90, flat: true, pad: 1,
+    desc: 'A concrete landing pad with a marked circle, edge lights and a blinking beacon. A forward rotary-wing pad for staging air operations.'
+  },
+  deliverydepot: {
+    name: 'Supply Delivery Depot', key: 'K', g: '🚁', cat: 'spec', w: 5, h: 5, mw: 3, mh: 3, hgt: 6, hp: 1600, armor: 3, cost: { s: 40000, c: 12000, o: 5000 }, time: 60, needs: 'airbase',
+    col: ['#3f4b3a', '#2a3227'], roof: '#4e5c46', light: 110, flat: true, pad: 1, delivery: true,
+    desc: 'A heavy-lift resupply pad. A CH-47 Chinook cycles in every 45s, drops its ramp and off-loads three forklift loads of stores, then lifts off. Each load banks supply (×5 an airdrop), scrap (half the supply) and oil (half the scrap). Replaces all air-drops. Requires an Airbase.'
   }
 };
 
@@ -3820,9 +3879,12 @@ const RESEARCH = {
    structures, upgrades, research — while income stays as it is. Starting stocks and supply crates are scaled with it so the
    opening plays the same; it is the mid-game that has to be earned. */
 const ECON = 15;
-for (const k in UDEF) { const c = UDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; } }
-for (const k in BDEF) { const c = BDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; } }
-for (const k in RESEARCH) { const c = RESEARCH[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; } }
+// oil is scaled with supply and scrap so an oil cost is meaningful against the ×15 stockpile (oil income, like scrap income, stays unscaled)
+for (const k in UDEF) { const c = UDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; if (c.o) c.o = c.o * ECON; } }
+for (const k in BDEF) { const c = BDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; if (c.o) c.o = c.o * ECON; } }
+for (const k in RESEARCH) { const c = RESEARCH[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; if (c.o) c.o = c.o * ECON; } }
+// the Supply Delivery Depot is quoted at its exact face price (the numbers shown to the player), not the ×15 internal scale
+if (BDEF.deliverydepot) BDEF.deliverydepot.cost = { s: 40000, c: 12000, o: 5000 };
 const PISTOL = { dmg: 8, rng: 150, cd: .28, spread: .06, spd: 1000, kind: 'bullet', sfx: 'pistol', casings: 1, mag: 12, reload: 1.5, sidearm: true, close: 130 };
 for (const k in UDEF) {
   const d = UDEF[k];
@@ -3927,6 +3989,11 @@ function buildIcon(t) {
   else if (t === 'flood') b = S(sh + '<rect x="14.6" y="12" width="2.8" height="16" fill="#5a5a48"/><g class="ico-turret" style="transform-origin:16px 11px"><rect x="10" y="7" width="10" height="7" rx="1.5" fill="' + col + '"/><ellipse cx="20" cy="10.5" rx="2" ry="3" fill="#fff3b0"/></g><g class="ico-pulse"><path d="M21 8 L29 5 L29 16 L21 13 Z" fill="#ffe08a" opacity=".45"/></g>');
   else if (t === 'factory') b = S(sh + '<rect x="4" y="15" width="24" height="13" rx="1.5" fill="' + col + '"/><path d="M4 15 L10 10 V15 L16 10 V15 L22 10 V15 L28 10 V15 Z" fill="' + roof + '"/><rect x="7" y="4" width="3" height="11" fill="' + dark + '"/><rect x="12" y="6" width="3" height="9" fill="' + dark + '"/><g class="ico-smoke"><circle cx="8.5" cy="3" r="1.6" fill="#b8b4ac" opacity=".8"/><circle cx="13.5" cy="4.5" r="1.3" fill="#b8b4ac" opacity=".7"/></g><rect x="6" y="19" width="20" height="2" fill="#2a2a26"/><g class="ico-belt"><rect x="8" y="17.6" width="3" height="2.2" fill="#c9a33d"/><rect x="15" y="17.6" width="3" height="2.2" fill="#c9a33d"/><rect x="22" y="17.6" width="3" height="2.2" fill="#c9a33d"/></g><rect x="13" y="22" width="6" height="6" fill="' + dark + '"/>');
   else if (t === 'warehouse') b = S(sh + '<rect x="4" y="13" width="24" height="15" rx="1.5" fill="' + col + '"/><path d="M3 14 L16 6 L29 14 Z" fill="' + roof + '"/><rect x="6" y="16" width="20" height="12" fill="' + dark + '"/>' + [7.5, 12, 16.5, 21].map(x => '<rect x="' + x + '" y="18" width="3.6" height="3.2" fill="#3f8a4a" stroke="#8de0a0" stroke-width=".5"/><rect x="' + x + '" y="22.5" width="3.6" height="3.2" fill="#3f8a4a" stroke="#8de0a0" stroke-width=".5"/>').join('') + '<g class="ico-fork"><rect x="20" y="22" width="6" height="5" rx="1" fill="#e2b32a"/><rect x="18" y="20" width="1.2" height="8" fill="#2a2a26"/><rect x="15" y="27" width="4" height="1" fill="#2a2a26"/><circle cx="21.5" cy="28" r="1.2" fill="#1a1a18"/><circle cx="25" cy="28" r="1.2" fill="#1a1a18"/></g>');
+  else if (t === 'supdepot') b = S(sh + '<rect x="8" y="14" width="16" height="14" rx="1.5" fill="#3f7a44"/><rect x="8" y="14" width="16" height="2.6" fill="#2a2e2a"/><path d="M11 14 V28 M16 14 V28 M21 14 V28" stroke="#2a2e2a" stroke-width="1.1"/><rect x="8" y="17.4" width="16" height="1.8" fill="#8dffbe"/><rect x="17" y="8" width="9" height="7" rx="1" fill="#356a3a"/><rect x="17" y="8" width="9" height="1.4" fill="#2a2e2a"/>');
+  else if (t === 'oilrig') b = S(sh + '<path d="M9 28 L13 7 H19 L23 28" fill="none" stroke="#7a8088" stroke-width="1.7"/><path d="M10.4 22 H21.6 M11.4 16 H20.6 M12.2 11 H19.8" stroke="#7a8088" stroke-width="1.1"/><circle cx="16" cy="6" r="1.7" fill="#ff3a2a"/><g class="ico-pump" style="transform-origin:6px 22px"><rect x="3" y="20" width="7" height="1.6" fill="#2a2c30"/></g><rect x="4" y="22" width="4" height="2" fill="#3a3d38"/><rect x="25" y="19" width="4" height="9" rx="1" fill="#3a3d38"/><ellipse cx="27" cy="19" rx="2" ry=".8" fill="#5a5e64"/>');
+  else if (t === 'oilfactory') b = S(sh + '<rect x="5" y="9" width="5" height="19" rx="1" fill="#c4c8c0"/><path d="M5 13 H10 M5 17 H10 M5 21 H10 M5 25 H10" stroke="#6a7076" stroke-width=".9"/>' + [13, 18, 23].map(x => '<rect x="' + x + '" y="17" width="4.6" height="11" rx="1" fill="#c4c8c0"/><ellipse cx="' + (x + 2.3) + '" cy="17" rx="2.3" ry="1" fill="#a8aca4"/>').join('') + '<line x1="28" y1="5" x2="28" y2="15" stroke="#6a7076" stroke-width="1.4"/><g class="ico-pulse"><path d="M26.5 5 Q28 1 29.5 5 Q28 7.5 26.5 5" fill="#ff9a3a"/></g>');
+  else if (t === 'helipad') b = S(sh + '<ellipse cx="16" cy="21" rx="12" ry="6.5" fill="#54585e"/><ellipse cx="16" cy="21" rx="9" ry="4.8" fill="none" stroke="#e8e8de" stroke-width="1.3"/><path d="M13 18 V24 M19 18 V24 M13 21 H19" stroke="#e8e8de" stroke-width="1.6"/><g class="ico-pulse"><circle cx="6" cy="16" r="1.6" fill="#ff5a4a"/></g><g class="ico-prop" style="transform-origin:16px 9px"><rect x="6" y="8.2" width="20" height="1.6" rx=".8" fill="#2a2c30"/></g><rect x="15.4" y="7" width="1.2" height="4" fill="#4a4e54"/>');
+  else if (t === 'deliverydepot') b = S(sh + '<ellipse cx="16" cy="23" rx="12.5" ry="6" fill="#3a4630"/><ellipse cx="16" cy="23" rx="9" ry="4.3" fill="none" stroke="#e8e8de" stroke-width="1.1"/><rect x="7" y="12" width="16" height="4.4" rx="2.2" fill="#4a5140"/><ellipse cx="23" cy="14.2" rx="2.4" ry="2.2" fill="#4a5140"/><rect x="8" y="9.5" width="2.2" height="3" fill="#363b2e"/><rect x="18" y="9.5" width="2.2" height="3" fill="#363b2e"/><g class="ico-prop" style="transform-origin:9.2px 8px"><rect x="3" y="7.2" width="12" height="1.4" rx=".7" fill="#2a2c30"/></g><g class="ico-prop" style="transform-origin:19.2px 8px"><rect x="13" y="7.2" width="12" height="1.4" rx=".7" fill="#2a2c30"/></g><g class="ico-pulse"><circle cx="5" cy="21" r="1.5" fill="#ff5a4a"/><circle cx="27" cy="21" r="1.5" fill="#54ff88"/></g>');
   b = b || d.g || '';
   // producers carry a badge of WHAT they make — a soldier, a tank, a helicopter, a flask, a scrap gear, a supply crate — so the menu reads at a glance
   const SYM = {
@@ -3944,7 +4011,8 @@ function buildIcon(t) {
   const flask = '<path d="M12 4 H20 M14 4 V12 L8 24 Q7 27 10 27 H22 Q25 27 24 24 L18 12 V4" fill="#dff4ff" stroke="#4aa8d8" stroke-width="1.4"/><path d="M11 20 H21 L23 25 H9 Z" fill="#4ad0ff"/><circle class="ico-pulse" cx="14" cy="22" r="1.2" fill="#fff"/>';
   const gearB = '<circle cx="16" cy="16" r="6" fill="#ffbe63"/><circle cx="16" cy="16" r="2.5" fill="#3a2a10"/>' + [0, 45, 90, 135, 180, 225, 270, 315].map(a => '<rect x="14.5" y="6" width="3" height="4" fill="#ffbe63" transform="rotate(' + a + ' 16 16)"/>').join('');
   const crate = '<rect x="6" y="9" width="20" height="16" rx="2" fill="#3ddc84"/><rect x="14" y="9" width="4" height="16" fill="#0d3a22" opacity=".5"/><rect x="6" y="15" width="20" height="4" fill="#0d3a22" opacity=".5"/>';
-  const BADGE = { hq: ['svg', SYM.hq], barracks: ['unit', 'rifleman'], airbase: ['unit', 'blackhawk'], armory: ['svg', flask], refinery: ['svg', gearB], factory: ['svg', gearB], warehouse: ['svg', crate],
+  const oildrop = '<path d="M16 4 C22 13 24 17 24 21 A8 8 0 0 1 8 21 C8 17 10 13 16 4 Z" fill="#9b6bf0"/><path d="M13 18 C13 15 14 13 16 10" fill="none" stroke="#d9c4ff" stroke-width="1.6" stroke-linecap="round"/><circle class="ico-pulse" cx="18" cy="20" r="1.4" fill="#efe4ff"/>';
+  const BADGE = { hq: ['svg', SYM.hq], barracks: ['unit', 'rifleman'], airbase: ['unit', 'blackhawk'], armory: ['svg', flask], refinery: ['svg', gearB], factory: ['svg', gearB], warehouse: ['svg', crate], supdepot: ['svg', crate], oilrig: ['svg', oildrop], oilfactory: ['svg', oildrop], deliverydepot: ['unit', 'blackhawk'],
     turret: ['svg', SYM.gun], mortarpit: ['svg', SYM.mortar], tower: ['svg', SYM.tower], flood: ['svg', SYM.bulb], wall: ['svg', SYM.wall], fence: ['svg', SYM.fence], gate: ['svg', SYM.gate], trap: ['svg', SYM.trap], culvert: ['svg', SYM.bunker] };
   const bd = BADGE[t];
   if (b && b.startsWith('<svg') && bd) {
@@ -7207,18 +7275,18 @@ function mkPlayer(i, o) {
   o = o || {};
   return {
     i, name: o.name || ('Player ' + (i + 1)), team: o.team || 'A', color: o.color || PLAYER_COL[i % 6], spawn: o.spawn || 0,
-    sup: 0, scr: 0, pop: 0, cap: 0, up: { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }, tier: { inf: 1, veh: 1, air: 1 },
+    sup: 0, scr: 0, oil: 0, pop: 0, cap: 0, up: { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }, tier: { inf: 1, veh: 1, air: 1 },
     kills: { zed: 0, faction: 0, pvp: 0, byType: {} },   // scoreboard: zombies, rival-faction troops, and other players' units this commander has downed, plus a per-type tally
 utier: {},
-    dropT: 22, hq: null, bonus: 0, alive: true, unlim: o.unlim || { sup: false, scr: false, cap: false }, maxCap: o.maxCap || 0
+    dropT: 22, hq: null, bonus: 0, alive: true, unlim: o.unlim || { sup: false, scr: false, oil: false, cap: false }, maxCap: o.maxCap || 0
   };
 }
 G.players = [mkPlayer(0)];
 G.me = 0; G.cur = 0;
-for (const k of ['sup', 'scr', 'pop', 'cap', 'up', 'tier', 'utier', 'dropT', 'hq', 'bonus']) {
+for (const k of ['sup', 'scr', 'oil', 'pop', 'cap', 'up', 'tier', 'utier', 'dropT', 'hq', 'bonus']) {
   Object.defineProperty(G, k, {
     configurable: true, enumerable: true,
-    get() { const p = G.players[G.cur] || G.players[0]; if (k === 'sup' && p.unlim.sup) return 999999; if (k === 'scr' && p.unlim.scr) return 999999; if (k === 'cap' && p.unlim.cap) return 9999; return p[k]; },
+    get() { const p = G.players[G.cur] || G.players[0]; if (k === 'sup' && p.unlim.sup) return 999999; if (k === 'scr' && p.unlim.scr) return 999999; if (k === 'oil' && p.unlim && p.unlim.oil) return 999999; if (k === 'cap' && p.unlim.cap) return 9999; return p[k] || 0; },
     set(v) { const p = G.players[G.cur] || G.players[0]; if (k === 'cap' && p.maxCap) v = Math.min(v, p.maxCap); p[k] = v; }
   });
 }
@@ -7924,10 +7992,12 @@ function updateTime(dt) {
       if (!G.waveQueue.list.length) G.waveQueue = null;
     }
   }
+  // a completed Supply Delivery Depot takes over resupply entirely: the periodic air-drops (and the big drop) stop while it stands
+  const hasDelivery = G.builds.some(b => b.t === 'deliverydepot' && b.done && !b.dead);
   G.dropT -= dt;
-  if (G.dropT <= 0) { callAirdrop(false); G.dropT = 52 + rnd(-6, 10); }
+  if (G.dropT <= 0) { if (!hasDelivery) callAirdrop(false); G.dropT = 52 + rnd(-6, 10); }
   G.bigT -= dt;
-  if (G.bigT <= 0) { callBigDrop(); G.bigT = 120 + rnd(-15, 25); }
+  if (G.bigT <= 0) { if (!hasDelivery) callBigDrop(); G.bigT = 120 + rnd(-15, 25); }
 }
 
 /* drifting wind plus the ambient particle bed that sells the environment */
@@ -8345,6 +8415,31 @@ function callAirdrop(manual) {
   }
   alertMsg(manual ? 'Emergency drop inbound' : 'Supply drop inbound at the base', 'info');
   AU.ui('ready');
+}
+
+/* ==================== SUPPLY DELIVERY DEPOT — CH-47 resupply cycle ====================
+   A completed depot runs a 45s loop: the Chinook flies in, sets down, drops its ramp, off-loads
+   THREE forklift loads, raises the ramp and lifts off. Each forklift load banks three resources —
+   supply (×5 an air-drop box), scrap (half that supply) and oil (half that scrap). The render loop
+   reads b.deliv.phase / b.deliv.t to pose the aircraft, ramp, rotors, forklifts and pad beacons. */
+const AIRBOX = 110 * 15;   // the value of one ordinary air-drop crate — the unit the depot's yield is quoted against
+function deliveryDurations() { return { in: 6, ramp: 1.4, unload: 3, close: 1.4, out: 6, wait: 21 }; }
+function creditDelivery(b) {
+  const sup = AIRBOX * 5, scr = sup * .5, oil = scr * .5;   // one forklift load: supply ×5 a box, scrap = ½ supply, oil = ½ scrap
+  G.sup += sup; G.scr += scr; G.oil += oil;
+  if (typeof popText === 'function') { try { popText(b.x, b.y - b.h * TS * .3, '+' + Math.round(sup) + '▲  +' + Math.round(scr) + '◆  +' + Math.round(oil) + '⬢', '#8fe6b0'); } catch (e) {} }
+}
+function deliveryStep(b, dt) {
+  const DUR = deliveryDurations();
+  const D = b.deliv || (b.deliv = { phase: 'wait', t: DUR.in, fork: 0 });
+  D.t -= dt;
+  if (D.t > 0) return;
+  if (D.phase === 'wait') { D.phase = 'in'; D.t = DUR.in; alertMsg('Chinook inbound — resupply run', 'info'); AU.ui('ready'); }
+  else if (D.phase === 'in') { D.phase = 'ramp'; D.t = DUR.ramp; }
+  else if (D.phase === 'ramp') { D.phase = 'unload'; D.t = DUR.unload; D.fork = 0; }
+  else if (D.phase === 'unload') { creditDelivery(b); D.fork = (D.fork || 0) + 1; if (D.fork >= 3) { D.phase = 'close'; D.t = DUR.close; } else D.t = DUR.unload; }
+  else if (D.phase === 'close') { D.phase = 'out'; D.t = DUR.out; }
+  else { D.phase = 'wait'; D.t = DUR.wait; }
 }
 
 /* A heavy pallet put down anywhere on the continent, burning a flare so you
@@ -11107,7 +11202,9 @@ function updateBuildings(dt) {
       if (typeof paintGround === 'function') paintGround(gx, gy2, 5, 'concrete');
     }
     if (b.def.scrapGen) G.scr += b.def.scrapGen * (b.tier || 1) * dt;   // scrap refinery / factory income — scales with its upgrade tier
-    if (b.def.supGen) G.sup += b.def.supGen * (b.tier || 1) * dt;       // supply warehouse income
+    if (b.def.supGen) G.sup += b.def.supGen * (b.tier || 1) * dt;       // supply depot / warehouse income
+    if (b.def.oilGen) G.oil += b.def.oilGen * (b.tier || 1) * dt;       // oil rig / oil factory income
+    if (b.def.delivery) deliveryStep(b, dt);                             // Supply Delivery Depot: run the Chinook resupply cycle
     if (b.t === 'factory') {                                              // the stacks smoke while the plant runs
       b._smk = (b._smk || 0) - dt;
       if (b._smk <= 0 && G.parts.length < PMAX * .8) { b._smk = .32; for (const sx of [-.3, .05]) { const px = b.x + Math.cos(b.ang || 0) * 0 + sx * b.w * TS, py = b.y - b.h * TS * .32; fxSmoke(px, py, rnd(-6, 6), rnd(-4, 4), rnd(4, 7), rnd(3.5, 5.5), 'rgba(92,90,88,1)'); G.parts[G.parts.length - 1].z = (b.def.hgt || 60) * 1.9; } }
@@ -14163,8 +14260,8 @@ const $ = id => document.getElementById(id);
 const elAlerts = $('alerts'), elSel = $('sel'), elCmd = $('cmd'), elTip = $('tip'), elHint = $('hint');
 const elConfirm = $('confirm');
 
-function affordable(c) { return G.sup >= (c.s || 0) && G.scr >= (c.c || 0); }
-function pay(c) { G.sup -= (c.s || 0); G.scr -= (c.c || 0); }
+function affordable(c) { return G.sup >= (c.s || 0) && G.scr >= (c.c || 0) && G.oil >= (c.o || 0); }
+function pay(c) { G.sup -= (c.s || 0); G.scr -= (c.c || 0); if (c.o) G.oil -= c.o; }
 /* upgrade costs scale with current tier */
 function upgradeCost(b) {
   const base = b.def.cost || {}, m = (b.tier || 1) * 1.2;
@@ -14339,7 +14436,7 @@ function devWave(kind) {
 }
 $('dvres').onclick = e => {
   e.stopPropagation();
-  G.sup += 10000; G.scr += 10000;
+  G.sup += 10000; G.scr += 10000; G.oil += 10000;
   popText(CAM.x + CAM.vw / 2, CAM.y + CAM.vh / 2, '+10000', '#8dffbe');
   alertMsg('+10 000 supply and scrap', 'good'); AU.ui('ready');
 };
@@ -15026,7 +15123,7 @@ function commitPending() {
   if (P.t === 'hq') { const d = BDEF.hq; UI.pending = null; if (typeof deployPlaceHQ === 'function') deployPlaceHQ((P.tx + (d.w - 1) / 2) * TS, (P.ty + (d.h - 1) / 2) * TS); refreshConfirm(); return; }
   const d = BDEF[P.t];
   if (!canPlace(P.t, P.tx, P.ty)) { AU.ui('no'); alertMsg('Can’t build there — move it to clear ground.', ''); return; }
-  if (!affordable(d.cost)) { alertMsg('Not enough ' + (G.sup < (d.cost.s || 0) ? 'supply' : 'scrap'), ''); AU.ui('no'); return; }
+  if (!affordable(d.cost)) { alertMsg('Not enough ' + (G.sup < (d.cost.s || 0) ? 'supply' : G.oil < (d.cost.o || 0) ? 'oil' : 'scrap'), ''); AU.ui('no'); return; }
   startBuild(P.t, P.tx, P.ty); AU.ui('build');
   UI.pending = null;
   if (!(d.wall || d.trap || d.row)) UI.place = null;        // walls/traps/trench rows stay armed to place more; everything else finishes
@@ -15197,7 +15294,7 @@ function cardFor() {
     }
     if (d.garrison) btns.push({ g: '🚪', n: 'Unload', k: 'U', tip: 'Empty the culvert.', dis: !bld.gar.length, fn: () => unload(bld) });
     if (!d.noMove) btns.push({ g: '📦', n: 'Relocate', k: 'V', tip: 'Pack the structure up and rebuild it somewhere else. It comes back at half strength and has to finish construction again.', fn: () => beginRelocate(bld) });
-    if (bld.t !== 'hq') btns.push({ g: '🛠️', n: 'Sell', k: 'Del', tip: 'Demolish for half the supply back.', fn: () => { G.sup += (d.cost.s || 0) * .5; G.scr += (d.cost.c || 0) * .5; destroyBuilding(bld); } });   // no selling the command post
+    if (bld.t !== 'hq') btns.push({ g: '🛠️', n: 'Sell', k: 'Del', tip: 'Demolish for half the supply back.', fn: () => { G.sup += (d.cost.s || 0) * .5; G.scr += (d.cost.c || 0) * .5; if (d.cost.o) G.oil += d.cost.o * .5; destroyBuilding(bld); } });   // no selling the command post
     if (bld.t === 'hq') addAllyGifts(btns);
     return btns;
   }
@@ -15234,7 +15331,7 @@ function cardFor() {
         { id: 'infra', n: 'Infrastructure', k: '1', g: '🏭', tip: 'Economy and tech: Research Lab, Scrap Refinery, Scrap Factory, Supply Warehouse.' },
         { id: 'unit', n: 'Unit Buildings', k: '2', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Vehicle Bay, Airbase.' },
         { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, Floodlights, walls, fences, gates, traps and the Culvert bunker.' },
-        { id: 'spec', n: 'Specialization', k: '4', g: '🔬', tip: 'Advanced facilities: Research Lab and Airspace Command.' }];
+        { id: 'spec', n: 'Specialization', k: '4', g: '🔬', tip: 'Advanced facilities: Research Lab, Airspace Command, Helipad and the Supply Delivery Depot.' }];
       if (!UI.bcat) {
         btns.title = 'construction';
         for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, cls: 'cat cat-' + c.id, fn: () => { UI.bcat = c.id; AU.ui('ok'); refreshCard(true); } });
@@ -15243,13 +15340,39 @@ function cardFor() {
       }
       const cat = CATS.find(c => c.id === UI.bcat) || CATS[0];
       btns.title = cat.n;
-      for (const k in BDEF) {
-        const d = BDEF[k]; if (k === 'hq' || (d.cat || 'def') !== cat.id) continue;
+      const pushBld = k => {
+        const d = BDEF[k];
         btns.push({
           g: buildIcon(k) || d.g, n: d.name, k: d.key, cost: d.cost, tip: d.desc + (d.needs ? '\nRequires: ' + BDEF[d.needs].name : ''),
           dis: !affordable(d.cost) || (d.needs && !G.builds.some(b => b.t === d.needs && b.done && !b.dead)),
           fn: () => { UI.place = k; UI.placeRot = 0; UI.tab = 'build'; AU.ui('ok'); refreshCard(true); }
         });
+      };
+      if (cat.id === 'infra') {
+        // split the infrastructure menu into supply / scrap / oil sections, each ordered low→high by production
+        const inf = Object.keys(BDEF).filter(k => k !== 'hq' && (BDEF[k].cat || 'def') === 'infra');
+        const genOf = k => (BDEF[k].supGen || BDEF[k].scrapGen || BDEF[k].oilGen || 0);
+        const SECT = [
+          { res: 'sup', g: '▲', n: 'Supply', cls: 'rSup' },
+          { res: 'scr', g: '◆', n: 'Scrap', cls: 'rScr' },
+          { res: 'oil', g: '⬢', n: 'Oil', cls: 'rOil' }];
+        let any = false;
+        for (const s of SECT) {
+          const grp = inf.filter(k => (BDEF[k].res || '') === s.res).sort((a, b) => genOf(a) - genOf(b));
+          if (!grp.length) continue;
+          btns.push({ sect: true, g: s.g, n: s.n, cls: s.cls });
+          for (const k of grp) pushBld(k);
+          any = true;
+        }
+        // any infra building without a resource tag (e.g. research lab) falls under a general section
+        const rest = inf.filter(k => !['sup', 'scr', 'oil'].includes(BDEF[k].res || ''));
+        if (rest.length) { btns.push({ sect: true, g: '⚙', n: 'Other', cls: '' }); for (const k of rest) pushBld(k); }
+        if (!any && !rest.length) for (const k of inf) pushBld(k);
+      } else {
+        for (const k in BDEF) {
+          const d = BDEF[k]; if (k === 'hq' || (d.cat || 'def') !== cat.id) continue;
+          pushBld(k);
+        }
       }
       btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.bcat = null; UI.place = null; refreshCard(true); } });
       return btns;
@@ -15417,11 +15540,18 @@ function refreshCard(force) {
   const shown = paged ? btns.slice(UI.page * 10, UI.page * 10 + 10) : btns;
   shown.forEach((b, i) => { if (paged) b.k = String((i + 1) % 10); });
   for (const b of shown) {
+    if (b.sect) {   // resource section divider inside the build grid (not a clickable tile)
+      const el = document.createElement('div');
+      el.className = 'btn sect ' + (b.cls || '');
+      el.innerHTML = '<span class="g">' + b.g + '</span><span class="n">' + b.n + '</span><span class="ln"></span>';
+      host.appendChild(el); UI.cardBtns.push({ el, b });
+      continue;
+    }
     const el = document.createElement('div');
     el.className = 'btn' + (b.dis ? ' dis' : '') + (b.act ? ' act' : '') + (b.cls ? ' ' + b.cls : '');
     el.innerHTML = '<span class="g">' + b.g + '</span><span class="n">' + b.n + '</span>' +
       (b.k ? '<span class="k">' + b.k + '</span>' : '') +
-      (b.cost ? '<span class="c">' + (b.cost.s ? b.cost.s : '') + (b.cost.c ? '<em>' + b.cost.c + '</em>' : '') + '</span>' : '') +
+      (b.cost ? '<span class="c">' + (b.cost.s ? b.cost.s : '') + (b.cost.c ? '<em>' + b.cost.c + '</em>' : '') + (b.cost.o ? '<i>' + b.cost.o + '</i>' : '') + '</span>' : '') +
       (b.badge ? '<span class="c">' + b.badge + '</span>' : '');
     if (b.prog !== undefined) { const f = document.createElement('div'); f.className = 'fill'; f.style.width = (b.prog * 100) + '%'; el.appendChild(f); }
     if (b.up && !b.up.maxed) {   // the unit's own upgrade, extending UP above its buy tile on hover, lit up when affordable
@@ -15453,7 +15583,7 @@ function showTip(el, b) {
   // on touch devices, skip the hover description popups for system buttons — they get in the way on a phone
   try { if ((matchMedia && matchMedia('(pointer:coarse)').matches) || ('ontouchstart' in window)) return; } catch (e) {}
   elTip.innerHTML = '<b>' + b.n + '</b>' + (b.tip || '').replace(/\n/g, '<br>') +
-    (b.cost ? '<span class="cst">' + (b.cost.s ? b.cost.s + ' supply ' : '') + (b.cost.c ? b.cost.c + ' scrap' : '') + '</span>' : '');
+    (b.cost ? '<span class="cst">' + (b.cost.s ? b.cost.s + ' supply ' : '') + (b.cost.c ? b.cost.c + ' scrap' : '') + (b.cost.o ? ' + ' + b.cost.o + ' oil' : '') + '</span>' : '');
   // reveal off-screen first so we can measure its real size, then place it clear of the menu and fully on-screen
   elTip.style.display = 'block';
   elTip.style.left = '-9999px'; elTip.style.top = '0px';
@@ -15626,6 +15756,7 @@ function updateHUD(dt) {
   hudT -= dt; if (hudT > 0) return; hudT = .1;
   $('rSup').textContent = Math.floor(G.sup);
   $('rScr').textContent = Math.floor(G.scr);
+  { const ro = $('rOil'); if (ro) ro.textContent = Math.floor(G.oil); }
   $('rPop').textContent = G.pop + '/' + (G.cheat.pop ? '∞' : G.cap);
   const hr = G.day * 24, hh = Math.floor(hr), mm = Math.floor((hr - hh) * 60);
   $('clock').textContent = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
@@ -15926,7 +16057,7 @@ window.addEventListener('keydown', e => {
   if (k === 'delete' || k === 'backspace') {
     if (UI.queue.length) { cancelQueue(); return; }
     const b = G.sel.find(x => x.kind === 'build' && x.t !== 'hq');
-    if (b) { G.sup += (b.def.cost.s || 0) * .5; G.scr += (b.def.cost.c || 0) * .5; destroyBuilding(b); }
+    if (b) { G.sup += (b.def.cost.s || 0) * .5; G.scr += (b.def.cost.c || 0) * .5; if (b.def.cost.o) G.oil += b.def.cost.o * .5; destroyBuilding(b); }
     return;
   }
 
@@ -18509,6 +18640,59 @@ function ctrlHudTick(dt) {
       g.add(cyl(.09, .1, .03, matFor('#3a3c38', { roughness: .7, metalness: .35 }), 0, .085, 0, 'y'));
       g.add(cyl(.02, .02, .02, matFor('#ff3a2a', { emissive: lin('#ff3a2a'), emissiveIntensity: .9 }), .11, .08, 0, 'y'));
     }
+    else if (b.t === 'helipad' || b.t === 'deliverydepot') {
+      // a concrete landing pad: apron slab, a painted touchdown circle + H, edge lights and blinking beacons. The Supply
+      // Delivery Depot additionally carries a CH-47 Chinook (2× a Blackhawk) that cycles in to off-load stores by forklift —
+      // the aircraft, its ramp, rotors, forklifts and the pad beacons are all posed by the building animation loop from userData.chk
+      const delivery = b.t === 'deliverydepot';
+      const APR = matFor('#7d8188', { map: TEX.road, roughness: .95 }), APRD = matFor('#54585e', PANEL), PAINT = matFor('#e8e8de', { roughness: .8 });
+      const R = Math.min(w, h) * .42;
+      g.add(box(w * .96, .06, h * .96, APR, 0, .03, 0));                                                                        // apron slab
+      g.add(box(w * .96, .07, .12, APRD, 0, .035, h * .48)); g.add(box(w * .96, .07, .12, APRD, 0, .035, -h * .48));            // kerb front/back
+      g.add(box(.12, .07, h * .96, APRD, w * .48, .035, 0)); g.add(box(.12, .07, h * .96, APRD, -w * .48, .035, 0));            // kerb sides
+      { const ring = new THREE.Mesh(new THREE.RingGeometry(R - .1, R, 40), PAINT); ring.rotation.x = -HPI; ring.position.y = .065; g.add(ring); }   // touchdown circle
+      g.add(box(.14, .012, R * .9, PAINT, -R * .28, .07, 0)); g.add(box(.14, .012, R * .9, PAINT, R * .28, .07, 0)); g.add(box(R * .56, .012, .14, PAINT, 0, .07, 0));   // the "H"
+      for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; g.add(cyl(.03, .03, .04, matFor('#cfe6ff', { emissive: lin('#7fc0ff'), emissiveIntensity: .9 }), Math.cos(a) * R * 1.02, .06, Math.sin(a) * R * 1.02, 'y')); }   // edge lights
+      // blinking beacons on posts: a red one, and (delivery pad) a green one on the opposite corner
+      const beacon = (col, glow, cx, cz) => { g.add(cyl(.03, .03, .34, matFor('#2a2e32', PANEL), cx, .17, cz, 'y')); const lamp = sph(.07, matFor(col, { emissive: lin(glow), emissiveIntensity: 1 }), cx, .38, cz); g.add(lamp); return lamp; };
+      const beR = beacon('#ff5a4a', '#ff2a1a', -w * .42, -h * .42);
+      const beG = delivery ? beacon('#54ff88', '#22e060', w * .42, h * .42) : null;
+      g.userData.padBeacons = { r: beR, g: beG };
+      if (delivery) {
+        // ---- the CH-47 Chinook: a tandem-rotor heavy-lifter, roughly twice a Blackhawk. Built facing +x; parked/animated by the loop. ----
+        const CH = new THREE.Group();
+        const HULL2 = matFor('#4a5140', PANEL), HULD = matFor('#363b2e', PANEL), DK = matFor('#1e2124', { metalness: .5, roughness: .5 }), GLS = matFor('#1c3444', { roughness: .06, metalness: .8 });
+        CH.add(box(3.0, .7, .82, HULL2, 0, .95, 0)); CH.add(box(3.0, .12, .78, HULD, 0, .56, 0));                                 // long fuselage + belly
+        CH.add(sph(.42, HULL2, 1.5, .95, 0, .9, 1, 1)); CH.add(box(.5, .34, .78, GLS, 1.45, 1.06, 0, 0, 0, -.35));                // rounded nose + cockpit glass
+        for (const s of [-1, 1]) { for (let i = 0; i < 4; i++) CH.add(box(.03, .2, .24, GLS, -.9 + i * .5, .98, s * .41)); }      // cabin windows both sides
+        // aft pylon (raised) + forward pylon (low)
+        CH.add(box(.5, .5, .7, HULL2, -1.15, 1.5, 0)); CH.add(box(.55, .28, .74, HULD, -1.15, 1.78, 0));                          // rear pylon
+        CH.add(box(.42, .3, .6, HULL2, 1.05, 1.32, 0));                                                                          // forward pylon
+        for (const s of [-1, 1]) CH.add(cyl(.13, .12, 1.0, DK, -.7, 1.2, s * .3, 'x'));                                          // twin engine nacelles on the aft deck
+        // rear loading ramp — hinged at the aft belly; userData refs it so the loop can lower/raise it
+        const ramp = new THREE.Group(); ramp.position.set(-1.5, .62, 0); ramp.add(box(.7, .06, .74, HULD, -.35, 0, 0)); CH.add(ramp);
+        CH.add(box(.12, .5, .78, HULD, -1.52, .9, 0));                                                                            // aft bulkhead (ramp opening)
+        // tandem rotors: front and rear 3-blade heads with blur discs
+        const BLD = matFor('#1a1c1e', { roughness: .7 });
+        const mkHead = (cx, cy, Rr) => { const grp = new THREE.Group(); grp.rotation.x = -HPI; grp.position.set(cx, cy, 0); for (let i = 0; i < 3; i++) { const a = i / 3 * TAU; grp.add(box(Rr * .96, Rr * .06, .02, BLD, Math.cos(a) * Rr * .5, Math.sin(a) * Rr * .5, 0, 0, 0, a)); } grp.add(cyl(.06, .06, .12, DK, 0, 0, 0, 'z')); const disc = new THREE.Mesh(new THREE.CircleGeometry(Rr, 24), ROTOR); grp.add(disc); CH.add(grp); return grp; };
+        const rotR = mkHead(-1.15, 1.98, 1.5), rotF = mkHead(1.05, 1.66, 1.5);
+        for (const s of [-1, 1]) { CH.add(box(.04, .3, .04, DK, .6, .5, s * .34)); CH.add(cyl(.13, .13, .12, TIRE, .6, .28, s * .38, 'z')); CH.add(box(.04, .3, .04, DK, -.95, .5, s * .34)); CH.add(cyl(.13, .13, .12, TIRE, -.95, .28, s * .38, 'z')); }   // four-wheel gear
+        CH.add(cyl(.02, .02, .5, DK, -1.7, 1.05, 0, 'x'));                                                                       // tail fairing / antenna
+        CH.visible = false; g.add(CH);
+        // three forklifts that shuttle stores off the ramp onto the pad
+        const forks = [];
+        for (let i = 0; i < 3; i++) {
+          const F = new THREE.Group(); const body = matFor('#d8a12a', { roughness: .6 });
+          F.add(box(.26, .18, .2, body, 0, .16, 0)); F.add(box(.14, .16, .2, matFor('#2a2c28', PANEL), -.12, .2, 0));            // chassis + cab back
+          F.add(cyl(.07, .07, .06, TIRE, .1, .07, .11, 'z')); F.add(cyl(.07, .07, .06, TIRE, .1, .07, -.11, 'z')); F.add(cyl(.05, .05, .06, TIRE, -.1, .06, .11, 'z')); F.add(cyl(.05, .05, .06, TIRE, -.1, .06, -.11, 'z'));   // wheels
+          F.add(box(.02, .34, .02, matFor('#3a3c38', PANEL), .16, .2, .07)); F.add(box(.02, .34, .02, matFor('#3a3c38', PANEL), .16, .2, -.07));   // mast
+          const forkY = new THREE.Group(); forkY.add(box(.18, .02, .04, matFor('#c8ccd0', PANEL), .26, 0, .07)); forkY.add(box(.18, .02, .04, matFor('#c8ccd0', PANEL), .26, 0, -.07)); forkY.position.y = .08; F.add(forkY);
+          const load = box(.2, .18, .22, matFor('#5c6a48', { map: TEX.panel, roughness: .9 }), .3, .1, 0); forkY.add(load);      // the crate on the forks
+          F.visible = false; g.add(F); forks.push({ g: F, forks: forkY, load });
+        }
+        g.userData.chk = { CH, rotF, rotR, ramp, forks };
+      }
+    }
     else if (d.flat) { g.add(box(w * .9, .05, h * .9, matFor(d.col[0], { map: TEX.panel }), 0, .03, 0)); for (let i = 0; i < 6; i++) g.add(cyl(.02, 0, .16, BARREL, (i % 3 - 1) * .28, .1, (i < 3 ? -.2 : .2), 'y')); }
     else if (d.wall) {
       const fence = b.t === 'fence', isGate = !!d.gate, mask = wallMask(b); g.userData.mask = mask;
@@ -18777,6 +18961,39 @@ function ctrlHudTick(dt) {
       const forks = new THREE.Group(); forks.position.set(.18, .04, 0); for (const s of [-1, 1]) forks.add(box(.28, .015, .03, BLK, .14, 0, s * .06)); fk.add(forks);
       const load = new THREE.Group(); load.position.set(.16, .02, 0); load.add(box(.3, .28, .3, CAGE, 0, .14, 0)); load.add(box(.22, .2, .22, CRT, 0, .12, 0)); forks.add(load);
       g.add(fk); g.userData.fork = { g: fk, forks, load, w, h };
+    } else if (b.t === 'supdepot') {
+      // supply depot: a one-tile stack of green supply containers with a lit ▲ fascia; taller and armoured at higher tiers
+      const CTN = matFor('#3f7a44', { map: TEX.panel, roughness: .7 }), CTN2 = matFor('#356a3a', { map: TEX.panel, roughness: .7 }), STL2 = matFor('#6a7076', { metalness: .55, roughness: .4 });
+      g.add(box(w * .92, .08, h * .92, matFor('#4a4a46', { map: TEX.floorHD }), 0, .04, 0));                                    // slab
+      g.add(box(w * .8, ht * .55, h * .8, CTN, 0, ht * .28 + .04, 0)); g.add(box(w * .82, .06, h * .82, matFor('#2a2e2a'), 0, ht * .55 + .07, 0));   // main container + lid
+      for (let i = 0; i < 4; i++) g.add(box(.02, ht * .5, .03, matFor('#2a2e2a'), -w * .32 + i * w * .22, ht * .28, h * .41));   // ribs
+      g.add(box(w * .84, .05, .05, matFor('#1c2a24', { emissive: lin('#8dffbe'), emissiveIntensity: .8 }), 0, ht * .5, h * .41));   // lit ▲ fascia
+      if (tier0 >= 2) { g.add(box(w * .58, ht * .34, h * .5, CTN2, w * .16, ht * .55 + ht * .17 + .07, -h * .1)); g.add(box(w * .84, ht * .5, .04, STL2, 0, ht * .28, -h * .42)); }   // Mk2: a stacked crate + back armour plate
+      if (tier0 >= 3) { g.add(box(w * .7, .04, h * .7, matFor('#1a2a3a', { emissive: lin('#4aa8ff'), emissiveIntensity: .5, roughness: .3 }), 0, ht * .9 + .06, 0)); for (const sx of [-1, 1]) g.add(box(w * .4, .3, h * .4, CTN2, sx * w * .28, ht * .3 + .05, h * .18)); }   // Mk3: rooftop solar + flanking containers
+    } else if (b.t === 'oilrig') {
+      // oil rig: a one-tile steel derrick with a nodding pumpjack and a crude tank; taller with more tanks at higher tiers
+      const STL2 = matFor('#5a5e64', { metalness: .5, roughness: .45 }), DRK = matFor('#2a2c30', { roughness: .8 }), TANK = matFor('#3a3d38', { map: TEX.panel });
+      g.add(box(w * .9, .1, h * .9, matFor('#3a3d34', { map: TEX.floorHD }), 0, .05, 0));                                       // pad
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(.03, .015, ht * .95, STL2, sx * w * .22, ht * .48, sz * h * .22, 'y'));   // four tapering legs
+      for (let lv = 1; lv <= 3; lv++) { const y = ht * .28 * lv, s = w * (.22 - lv * .03); g.add(box(s * 2.1, .02, .02, STL2, 0, y, s)); g.add(box(s * 2.1, .02, .02, STL2, 0, y, -s)); g.add(box(.02, .02, s * 2.1, STL2, s, y, 0)); g.add(box(.02, .02, s * 2.1, STL2, -s, y, 0)); }   // cross-bracing
+      g.add(cyl(.025, .025, .12, matFor('#d0301c', { emissive: lin('#ff3a2a'), emissiveIntensity: .9 }), 0, ht * .98, 0, 'y'));   // top warning light
+      const pump = new THREE.Group(); pump.position.set(-w * .34, ht * .16, h * .32); g.add(pump); g.userData.pumpBeam = pump;   // nodding walking-beam (animated)
+      pump.add(box(.05, ht * .28, .05, STL2, 0, 0, 0)); pump.add(box(ht * .5, .05, .06, DRK, .04, ht * .14, 0)); pump.add(box(.06, .12, .08, DRK, ht * .26, ht * .08, 0));
+      g.add(cyl(.15, .16, ht * .4, TANK, w * .32, ht * .2, -h * .3, 'y')); g.add(cyl(.16, .06, .05, STL2, w * .32, ht * .4, -h * .3, 'y'));   // crude tank
+      if (tier0 >= 2) { g.add(cyl(.15, .16, ht * .5, TANK, w * .3, ht * .25, h * .3, 'y')); g.add(cyl(.02, .02, w * .6, STL2, 0, ht * .22, h * .2, 'x')); }   // Mk2: a second tank + pipe run
+      if (tier0 >= 3) { g.add(cyl(.03, .015, ht * .45, STL2, 0, ht * 1.15, 0, 'y')); g.add(cyl(.02, .02, .1, matFor('#ff9a3a', { emissive: lin('#ff9a3a'), emissiveIntensity: 1.2 }), 0, ht * 1.36, 0, 'y')); for (const sx of [-1, 1]) g.add(cyl(.13, .14, ht * .4, TANK, sx * w * .34, ht * .2, h * .0, 'y')); }   // Mk3: crown mast + flare + extra tanks
+    } else if (b.t === 'oilfactory') {
+      // oil factory: a cracking plant — a tall distillation column, white storage tanks, pipework and a flare stack with a live flame
+      const TANK = matFor('#c4c8c0', { metalness: .3, roughness: .5 }), STL2 = matFor('#6a7076', { metalness: .55, roughness: .4 }), DRK = matFor('#2a2c30', { roughness: .8 });
+      g.add(box(w * .96, .1, h * .96, matFor('#3a3d38', { map: TEX.floorHD }), 0, .05, 0));                                     // slab
+      g.add(cyl(.22, .22, ht * 1.1, TANK, -w * .22, ht * .55, -h * .18, 'y')); for (let i = 0; i < 4; i++) g.add(cyl(.24, .24, .03, STL2, -w * .22, ht * .28 + i * ht * .24, -h * .18, 'y'));   // distillation column
+      for (let i = 0; i < 3; i++) { g.add(cyl(.24, .24, ht * .45, TANK, w * .22 - (i % 2) * .12, ht * .22, h * .24 - i * .42, 'y')); g.add(cyl(.24, .1, .1, matFor('#a8aca4'), w * .22 - (i % 2) * .12, ht * .44, h * .24 - i * .42, 'y')); }   // storage tanks + domes
+      g.add(cyl(.05, .05, ht * 1.3, STL2, w * .4, ht * .65, -h * .34, 'y'));                                                    // flare stack
+      const flare = box(.12, .2, .12, matFor('#ff7a2a', { emissive: lin('#ff9a3a'), emissiveIntensity: 1.4 }), w * .4, ht * 1.32, -h * .34); g.add(flare); g.userData.flare = flare;
+      for (let i = 0; i < 3; i++) g.add(cyl(.03, .03, w * .7, STL2, 0, .2 + i * .12, h * .04, 'x'));                            // pipework
+      g.add(box(w * .5, ht * .3, .06, DRK, -w * .12, ht * .15, h * .46)); g.add(box(w * .9, .05, .05, matFor('#2a1c30', { emissive: lin('#c9a6ff'), emissiveIntensity: .8 }), 0, ht * .3, h * .48));   // control block + lit ⬢ fascia
+      if (tier0 >= 2) { for (let i = 0; i < 2; i++) g.add(cyl(.22, .22, ht * .55, TANK, -w * .3 + i * .2, ht * .27, h * .34, 'y')); }   // Mk2: extra tank farm
+      if (tier0 >= 3) { g.add(cyl(.26, .26, ht * 1.25, TANK, w * .04, ht * .62, -h * .34, 'y')); g.userData.flare.material.emissiveIntensity = 2.0; g.add(box(w * .8, .04, h * .8, matFor('#1a2a3a', { emissive: lin('#4aa8ff'), emissiveIntensity: .5, roughness: .3 }), 0, ht * 1.12 + .04, h * .1)); }   // Mk3: a second column + brighter flare + solar roof
     } else {
       g.add(box(w * .96, ht, h * .96, wall, 0, ht / 2, 0)); g.add(box(w, .12, h, roof, 0, ht + .06, 0)); g.add(box(w * .96, .12, h * .96, trim, 0, .06, 0));
       const win = matFor('#182028', { emissive: lin('#ffc068'), emissiveIntensity: 0, roughness: .3 });
@@ -19790,6 +20007,37 @@ function ctrlHudTick(dt) {
       if (bm.gun) bm.gun.rotation.y = -(b.ang || 0) + (_rotable ? (b.facing || 0) : 0); if (g.userData.radar) g.userData.radar.rotation.y = G.t * 1.6; if (g.userData.tube) { const ta = Math.PI - (b.ang !== undefined ? b.ang : -HPI); let dA = ta - g.userData.tube.rotation.y; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); g.userData.tube.rotation.y += dA * Math.min(1, (render._dt || .016) * 3); }   // the mortar tubes traverse smoothly onto the target
         if (g.userData.dish) { g.userData.dish.rotation.y = G.t * .9; } if (g.userData.plane) { const P = g.userData.plane, a = G.t * .6; P.position.set(Math.cos(a) * P.userData.R, P.userData.H + Math.sin(G.t * .9) * .12, Math.sin(a) * P.userData.R); P.rotation.set(0, -a - HPI, 0); P.rotateX(-.18); P.rotateZ(-.12); if (P.userData.props) for (const pr of P.userData.props) pr.rotation.x = G.t * 60; if (P.userData.rotor) P.userData.rotor.rotation.z = G.t * 40; if (P.userData.disc) P.userData.disc.visible = true; if (P.userData.tails) for (const tr of P.userData.tails) tr.rotation.z = G.t * 70; }   // Airspace Command: the big dish sweeps, the transport orbits the tower banked into its turn
       if (b.done && g.userData.conveyor) { const cs = g.userData.conveyor.crates; for (let i = 0; i < cs.length; i++) cs[i].position.x = ((G.t * .35 + i / cs.length) % 1) * 1.0; }
+      if (b.done && g.userData.pumpBeam) g.userData.pumpBeam.rotation.z = Math.sin(G.t * 2.2 + b.id) * .34;   // oil-rig pumpjack nods
+      if (b.done && g.userData.flare) g.userData.flare.material.emissiveIntensity = 1.3 + Math.sin(G.t * 9 + b.id) * .5 + Math.random() * .35;   // oil-factory flare flickers
+      if (b.done && g.userData.padBeacons) {   // helipad / delivery-pad beacons blink; on the delivery pad red and green alternate
+        const pb = g.userData.padBeacons, on = Math.sin(G.t * 5 + b.id) > 0;
+        if (pb.r) pb.r.material.emissiveIntensity = on ? 1.7 : .1;
+        if (pb.g) pb.g.material.emissiveIntensity = on ? .1 : 1.7;
+      }
+      if (b.done && g.userData.chk && b.deliv) {   // Supply Delivery Depot: fly the CH-47 through its resupply cycle
+        const CK = g.userData.chk, D = b.deliv, DR = deliveryDurations(), HI = 11, FAR = 46, p = D.phase, tt = Math.max(0, D.t);
+        let alt = HI, ox = 0, vis = true, rampA = 0, spin = true;
+        if (p === 'wait') { vis = false; spin = false; }
+        else if (p === 'in') { const k = 1 - tt / DR.in; ox = FAR * (1 - k); alt = HI * (1 - k * k); }               // descend in from the east
+        else if (p === 'ramp') { const k = 1 - tt / DR.ramp; alt = 0; rampA = -1.0 * k; }                            // set down, drop the ramp
+        else if (p === 'unload') { alt = 0; rampA = -1.0; }
+        else if (p === 'close') { const k = 1 - tt / DR.close; alt = 0; rampA = -1.0 * (1 - k); }                     // raise the ramp
+        else { const k = 1 - tt / DR.out; ox = -FAR * k; alt = HI * (k * k); }                                        // lift off and away to the west
+        CK.CH.visible = vis; CK.CH.position.set(ox, alt, 0); CK.CH.rotation.y = Math.PI;
+        if (spin) { const s = G.t * 26; CK.rotF.rotation.z = s; CK.rotR.rotation.z = -s; }
+        if (CK.ramp) CK.ramp.rotation.z = rampA;
+        for (let i = 0; i < CK.forks.length; i++) {
+          const F = CK.forks[i], active = (p === 'unload' && D.fork === i);
+          if (!active) { F.g.visible = false; continue; }
+          F.g.visible = true;
+          const subK = 1 - tt / DR.unload, x0 = -1.5, z0 = 0, dx = .2, dz = (i - 1) * .5;
+          let x, z, ang, loaded = true;
+          if (subK < .4) { const k = subK / .4; x = x0 + (dx - x0) * k; z = z0 + (dz - z0) * k; ang = 0; }             // drive the load out onto the pad
+          else if (subK < .55) { x = dx; z = dz; ang = 0; loaded = subK < .5; }                                       // set the crate down
+          else { const k = (subK - .55) / .45; x = dx + (x0 - dx) * k; z = dz + (z0 - dz) * k; ang = Math.PI; loaded = false; }   // reverse back to the ramp
+          F.g.position.set(x, .02, z); F.g.rotation.y = ang; F.load.visible = loaded;
+        }
+      }
       if (g.userData.core) g.userData.core.material.emissiveIntensity = 1.2 + Math.sin(G.t * 3) * .6;
       if (b.done && !b.def.flat) applyBricks(g, b.hp, b.maxHp, b.hitDir, g.rotation.y);                    // blast damage knocks the bricks off the struck side; repairs put them back
       if (g.userData.anim) { const rdt = Math.max(1e-3, render._dt || .016); for (let ai = 0; ai < g.userData.anim.length; ai++) g.userData.anim[ai](G.t, rdt, b, WIND3); }
@@ -20575,10 +20823,10 @@ function ctrlHudTick(dt) {
 
 /* ============================ BOOT & LOOP ============================ */
 const DIFFS = {
-  easy:     { label: 'Easy',     sup: 700 * 15,   scr: 350 * 15,   hpMul: .7,  dmgMul: .7,  waveMul: 1.35, dev: false },
-  normal:   { label: 'Normal',   sup: 400 * 15,   scr: 150 * 15,   hpMul: 1,   dmgMul: 1,   waveMul: 1,    dev: false },
-  hard:     { label: 'Hard',     sup: 280 * 15,   scr: 100 * 15,   hpMul: 1.5, dmgMul: 1.35, waveMul: .72, dev: false },
-  creative: { label: 'Creative', sup: 9999999, scr: 9999999, hpMul: .6,  dmgMul: .5,  waveMul: 1.5,  dev: true }
+  easy:     { label: 'Easy',     sup: 700 * 15,   scr: 350 * 15,   oil: 600,  hpMul: .7,  dmgMul: .7,  waveMul: 1.35, dev: false },
+  normal:   { label: 'Normal',   sup: 400 * 15,   scr: 150 * 15,   oil: 400,  hpMul: 1,   dmgMul: 1,   waveMul: 1,    dev: false },
+  hard:     { label: 'Hard',     sup: 280 * 15,   scr: 100 * 15,   oil: 250,  hpMul: 1.5, dmgMul: 1.35, waveMul: .72, dev: false },
+  creative: { label: 'Creative', sup: 9999999, scr: 9999999, oil: 9999999, hpMul: .6,  dmgMul: .5,  waveMul: 1.5,  dev: true }
 };
 function newGame(opts) {
   opts = opts || {};
@@ -20599,7 +20847,7 @@ function newGame(opts) {
   G.players = cfg.map((c, i) => { const pl = mkPlayer(i, c); pl.baseCap = res.cap != null ? res.cap : 20; pl.maxCap = res.maxCap || 0; pl.unlim = c.unlim || res.unlim || { sup: false, scr: false, cap: false }; return pl; });
   G.me = opts.me || 0; G.cur = G.me; G.mp = G.players.length > 1; G.mode2 = null;
   G.t = 0; G.day = .30; G.wave = 0; G.days = 0; G.rainDay = 7 + (Math.random() < .5 ? 0 : 1); G.dayHold = false; G.windForce = null;   // the first storm front can only arrive once a week has passed
-  for (let pi = 0; pi < G.players.length; pi++) { G.cur = pi; G.sup = res.sup != null ? res.sup : G.diff.sup; G.scr = res.scr != null ? res.scr : G.diff.scr; G.pop = 0; G.up = { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }; G.tier = { inf: 1, veh: 1, air: 1 }; G.utier = {}; G.dropT = 22; }
+  for (let pi = 0; pi < G.players.length; pi++) { G.cur = pi; G.sup = res.sup != null ? res.sup : G.diff.sup; G.scr = res.scr != null ? res.scr : G.diff.scr; G.oil = res.oil != null ? res.oil : (G.diff.oil || 0); G.pop = 0; G.up = { rifling: 0, kevlar: 0, optics: 0, incend: 0, composite: 0, nvg: 0, incendAmmo: 0 }; G.tier = { inf: 1, veh: 1, air: 1 }; G.utier = {}; G.dropT = 22; }
   G.cur = G.me;
   G.waveT = 42; G.waveTMax = 42; G.waveQueue = null; G.waveAlive = 0;
   G.research = null; G.bigT = 55; G.shake = 0; G.over = false; G.killed = 0; G.lost = 0;
@@ -21250,7 +21498,7 @@ openDev(false);
 const SAVE_KEY = 'zrts_save_v1';
 function serializeGame() {
   return {
-    v: 1, mode: G.mode, t: G.t, sup: G.sup, scr: G.scr, wave: G.wave, waveT: G.waveT, waveTMax: G.waveTMax,
+    v: 1, mode: G.mode, t: G.t, sup: G.sup, scr: G.scr, oil: G.oil, wave: G.wave, waveT: G.waveT, waveTMax: G.waveTMax,
     day: G.day, days: G.days || 0, rainDay: G.rainDay || 7, dropT: G.dropT, bigT: G.bigT, killed: G.killed,
     tier: { inf: G.tier.inf, veh: G.tier.veh, air: G.tier.air }, utier: Object.assign({}, G.utier || {}), up: Object.assign({}, G.up),
     builds: G.builds.filter(b => !b.dead).map(b => ({ t: b.t, tx: b.tx, ty: b.ty, hp: Math.round(b.hp), maxHp: Math.round(b.maxHp), tier: b.tier || 1, upgT: b.upgT || 0, done: b.done, prog: b.prog, ang: b.ang || 0, rally: b.rally || null })),
@@ -21264,7 +21512,7 @@ function applyGame(s) {
   G.crates.length = 0; G.pickups.length = 0; G.corpses.length = 0; G.texts.length = 0; G.sel.length = 0;
   G.lamps.length = 0; G.towers.length = 0; G.groups = {}; G.hq = null; G.pop = 0; G.gridB.fill(0); G.air.length = 0; G.grass.clear(); if (G.grassTex) G.grassTex.clear(); G.grassGen = (G.grassGen | 0) + 1;
   UI.queue.length = 0; UI.moving = null; UI.place = null; UI.pending = null; UI.deploy = false; UI.tab = null;
-  G.sup = s.sup; G.scr = s.scr; G.wave = s.wave; G.waveT = s.waveT != null ? s.waveT : 42; G.waveTMax = s.waveTMax != null ? s.waveTMax : 42;
+  G.sup = s.sup; G.scr = s.scr; G.oil = s.oil != null ? s.oil : 0; G.wave = s.wave; G.waveT = s.waveT != null ? s.waveT : 42; G.waveTMax = s.waveTMax != null ? s.waveTMax : 42;
   G.day = s.day; G.days = s.days || 0; G.rainDay = s.rainDay || 7; G.dropT = s.dropT != null ? s.dropT : 22; G.bigT = s.bigT != null ? s.bigT : 55; G.killed = s.killed || 0; G.t = s.t || 0;
   G.over = false; G.waveQueue = null; G.waveAlive = 0; G.research = null;
   G.mode = s.mode || 'defense';
@@ -21411,33 +21659,38 @@ for (const b of document.querySelectorAll('#mzoom button[data-mz]')) { const h =
 /* ---- top-bar resource converter: click a resource total to trade between supply and scrap, choosing the amount on a drag slider ---- */
 (function () {
   const pop = document.getElementById('convpop'); if (!pop) return;
-  const RATE = 5;                                            // 5 supply : 1 scrap, both ways
+  // each mode spends `f` of `from` to yield `t` of `to`; the swap arrow flips to its `rev`. Supply⇄Scrap 5:1, Scrap⇄Oil 3:1.
+  const RATES = {
+    toScrap:  { fromK: 'sup', toK: 'scr', f: 5, t: 1, title: 'Supply → Scrap  (5 : 1)', rev: 'toSupply', fs: '▲', ts: '◆' },
+    toSupply: { fromK: 'scr', toK: 'sup', f: 1, t: 5, title: 'Scrap → Supply  (1 : 5)', rev: 'toScrap',  fs: '◆', ts: '▲' },
+    toOil:    { fromK: 'scr', toK: 'oil', f: 3, t: 1, title: 'Scrap → Oil  (3 : 1)',    rev: 'oilToScr', fs: '◆', ts: '⬢' },
+    oilToScr: { fromK: 'oil', toK: 'scr', f: 1, t: 3, title: 'Oil → Scrap  (1 : 3)',    rev: 'toOil',    fs: '⬢', ts: '◆' }
+  };
   const amt = document.getElementById('convAmt'), spendEl = document.getElementById('convSpend'), getEl = document.getElementById('convGet'), arrow = document.getElementById('convArrow'), title = document.getElementById('convTitle');
   const me = () => (G.players && G.players[G.me]) || { unlim: {} };
-  const srcMax = () => UI.convMode === 'toScrap' ? Math.floor(G.sup) : Math.floor(G.scr);
+  const cfg = () => RATES[UI.convMode] || RATES.toScrap;
   function readout() {
-    const frac = (+amt.value) / 100, max = srcMax(), spend = Math.floor(max * frac);
-    let give;
-    if (UI.convMode === 'toScrap') { const s = Math.floor(spend / RATE) * RATE; spendEl.textContent = s + ' ▲'; give = s / RATE; getEl.textContent = '+' + give + ' ◆'; UI._convSpend = s; UI._convGive = give; }
-    else { spendEl.textContent = spend + ' ◆'; give = spend * RATE; getEl.textContent = '+' + give + ' ▲'; UI._convSpend = spend; UI._convGive = give; }
+    const c = cfg(), max = Math.floor(G[c.fromK] || 0), spend = Math.floor(Math.floor(max * (+amt.value) / 100) / c.f) * c.f, give = (spend / c.f) * c.t;
+    spendEl.textContent = spend + ' ' + c.fs; getEl.textContent = '+' + give + ' ' + c.ts; UI._convSpend = spend; UI._convGive = give;
   }
   function open(mode) {
-    UI.convMode = mode; pop.classList.remove('toScrap', 'toSupply'); pop.classList.add(mode);
-    title.textContent = mode === 'toScrap' ? 'Supply → Scrap  (5 : 1)' : 'Scrap → Supply  (1 : 5)';
-    amt.value = 50; readout(); pop.classList.add('show'); pop.style.display = 'flex';
+    UI.convMode = mode; pop.classList.remove('toScrap', 'toSupply', 'toOil', 'oilToScr'); pop.classList.add(mode);
+    title.textContent = cfg().title; amt.value = 50; readout(); pop.classList.add('show'); pop.style.display = 'flex';
   }
   function close() { pop.classList.remove('show'); setTimeout(() => { if (!pop.classList.contains('show')) pop.style.display = 'none'; }, 200); }
   amt.addEventListener('input', readout);
+  if (arrow) arrow.addEventListener('click', e => { e.stopPropagation(); open(cfg().rev); });   // click the arrow to flip the trade direction
   document.getElementById('convDo').addEventListener('click', e => { e.stopPropagation();
-    const spend = UI._convSpend || 0, give = UI._convGive || 0; if (spend <= 0) { AU.ui('no'); return; }
-    if (UI.convMode === 'toScrap') { if (G.sup < spend && !me().unlim.sup) { AU.ui('no'); return; } if (!me().unlim.sup) G.sup -= spend; G.scr += give; }
-    else { if (G.scr < spend && !me().unlim.scr) { AU.ui('no'); return; } if (!me().unlim.scr) G.scr -= spend; G.sup += give; }
-    if (G.hq) popText(G.hq.x, G.hq.y - 18, (UI.convMode === 'toScrap' ? '+' + give + ' ◆' : '+' + give + ' ▲'), '#9fe6c0');
+    const c = cfg(), spend = UI._convSpend || 0, give = UI._convGive || 0; if (spend <= 0) { AU.ui('no'); return; }
+    if ((G[c.fromK] || 0) < spend && !me().unlim[c.fromK]) { AU.ui('no'); return; }
+    if (!me().unlim[c.fromK]) G[c.fromK] -= spend; G[c.toK] += give;
+    if (G.hq) popText(G.hq.x, G.hq.y - 18, '+' + give + ' ' + c.ts, '#9fe6c0');
     AU.ui('ok'); readout();
   });
   document.getElementById('convX').addEventListener('click', e => { e.stopPropagation(); close(); });
   document.getElementById('cellSup').addEventListener('click', e => { e.stopPropagation(); if (pop.classList.contains('show') && UI.convMode === 'toSupply') close(); else open('toSupply'); });
-  document.getElementById('cellScr').addEventListener('click', e => { e.stopPropagation(); if (pop.classList.contains('show') && UI.convMode === 'toScrap') close(); else open('toScrap'); });
+  document.getElementById('cellScr').addEventListener('click', e => { e.stopPropagation(); if (pop.classList.contains('show') && (UI.convMode === 'toScrap' || UI.convMode === 'oilToScr')) close(); else open('toScrap'); });
+  { const co = document.getElementById('cellOil'); if (co) co.addEventListener('click', e => { e.stopPropagation(); if (pop.classList.contains('show') && (UI.convMode === 'toOil' || UI.convMode === 'oilToScr')) close(); else open('toOil'); }); }
   addEventListener('pointerdown', e => { if (pop.classList.contains('show') && !e.target.closest('#convpop') && !e.target.closest('.cell.conv')) close(); }, true);
 })();
 $('cmd').addEventListener('click', e => { if (e.target.closest('#cmdtitle')) $('cmd').classList.toggle('collapsed'); });
