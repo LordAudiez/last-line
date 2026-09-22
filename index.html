@@ -8470,7 +8470,7 @@ function creditDelivery(b) {
   const tier = b.tier || 1;                                  // each upgrade tier multiplies the depot's yield (Mk1 ×1, Mk2 ×2, Mk3 ×3)
   const sup = AIRBOX * 5 * tier, scr = sup * .5, oil = scr * .5;   // one forklift load: supply ×5 a box, scrap = ½ supply, oil = ½ scrap
   G.sup += sup; G.scr += scr; G.oil += oil;
-  b.stored = Math.min(7, (b.stored || 0) + 1);               // grow the visible supply pile beside the pad, one crate per load (7 = a full pallet stack)
+  b.stored = (b.stored || 0) + 1; if (b.stored > 7) b.stored = 0;   // the yard fills one crate per load; once full (7) it is hauled away (reset to empty) and starts filling again
   if (typeof popText === 'function') { try { popText(b.x, b.y - b.h * TS * .3, '+' + Math.round(sup) + '▲  +' + Math.round(scr) + '◆  +' + Math.round(oil) + '⬢', '#8fe6b0'); } catch (e) {} }
 }
 function deliveryStep(b, dt) {
@@ -18836,7 +18836,11 @@ function ctrlHudTick(dt) {
             const cr = box(.34, .30, .38, SM, storeX + cc[0], cy, storeZ + cc[1]); cr.visible = false; g.add(cr);
             const st = box(.36, .05, .40, SW, storeX + cc[0], cy + .17, storeZ + cc[1]); st.visible = false; g.add(st);   // a strap/lid so the pile reads as pallets
             stack.push([cr, st]); } ly++; }
-        g.userData.chk = { CH, rotF, rotR, ramp, forks, fH, deckY: D, RL, gatL, gatR, stack, storeX, storeZ };
+        // the forklift's PREPARE STATION: a marked platform ON the deck so the parked forklift sits on something (never floats off the edge)
+        const stationX = 1.95, stationZ = -1.15;
+        g.add(box(.9, .06, .78, matFor('#3a3e44', PANEL), stationX, D + .03, stationZ));                                                    // station slab
+        for (const sx of [-1, 1]) g.add(box(.06, .05, .78, matFor('#ffcf5a', { emissive: lin('#c99a20'), emissiveIntensity: .3 }), stationX + sx * .42, D + .055, stationZ));   // yellow guide lines
+        g.userData.chk = { CH, rotF, rotR, ramp, forks, fH, deckY: D, RL, gatL, gatR, stack, storeX, storeZ, stationX, stationZ };
       }
       g.userData.padClear = true;   // tell the sim step to flatten + clear tufts under the footprint so nothing pokes through the deck
     }
@@ -20188,22 +20192,25 @@ function ctrlHudTick(dt) {
         const hingeX = CX + 1.5;                                                                    // ramp hinge in the LANDED frame (fixed — not tied to the flying Chinook)
         const footX = hingeX + RL * Math.cos(rampOpen);                                             // ramp foot on the deck
         const rampTopY = x => (x >= footX ? dyD : x <= hingeX ? dyD + fH : dyD + fH * (footX - x) / (footX - hingeX)) + .04;   // ramp/cabin floor surface at world-x
-        const cabX = hingeX - 0.55, sbX = footX + 0.30;                                             // cabin pick-up · standby just behind the ramp foot
-        const stX = CK.storeX, stZ = CK.storeZ;                                                     // the supply-yard spot beside the pad
+        const cabX = hingeX - 0.55;                                                                 // cabin pick-up point
+        const stX = CK.storeX, stZ = CK.storeZ;                                                     // supply-yard spot
+        const stnX = CK.stationX, stnZ = CK.stationZ;                                               // the on-deck prepare station where the forklift parks (never off the edge)
         const rampOpenEnough = grounded && rampA > rampOpen * .55;                                  // only run the loop once the ramp is actually down
         { const F = CK.forks[0]; F.g.visible = true;
-          let x = sbX, z = 0, y = dyD + .02, ang = Math.PI, tilt = 0, loaded = false, onRamp = false;
+          let x = stnX, z = stnZ, y = dyD + .04, ang = Math.PI, tilt = 0, loaded = false, onRamp = false;
           const active = (p === 'unload' && rampOpenEnough);
+          const lerp = (ax, az, bx, bz, k) => { x = ax + (bx - ax) * k; z = az + (bz - az) * k; ang = Math.atan2((bz - az), (bx - ax)); };
           if (active) {
             const s = 1 - tt / DR.unload;
-            if (s < .24) { const k = s / .24; x = sbX + (cabX - sbX) * k; onRamp = true; }                                   // up the ramp into the cabin (empty)
-            else if (s < .36) { x = cabX; onRamp = true; loaded = s > .32; }                                                // hook a crate
-            else if (s < .52) { const k = (s - .36) / .16; x = cabX + (footX - cabX) * k; onRamp = true; loaded = true; }    // reverse back down to the foot
-            else if (s < .74) { const k = (s - .52) / .22; x = footX + (stX - footX) * k; z = stZ * k; loaded = true; ang = Math.atan2(stZ, stX - footX); }   // carry it to the supply yard
-            else if (s < .84) { x = stX; z = stZ; loaded = s < .79; ang = Math.atan2(stZ, stX - footX); }                    // set it on the stack (the pile grows via b.stored)
-            else { const k = (s - .84) / .16; x = stX + (sbX - stX) * k; z = stZ * (1 - k); ang = Math.atan2(-stZ, sbX - stX); }   // trundle back to standby
+            if (s < .10) { lerp(stnX, stnZ, footX, 0, s / .10); }                                                            // pull off the station up to the ramp foot
+            else if (s < .30) { const k = (s - .10) / .20; x = footX + (cabX - footX) * k; z = 0; onRamp = true; ang = Math.PI; }   // climb the ramp into the cabin (empty)
+            else if (s < .42) { x = cabX; z = 0; onRamp = true; loaded = s > .38; ang = Math.PI; }                           // hook a crate
+            else if (s < .58) { const k = (s - .42) / .16; x = cabX + (footX - cabX) * k; z = 0; onRamp = true; loaded = true; ang = 0; }   // reverse back down to the foot
+            else if (s < .78) { const k = (s - .58) / .20; lerp(footX, 0, stX, stZ, k); loaded = true; }                     // carry it to the supply yard
+            else if (s < .86) { x = stX; z = stZ; loaded = s < .82; ang = Math.atan2(stZ, stX - footX); }                    // set it on the stack (pile grows via b.stored)
+            else { lerp(stX, stZ, stnX, stnZ, (s - .86) / .14); }                                                            // trundle back to the prepare station
           }
-          if (onRamp && x < footX) { y = rampTopY(x); tilt = -rampOpen; }                            // ride the ramp surface, pitched up along the incline
+          if (onRamp && x < footX) { y = rampTopY(x); tilt = -rampOpen; } else y = dyD + .04;         // ride the ramp surface on the incline; otherwise sit flat on the deck / station
           F.g.position.set(x, y, z); F.g.rotation.set(0, ang, tilt); F.load.visible = loaded;
         }
         // reveal the supply pile: one crate per stored load (the yard fills up as the depot runs)
@@ -20628,16 +20635,19 @@ function ctrlHudTick(dt) {
         put(P.cloth, x - .1 * sc, gyc + .06, z - .35 * sc, -HPI - .1, spin - .5, -.06, .95 * sc, .85 * sc, .03, CHUTE2);
         for (let k = 0; k < 3; k++) put(P.cyl, x + (k - 1) * .3 * sc, gyc + .04, z + .1 * sc, HPI, spin + k, 0, .012 * sc, .9 * sc, .012 * sc, CORD);   // slack lines
       }
-      // SUPPORT SOLDIER searching the pad crate during the 3-second auto-collect: a figure circles the crate, crouches and reaches in
-      if (c.onPad && !c.taken) {
-        const SU = matFor('#4a5a3a'), SK = matFor('#c9a684'), HM = matFor('#3e4a30'), t = c.padT || 0;
-        const ca = t * 1.9 + seed, rr = .5, sx = x + Math.cos(ca) * rr, sz = z + Math.sin(ca) * rr, face = ca + Math.PI;
-        const bob = Math.abs(Math.sin(t * 8)) * .03, reach = .18 + Math.sin(t * 5) * .16;
-        put(P.box, sx, y + .06, sz, 0, -face, 0, .07, .13, .06, HM);                                         // legs
-        put(P.box, sx, y + .19 + bob, sz, 0, -face, 0, .13, .18, .1, SU);                                    // torso
-        put(P.box, sx + Math.cos(face) * .1, y + .2 + bob, sz + Math.sin(face) * .1, 0, -face, -reach, .16, .045, .05, SU);   // arm reaching to inspect the crate
-        put(P.head, sx, y + .32 + bob, sz, 0, -face, 0, .07, .08, .07, SK);                                  // head
-        put(P.head, sx, y + .35 + bob, sz, 0, -face, 0, .085, .05, .085, HM);                                // helmet
+      // SUPPORT SOLDIER inspecting the pad crate during the 3-second auto-collect: a real rigged figure stands beside it,
+      //   turns to look it over, and periodically bends down to search it, then straightens up again.
+      if (c.onPad && !c.taken && typeof drawFigure === 'function') {
+        const M = MODEL.support || MODEL.rifleman;
+        if (M && M.S) {
+          const t = c.padT || 0, off = 20 * K;                              // stand ~20 px off the crate, on the deck
+          const stance = seed + Math.sin(t * .9) * .35;                     // shift around the crate a little while working
+          const sx = x + Math.cos(stance) * off, sz = z + Math.sin(stance) * off;
+          const face = Math.atan2(z - sz, x - sx);                          // face the crate
+          const searching = Math.sin(t * 2.4 + seed) > -.15;                // mostly bent over inspecting; stands up now and then to look around
+          if (c._fid === undefined) c._fid = (Math.random() * 1e6) | 0;
+          drawFigure(sx, y, sz, face, 0, M.S, { kind: 'mil', gun: 'none', scale: .92, limbs: 15, id: c._fid, ut: 'support', crouch: searching });
+        }
       }
     }
     for (const p of G.pickups) { if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue; put(P.metal, p.x * K, groundY(p.x, p.y) + .1 + Math.sin(p.bob) * .03, p.y * K, .3, p.bob, .2, .18, .12, .16, SCRAP); }
