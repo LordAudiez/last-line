@@ -650,57 +650,69 @@ kbd{background:#142420;border:1px solid #33513f;border-bottom-width:2px;border-r
 .mcard:hover{box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 0 1px rgba(141,255,190,.3)}
 .mcard .mi.big{margin-bottom:8px}
 
-/* ============ DIGITAL GLITCH on the HORDES & INVADERS subtitle ============ */
-.msub.glitch{position:relative;color:#ff9a6c;text-shadow:0 0 12px rgba(255,120,70,.28)}
-.msub.glitch .amp{color:#ffd76a;opacity:.85;margin:0 2px}
-.msub.glitch .gw{position:relative;display:inline-block}
-.msub.glitch .gw::before,.msub.glitch .gw::after{content:attr(data-text);position:absolute;left:0;top:0;width:100%;overflow:hidden;pointer-events:none}
-.msub.glitch .gw::before{color:#38f0ff;text-shadow:-1px 0 rgba(56,240,255,.7);animation:g-a 2.8s steps(2,end) infinite}
-.msub.glitch .gw::after{color:#ff2fa0;text-shadow:1px 0 rgba(255,47,160,.7);animation:g-b 2.4s steps(2,end) infinite}
-.msub.glitch .gw:nth-child(3)::before{animation-duration:2.3s;animation-delay:.35s}
-.msub.glitch .gw:nth-child(3)::after{animation-duration:3.1s;animation-delay:.2s}
-.msub.glitch .gw{animation:g-flick 4.6s infinite}
-.msub.glitch .gw:nth-child(3){animation-duration:5.7s}
-@keyframes g-a{0%,100%{clip-path:inset(0 0 86% 0);transform:translateX(0)}20%{clip-path:inset(30% 0 42% 0);transform:translateX(-2px)}40%{clip-path:inset(62% 0 8% 0);transform:translateX(2px)}60%{clip-path:inset(8% 0 72% 0);transform:translateX(-1px)}80%{clip-path:inset(46% 0 26% 0);transform:translateX(1px)}}
-@keyframes g-b{0%,100%{clip-path:inset(72% 0 4% 0);transform:translateX(0)}25%{clip-path:inset(14% 0 56% 0);transform:translateX(2px)}50%{clip-path:inset(50% 0 22% 0);transform:translateX(-2px)}75%{clip-path:inset(4% 0 82% 0);transform:translateX(1px)}}
-@keyframes g-flick{0%,46%,100%{opacity:1}47%{opacity:.68}48%{opacity:1}92%{opacity:1}93%{opacity:.55}94%{opacity:1}}
+/* ============ INTELLIGENCE-HUD MENU THEME — muted / tactical, not arcade ============ */
+/* one restrained amber accent over a graphite, steel-text palette; everything else monochrome */
+#menu{--hbg:rgba(12,16,15,.66);--hbg2:rgba(18,24,21,.85);--hln:rgba(150,170,160,.18);--hln2:rgba(190,205,196,.42);--htx:#c2cdc6;--hdim:#79857e;--hacc:#c9a24a}
+/* title: neutral steel, no coloured glow */
+.mtitle{color:#e9efea;letter-spacing:14px;text-shadow:0 0 20px rgba(200,214,205,.15),0 1px 0 rgba(0,0,0,.55);font-weight:900}
+/* subtitle: a muted uppercase HUD readout with a SUBTLE monochrome digital ghost + flicker (no rainbow split) */
+.msub.glitch{position:relative;color:var(--hdim);letter-spacing:9px;text-transform:uppercase;text-shadow:none;font-weight:700}
+.msub.glitch .amp{color:var(--hdim);opacity:.55;margin:0 5px}
+.msub.glitch .gw{position:relative;display:inline-block;animation:g-flick 5s infinite}
+.msub.glitch .gw:nth-child(3){animation-duration:6.3s}
+.msub.glitch .gw::before{content:attr(data-text);position:absolute;left:0;top:0;width:100%;overflow:hidden;pointer-events:none;color:rgba(206,218,210,.26);animation:g-ghost 3.6s steps(3,end) infinite}
+.msub.glitch .gw:nth-child(3)::before{animation-duration:2.9s;animation-delay:.5s}
+@keyframes g-ghost{0%,100%{clip-path:inset(0 0 88% 0);transform:translateX(0)}30%{clip-path:inset(42% 0 40% 0);transform:translateX(1px)}62%{clip-path:inset(72% 0 6% 0);transform:translateX(-1px)}}
+@keyframes g-flick{0%,95%,100%{opacity:1}96%{opacity:.6}97%{opacity:1}}
 
-/* ============ MODERN MAIN-MENU BUTTONS — per-topic accent, smooth transitions, distinct hover/active ============ */
-.mbtn{--acc:#8dffbe}                                   /* default accent (fallback for every menu button) */
-#mMulti{--acc:#5ad0ff}                                 /* multiplayer — cyan */
-#mLoad{--acc:#ffbe63}                                  /* load save — amber */
-#mEditor{--acc:#b98cff}                                /* map editor — violet */
-#mSettingsBtn{--acc:#9fb4c6}                           /* settings — steel */
-.mscreen[data-screen="main"] .mbtn[data-go="credits"]{--acc:#ffd76a}  /* credits — gold */
-#mExit{--acc:#ff6b6b}                                  /* exit — red */
-.mscreen .mbtn{position:relative;overflow:hidden;border-radius:12px;
-  background:linear-gradient(180deg,rgba(24,38,32,.86),rgba(10,18,15,.92));
-  border:1px solid rgba(255,255,255,.09);
-  transition:transform .2s cubic-bezier(.2,.85,.25,1),box-shadow .28s ease,border-color .25s ease,background .25s ease,color .2s ease}
-.mscreen .mbtn::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:12px 0 0 12px;
-  background:var(--acc);opacity:.5;transition:width .22s ease,opacity .22s ease,box-shadow .22s ease}   /* accent rail */
-.mscreen .mbtn:hover::before{width:6px;opacity:1;box-shadow:0 0 16px var(--acc)}
-.mscreen .mbtn.primary::before{display:none}           /* NEW GAME keeps its own solid green treatment */
-.mscreen .mbtn .mi{color:var(--acc);transition:transform .2s ease,filter .2s ease}
-.mscreen .mbtn.primary .mi{color:#04120b}
-.mscreen .mbtn .ml{transition:letter-spacing .2s ease}
-.mscreen .mbtn:hover{transform:translateX(7px) translateY(-1px);color:#f2fff9;
-  border-color:color-mix(in srgb,var(--acc) 60%,transparent);
-  background:linear-gradient(180deg,rgba(32,52,43,.92),rgba(15,25,20,.95));
-  box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px color-mix(in srgb,var(--acc) 42%,transparent),0 0 30px -6px var(--acc)}
-.mscreen .mbtn:hover .ml{letter-spacing:5px}
-.mscreen .mbtn:active{transform:translateX(3px) scale(.985)}
-.mscreen .mbtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-/* a quick light sweep across on hover (non-primary; the primary already runs its own sheen) */
-.mscreen .mbtn:not(.primary)::after{content:"";position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(105deg,transparent 34%,rgba(255,255,255,.16) 50%,transparent 66%);transform:translateX(-130%)}
-.mscreen .mbtn:not(.primary):hover::after{animation:mbtn-sweep .7s ease}
-@keyframes mbtn-sweep{to{transform:translateX(130%)}}
-/* EXIT gets a distinct "danger" hover — a red flash-pulse instead of a calm glow */
-@keyframes exit-pulse{0%,100%{box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,107,107,.5),0 0 26px -6px #ff6b6b}50%{box-shadow:0 10px 34px rgba(0,0,0,.5),0 0 0 1px rgba(255,107,107,.85),0 0 40px -4px #ff6b6b}}
-#mExit:hover{animation:exit-pulse .9s ease-in-out infinite}
-/* honour reduced-motion */
-@media (prefers-reduced-motion:reduce){.msub.glitch .gw,.msub.glitch .gw::before,.msub.glitch .gw::after,#mExit:hover{animation:none}}
+/* section headers inside EVERY sub-screen: uppercase steel with a small amber index tick */
+.mhd{color:var(--htx);letter-spacing:7px;text-transform:uppercase;font-weight:700;position:relative;padding-left:14px}
+.mhd::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:4px;height:14px;background:var(--hacc);opacity:.85}
+.mdim{color:var(--hdim);letter-spacing:2px}
+
+/* ---- tactical menu buttons: flat graphite, hairline frame, uppercase steel ---- */
+.mscreen .mbtn{position:relative;overflow:hidden;border-radius:2px;letter-spacing:4px;text-transform:uppercase;font-weight:700;
+  color:var(--htx);background:var(--hbg);border:1px solid var(--hln);
+  transition:background .2s ease,border-color .2s ease,color .18s ease,transform .16s ease,box-shadow .2s ease}
+.mscreen .mbtn .mi{color:var(--hdim);opacity:.92;filter:none;transition:color .2s ease,transform .2s ease}
+.mscreen .mbtn .ml{transition:none}
+/* left status tick grows on hover */
+.mscreen .mbtn::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:0;background:var(--hacc);opacity:.9;transition:height .2s ease}
+/* right chevron slides in on hover (non-primary) */
+.mscreen .mbtn:not(.primary)::after{content:"";position:absolute;right:16px;top:50%;width:7px;height:7px;border-right:2px solid var(--hacc);border-top:2px solid var(--hacc);background:none;opacity:0;transform:translateY(-50%) rotate(45deg) translateX(4px);transition:opacity .2s ease,transform .2s ease;animation:none}
+.mscreen .mbtn:hover{background:var(--hbg2);border-color:var(--hln2);color:#eef4f0;transform:translateX(5px);box-shadow:inset 0 0 0 1px rgba(201,162,74,.16)}
+.mscreen .mbtn:hover::before{height:58%}
+.mscreen .mbtn:not(.primary):hover::after{opacity:.9;transform:translateY(-50%) rotate(45deg) translateX(0)}
+.mscreen .mbtn:hover .mi{color:var(--hacc);filter:none}
+.mscreen .mbtn:active{transform:translateX(2px);background:rgba(30,38,34,.9);border-color:var(--hln2)}
+.mscreen .mbtn:focus-visible{outline:1px solid var(--hacc);outline-offset:2px}
+/* PRIMARY (NEW GAME) — the recommended action: an amber-framed console panel, always-on tick, no bright glow */
+.mscreen .mbtn.primary{color:#efe6d2;background:linear-gradient(180deg,rgba(40,33,17,.55),rgba(19,17,11,.82));border:1px solid rgba(201,162,74,.5);box-shadow:none;animation:none}
+.mscreen .mbtn.primary::before{height:58%;background:var(--hacc);opacity:1}
+.mscreen .mbtn.primary::after{display:none}
+.mscreen .mbtn.primary .mi{color:var(--hacc)}
+.mscreen .mbtn.primary:hover{transform:translateX(5px);border-color:rgba(201,162,74,.9);background:linear-gradient(180deg,rgba(52,43,22,.68),rgba(26,22,14,.86));box-shadow:inset 0 0 0 1px rgba(201,162,74,.28)}
+
+/* ---- cards in the mode / difficulty / size screens ---- */
+.mcard{border-radius:2px;background:var(--hbg);border:1px solid var(--hln);color:var(--htx);position:relative;
+  transition:border-color .2s ease,background .2s ease,transform .16s ease,box-shadow .2s ease}
+.mcard::before{content:"";position:absolute;left:0;top:0;width:12px;height:12px;border-left:2px solid var(--hacc);border-top:2px solid var(--hacc);opacity:0;transition:opacity .2s ease}
+.mcard:hover{border-color:var(--hln2);background:var(--hbg2);transform:translateY(-2px);box-shadow:inset 0 0 0 1px rgba(201,162,74,.16)}
+.mcard:hover::before{opacity:.9}
+.mcard .cn{color:#eef4f0;letter-spacing:2px;text-transform:uppercase}
+.mcard .cd{color:var(--hdim)}
+.mcard .mi{color:var(--hdim)}
+.mcard:hover .mi{color:var(--hacc)}
+
+/* map thumbnails + back button */
+.mapcard{border-radius:2px;border:1px solid var(--hln);background:#0b0f0e;transition:border-color .2s ease,transform .16s ease}
+.mapcard:hover{border-color:var(--hln2);transform:translateY(-2px)}
+.mapcard .mn{color:var(--htx);letter-spacing:1px;text-transform:uppercase}
+.mback{border-radius:2px;color:var(--hdim);background:transparent;border:1px solid var(--hln);letter-spacing:3px;text-transform:uppercase;
+  transition:border-color .2s ease,color .2s ease,background .2s ease}
+.mback:hover{border-color:var(--hln2);color:#eef4f0;background:var(--hbg)}
+
+@media (prefers-reduced-motion:reduce){.msub.glitch .gw,.msub.glitch .gw::before{animation:none}}
 #over{position:absolute;inset:0;z-index:29;display:none;flex-direction:column;align-items:center;justify-content:center;
   background:rgba(22,3,3,.85);gap:16px}
 #over h1{font-size:60px;letter-spacing:16px;color:#ff6b6b;text-shadow:0 0 34px rgba(255,60,60,.55);font-weight:900}
