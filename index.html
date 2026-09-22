@@ -165,6 +165,9 @@ html.touch #rallyPill{top:calc(96px + env(safe-area-inset-top,0px))}
 .btn .uico{transition:filter .22s ease}
 .btn:hover .uico{filter:drop-shadow(0 0 5px rgba(255,255,255,.35))}
 .btn.dis{opacity:.4;cursor:not-allowed}
+.btn.locked{opacity:.66;cursor:pointer}
+.btn.locked::before{box-shadow:inset 0 0 0 1px rgba(232,182,92,.42)}
+.btn.locked .n::after{content:' 🔒';font-size:.78em;opacity:.85}
 .btn.dis::before{filter:none;box-shadow:inset 0 0 0 1px rgba(150,160,166,.28)}
 .btn.dis:hover::before{box-shadow:inset 0 0 0 1px rgba(150,160,166,.28);background:linear-gradient(180deg,rgba(12,30,36,.9),rgba(6,15,19,.96))}
 .btn.dis::after{display:none}
@@ -3850,12 +3853,12 @@ const BDEF = {
     desc: 'Air-force headquarters with a long-range radar tower and a transport on station overhead. Calls in the napalm run, the artillery barrage and — at a price — the nuclear strike. Requires an Airbase.'
   },
   helipad: {
-    name: 'Helipad', key: 'H', g: '🚁', cat: 'spec', w: 6, h: 6, mw: 4, mh: 4, hgt: 6, hp: 900, armor: 2, cost: { s: 120, c: 60 }, time: 14,
+    name: 'Helipad', key: 'H', g: '🚁', cat: 'infra', res: 'sups', max: 1, w: 6, h: 6, mw: 4, mh: 4, hgt: 6, hp: 900, armor: 2, cost: { s: 10000, c: 3000 }, time: 14,
     col: ['#43474d', '#2c2f34'], roof: '#565b62', light: 90, flat: true, pad: 1, dropPad: 1,
     desc: 'A large concrete landing pad with a marked circle, edge lights and a blinking beacon. While it stands, supply drops come down on the pad instead of scattered around your HQ, and each crate is collected automatically 3 seconds after it touches down — no unit needed.'
   },
   deliverydepot: {
-    name: 'Supply Delivery Depot', key: 'K', g: '🚁', cat: 'spec', w: 7, h: 7, mw: 5, mh: 5, hgt: 6, hp: 1900, armor: 3, cost: { s: 40000, c: 12000, o: 5000 }, time: 60, needs: 'airbase',
+    name: 'Supply Delivery Depot', key: 'K', g: '🚁', cat: 'infra', res: 'sups', w: 7, h: 7, mw: 5, mh: 5, hgt: 6, hp: 1900, armor: 3, cost: { s: 40000, c: 12000, o: 5000 }, time: 60, needs: 'airbase',
     col: ['#3f4b3a', '#2a3227'], roof: '#4e5c46', light: 110, flat: true, pad: 1, delivery: true,
     desc: 'A heavy-lift resupply pad. A CH-47 Chinook cycles in every 45s, drops its ramp and off-loads three forklift loads of stores, then lifts off. Each load banks supply (×5 an airdrop), scrap (half the supply) and oil (half the scrap). Replaces all air-drops. Requires an Airbase.'
   }
@@ -3886,6 +3889,8 @@ for (const k in BDEF) { const c = BDEF[k].cost; if (c) { c.s = (c.s || 0) * ECON
 for (const k in RESEARCH) { const c = RESEARCH[k].cost; if (c) { c.s = (c.s || 0) * ECON; c.c = (c.c || 0) * ECON; if (c.o) c.o = c.o * ECON; } }
 // the Supply Delivery Depot is quoted at its exact face price (the numbers shown to the player), not the ×15 internal scale
 if (BDEF.deliverydepot) BDEF.deliverydepot.cost = { s: 40000, c: 12000, o: 5000 };
+// the Helipad is likewise quoted at face price — exactly a QUARTER of the depot (1:4), and it needs no oil
+if (BDEF.helipad) BDEF.helipad.cost = { s: 10000, c: 3000 };
 const PISTOL = { dmg: 8, rng: 150, cd: .28, spread: .06, spd: 1000, kind: 'bullet', sfx: 'pistol', casings: 1, mag: 12, reload: 1.5, sidearm: true, close: 130 };
 for (const k in UDEF) {
   const d = UDEF[k];
@@ -6023,6 +6028,11 @@ function canPlace(t, tx, ty, ignore) {
       }
     }
   if (d.needs && !G.builds.some(b => b.t === d.needs && b.done && !b.dead)) return false;
+  if (d.max) {                                                               // a capped structure (e.g. the Helipad): only so many may stand at once
+    let n = 0; for (const b of G.builds) if (b.t === t && !b.dead && b !== ignore && (b.owner == null || b.owner === G.me)) n++;
+    if (UI.queue) for (const q of UI.queue) if (q.t === t) n++;
+    if (n >= d.max) return false;
+  }
   return true;
 }
 
@@ -7993,12 +8003,14 @@ function updateTime(dt) {
       if (!G.waveQueue.list.length) G.waveQueue = null;
     }
   }
-  // a completed Supply Delivery Depot takes over resupply entirely: the periodic air-drops (and the big drop) stop while it stands
+  // a completed Supply Delivery Depot takes over resupply: it stops the scattered air-drops — EXCEPT that if a Helipad stands,
+  //   the regular drop still comes in and lands ON that pad. With a depot and no helipad, nothing drops (not even around the HQ).
   const hasDelivery = G.builds.some(b => b.t === 'deliverydepot' && b.done && !b.dead);
+  const hasHelipad = G.builds.some(b => b.t === 'helipad' && b.done && !b.dead && b.owner !== 'invader');
   G.dropT -= dt;
-  if (G.dropT <= 0) { if (!hasDelivery) callAirdrop(false); G.dropT = 52 + rnd(-6, 10); }
+  if (G.dropT <= 0) { if (!hasDelivery || hasHelipad) callAirdrop(false); G.dropT = 52 + rnd(-6, 10); }   // drop unless a depot stands without any helipad to receive it
   G.bigT -= dt;
-  if (G.bigT <= 0) { if (!hasDelivery) callBigDrop(); G.bigT = 120 + rnd(-15, 25); }
+  if (G.bigT <= 0) { if (!hasDelivery) callBigDrop(); G.bigT = 120 + rnd(-15, 25); }                       // the far heavy pallet is fully replaced by the depot
 }
 
 /* drifting wind plus the ambient particle bed that sells the environment */
@@ -8465,7 +8477,38 @@ function callAirdrop(manual) {
    supply (×5 an air-drop box), scrap (half that supply) and oil (half that scrap). The render loop
    reads b.deliv.phase / b.deliv.t to pose the aircraft, ramp, rotors, forklifts and pad beacons. */
 const AIRBOX = 110 * 15;   // the value of one ordinary air-drop crate — the unit the depot's yield is quoted against
-function deliveryDurations() { return { in: 6, ramp: 1.4, unload: 3, close: 1.4, out: 6, wait: 21 }; }
+// four Special-Ops operators stand guard, one on each corner of the depot pad; they fire the spec-ops carbine at HALF its usual rate
+const DEPOT_GUARD_WEP = { dmg: 9, rng: 320, cd: .15, spread: .028, spd: 1080, kind: 'bullet', sfx: 'auto', casings: 1, sustain: true };
+function depotGuards(b, dt) {
+  if (!b.done || b.owner === 'invader') return;
+  const gw = b.def.w * .42 * TS, gh = b.def.h * .42 * TS;
+  if (!b._dg) b._dg = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(c => ({ x: b.x + c[0] * gw, y: b.y + c[1] * gh, aim: Math.atan2(c[1], c[0]), face: Math.atan2(c[1], c[0]), fx: 0, cd: rnd(0, DEPOT_GUARD_WEP.cd) }));
+  // at night each of the four corner lamps throws a real floodlight — it lights the Chinook on the deck and the ground all
+  //   round the pad so incoming threats are spotted in the dark (G.lights entries illuminate both the map and the 3D models)
+  if (G.night && G.lights) {
+    const lw = b.def.w * .43 * TS, lh = b.def.h * .43 * TS, col = [255, 240, 205];
+    for (const c of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) G.lights.push({ x: b.x + c[0] * lw, y: b.y + c[1] * lh, r: 11 * TS, c: col, i: 1.4, z: 22 });
+    G.lights.push({ x: b.x, y: b.y, r: 9 * TS, c: [255, 246, 220], i: 1.1, z: 30 });   // a soft fill over the deck itself, onto the Chinook
+  }
+  const src = b._dgSrc || (b._dgSrc = { r: 6, def: { wep: DEPOT_GUARD_WEP }, ammo: 99, vx: 0, vy: 0, bDmg: 1, tier: b.tier || 1, owner: (typeof b.owner === 'number' ? b.owner : 0) });
+  const keep = G.cur; G.cur = src.owner;
+  for (const gd of b._dg) {
+    gd.fx = Math.max(0, gd.fx - dt * 6);
+    const tgt = findEnemy(gd.x, gd.y, DEPOT_GUARD_WEP.rng, 0);
+    if (tgt) {
+      const ta = angTo(gd.x, gd.y, tgt.x, tgt.y); let da = ta - gd.aim; da = Math.atan2(Math.sin(da), Math.cos(da));
+      gd.aim += da * Math.min(1, dt * 10);                                   // ROTATE the operator to bring the target onto his sights
+      gd.cd -= dt;
+      if (gd.cd <= 0 && Math.abs(da) < .45) {                                // only fire once he's roughly on target
+        gd.cd = DEPOT_GUARD_WEP.cd; src.x = gd.x; src.y = gd.y; src.ang = gd.aim; src.aimT = gd.aim; src.tier = b.tier || 1;
+        fire(src, tgt, DEPOT_GUARD_WEP, { x: gd.x + Math.cos(gd.aim) * 10, y: gd.y + Math.sin(gd.aim) * 10, a: gd.aim, z: 14 });
+        gd.fx = 1;
+      }
+    } else { gd.cd = Math.max(0, gd.cd - dt); const da2 = Math.atan2(Math.sin(gd.face - gd.aim), Math.cos(gd.face - gd.aim)); gd.aim += da2 * Math.min(1, dt * 3); }   // no threat: ease back to watching his corner
+  }
+  G.cur = keep;
+}
+function deliveryDurations() { return { in: 6, ramp: 1.4, unload: 4.2, close: 1.4, out: 6, wait: 18 }; }   // unload window +40% → the forklift works ~40% slower; wait trimmed so the cycle stays ~45s
 function creditDelivery(b) {
   const tier = b.tier || 1;                                  // each upgrade tier multiplies the depot's yield (Mk1 ×1, Mk2 ×2, Mk3 ×3)
   const sup = AIRBOX * 5 * tier, scr = sup * .5, oil = scr * .5;   // one forklift load: supply ×5 a box, scrap = ½ supply, oil = ½ scrap
@@ -8473,9 +8516,79 @@ function creditDelivery(b) {
   b.stored = (b.stored || 0) + 1; if (b.stored > 7) b.stored = 0;   // the yard fills one crate per load; once full (7) it is hauled away (reset to empty) and starts filling again
   if (typeof popText === 'function') { try { popText(b.x, b.y - b.h * TS * .3, '+' + Math.round(sup) + '▲  +' + Math.round(scr) + '◆  +' + Math.round(oil) + '⬢', '#8fe6b0'); } catch (e) {} }
 }
+// dust blown off the ground under one Chinook rotor (same look as any landing helicopter's downwash), at an arbitrary point
+function chinookWashDust(x, y, k, dt) {
+  if (!(k > .02) || G.parts.length > PMAX * .9) return;
+  const n = dt * (28 + 150 * k); if (Math.random() > n && n < 1) return;
+  const m = Math.max(1, Math.round(n));
+  for (let i = 0; i < m; i++) {
+    const a = rnd(TAU), sp = rnd(140, 560) * (.4 + k), sw = rnd(-1, 1) * 130;                // radial blast + a swirl, thrown ~2× farther so the dust covers the wider area
+    part('dust', x + Math.cos(a) * rnd(8, 46), y + Math.sin(a) * rnd(8, 46) * .8, Math.cos(a) * sp - Math.sin(a) * sw, Math.sin(a) * sp * .8 + Math.cos(a) * sw, rnd(1.0, 2.3), rnd(7, 14), 'rgba(168,158,140,1)', { z: rnd(0, 6), vz: rnd(4, 30), g: 6, grow: 64, drag: .94, wind: 1, a: .55 });
+  }
+  if (Math.random() < dt * 4 * k) part('leaf', x + rnd(-18, 18), y + rnd(-12, 12), rnd(-120, 120), rnd(-90, 90), rnd(.8, 1.5), rnd(1.2, 2.2), '#5e6a34', { z: rnd(2, 10), vz: rnd(20, 60), g: 120, vr: rnd(-10, 10), drag: .96, wind: 1 });
+}
 function deliveryStep(b, dt) {
   const DUR = deliveryDurations();
   const D = b.deliv || (b.deliv = { phase: 'wait', t: DUR.in, fork: 0 });
+  // ---- rotor downwash: while the Chinook is low over the pad, its TWO tandem rotors flatten the tufts and bend the trees
+  //      across a wide area (~1.5× the pad, measured from the aircraft centre) and each rotor kicks up its own dust cloud,
+  //      exactly like any landing helicopter. The effect follows the aircraft in on final and fades as it lifts off. ----
+  {
+    const sm = k => k * k * (3 - 2 * k);
+    let dw = 0, ox = 0;                                                       // dw: downwash strength 0..1 ; ox: fore/aft offset of the aircraft (render units), matching the render loop
+    if (D.phase === 'ramp' || D.phase === 'unload' || D.phase === 'close') dw = 1;
+    else if (D.phase === 'in') { const sk = sm(1 - D.t / DUR.in); dw = sk; ox = 48 * (1 - sk); }
+    else if (D.phase === 'out') { const sk = sm(1 - D.t / DUR.out); dw = 1 - sk; ox = -48 * sk; }
+    if (dw > .04) {
+      const cx = b.x + (-0.35 + ox) * TS, cy = b.y;                          // Chinook centre in world (CX = −0.35, plus the fly-in offset)
+      chinookWashDust(cx - 1.0 * TS, cy, dw, dt); chinookWashDust(cx + 1.28 * TS, cy, dw, dt);   // dust off the FORWARD and REAR rotor hubs
+      b._washT = (b._washT || 0) - dt;
+      if (b._washT <= 0) { b._washT = .26;
+        const washR = (b.def.w || 7) * 1.5 * TS;                             // wide rotor-wash footprint (doubled) — tufts and trees react well out from the pad
+        if (typeof addShock === 'function') addShock(cx, cy, washR, 1.4 * dw + .35, .9);   // the pressure wash: tufts pressed flat and trees bent away across the whole area
+      }
+    }
+  }
+  // ---- door gatling guns: while the Chinook is set down on the pad, each door gun engages hostile zeds on ITS OWN
+  //      side only. The left gun covers the +y flank, the right gun the -y flank, each across a 160° arc (±80° off its
+  //      side), so the two arcs don't overlap and one gun never shoots across to the other side. Fast bursts of
+  //      player-side rounds with a real muzzle flash; the render loop spins that gun's barrels up while it fires. ----
+  {
+    const HALF = Math.PI / 2, ARC = 1.396;                                  // 160° total per side = ±80°
+    const smG = k => k * k * (3 - 2 * k);
+    let altF = 1, oxg = 0;                                                    // altF: 0 on the deck … 1 at cruise ; oxg: the aircraft's fore/aft offset (render units) while flying
+    if (D.phase === 'ramp' || D.phase === 'unload' || D.phase === 'close') altF = 0;
+    else if (D.phase === 'in') { const sk = smG(1 - D.t / DUR.in); altF = 1 - sk; oxg = 48 * (1 - sk); }
+    else if (D.phase === 'out') { const sk = smG(1 - D.t / DUR.out); altF = sk; oxg = -48 * sk; }
+    const canFire = altF < 0.6;                                              // the door guns still engage while flying LOW (final approach / lift-off), not only on the deck — but not at cruise altitude
+    const gat = D.gat || (D.gat = { L: { cd: 0, fire: 0, on: 0, aim: HALF }, R: { cd: 0, fire: 0, on: 0, aim: -HALF } });
+    const guns = [ { g: gat.L, gy: b.y + 0.5 * TS, c: HALF }, { g: gat.R, gy: b.y - 0.5 * TS, c: -HALF } ];
+    const gx = b.x + oxg * TS, RNG = 11 * TS;                                 // the gun line tracks the aircraft as it sweeps in and out
+    const doorFwd = (-0.35 - 0.45) * TS, barrel = 0.6 * TS, gz = 1.16 * TS;   // muzzle outlet: forward of the door toward the nose, out at the barrel tip, at gun height above the deck
+    for (const gun of guns) {
+      gun.g.cd -= dt; gun.g.fire = Math.max(0, gun.g.fire - dt); gun.g.on = 0;
+      if (!canFire) continue;
+      const list = (G.hZeds && G.hZeds.near) ? G.hZeds.near(gx, gun.gy, RNG, _q) : G.zeds;
+      let best = null, bd = RNG * RNG;
+      for (let i = 0; i < list.length; i++) { const z = list[i]; if (!z || z.dead || z.remote || (z.def && z.def.struct)) continue;
+        const dd = dist2(z.x, z.y, gx, gun.gy); if (dd >= bd) continue;
+        let da = angTo(gx, gun.gy, z.x, z.y) - gun.c; da = Math.atan2(Math.sin(da), Math.cos(da));   // shortest angle off this gun's side
+        if (Math.abs(da) > ARC) continue;                                    // outside this side's 160° arc — leave it for the other gun (or no gun)
+        bd = dd; best = z; }
+      if (best) {
+        gun.g.on = 1;                                                        // a target on this side: the render loop yaws the gun onto it
+        gun.g.aim = angTo(gx, gun.gy, best.x, best.y);
+        if (gun.g.cd <= 0) {
+          gun.g.cd = 0.075; gun.g.fire = 0.12;                               // ~13 rounds/s; a short spin-up/flash window for the render
+          const a = gun.g.aim + rnd(-.05, .05), sp = 620;
+          const mx = gx + doorFwd + Math.cos(a) * barrel, my = gun.gy + Math.sin(a) * barrel;   // the actual barrel-tip muzzle outlet
+          G.bullets.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, dmg: 9, kind: 'bullet', life: RNG / sp + .1, ang: a, team: 1, src: b, z: gz, small: 1 });
+          if (typeof fxMuzzle === 'function') fxMuzzle(mx, my, a, .8, gz, b.tier || 1);   // flash + powder-jet smoke AT the muzzle outlet
+          if (AU && AU.shot) { try { AU.shot(mx, my, 'minigun', .075); } catch (e) {} }   // buzzsaw minigun report, same as the door gatlings elsewhere
+        }
+      }
+    }
+  }
   D.t -= dt;
   if (D.t > 0) return;
   if (D.phase === 'wait') { D.phase = 'in'; D.t = DUR.in; alertMsg('Chinook inbound — resupply run', 'info'); AU.ui('ready'); }
@@ -9308,6 +9421,10 @@ function groundFx(u, dt) {
     wash = u._washK;
   }
   if (wash > .02) {
+    // the rotor downwash also BENDS THE TREES and lays the tufts around the aircraft — the same pressure wave the Chinook
+    //   throws, scaled to this airframe, and active whenever the wash is up: low hover, landed, OR fast-roping troops in.
+    u._treeShock = (u._treeShock || 0) - dt;
+    if (u._treeShock <= 0 && typeof addShock === 'function') { u._treeShock = .3; addShock(u.x, u.y, u.r * 7.2 * (1 + .4 * wash), 1.1 * wash + .3, .85); }   // doubled reach: the tree-bend/tuft wash covers a wide area around every helicopter (the Chinook keeps its own separate wash)
     // THE AIR RING — a soft ring of dust that flows OUTWARD from under the rotor (a genuine ring, not a filled blast and
     // not a hard concentric line). Emitted on ANY ground, not just grass, so an ally's ghost helicopter shows the exact
     // same ring on my screen as my own does. This is the single shared downwash source for every helicopter.
@@ -10520,7 +10637,14 @@ function musterNew(fidx) {
     // tiles clear of the wall. (They turn toward the player's post only when they march.)
     if (g) { const out = angTo(S.x, S.y, g.x, g.y); const ox = g.x + Math.cos(out) * MUSTER_OUT * TS, oy = g.y + Math.sin(out) * MUSTER_OUT * TS; if (!IMPASSABLE(terrainAt(ox, oy))) o = { x: ox, y: oy }; dir = out; }
     if (!o) { const hq2 = hq || { x: BASE_X, y: BASE_Y }; const out = angTo(S.x, S.y, hq2.x, hq2.y); o = { x: S.x + Math.cos(out) * (S.half + MUSTER_OUT) * TS, y: S.y + Math.sin(out) * (S.half + MUSTER_OUT) * TS }; dir = out; }
-  } else { o = waveOrigin(MUSTER_FULL); if (!o) return null; const hq = nearestHQ(o.x, o.y); dir = hq ? angTo(o.x, o.y, hq.x, hq.y) : 0; }
+  } else {
+    const zf = (G.zmFaction && fidx === G.zmFaction.idx) ? G.zmFaction : null;
+    if (zf) {   // the zombie-mode warband has no palisade: it forms up AT ITS OWN CAMP (F.x/F.y), facing the player's base — never at a map-edge wave origin across the map
+      o = { x: zf.x, y: zf.y };
+      if (IMPASSABLE(terrainAt(o.x, o.y))) { const alt = randomLandPoint(zf.x, zf.y, 24, 240); if (alt) o = alt; }
+      const hq = nearestHQ(o.x, o.y); dir = hq ? angTo(o.x, o.y, hq.x, hq.y) : 0;
+    } else { o = waveOrigin(MUSTER_FULL); if (!o) return null; const hq = nearestHQ(o.x, o.y); dir = hq ? angTo(o.x, o.y, hq.x, hq.y) : 0; }
+  }
   if (typeof clearProps === 'function') clearProps(o.x - Math.cos(dir) * 8 * TS, o.y - Math.sin(dir) * 8 * TS, 19 * TS);   // the parade ground is cleared of trees so the ranks can be seen
   const M = { id: (G.musterId = (G.musterId || 0) + 1), x: o.x, y: o.y, dir, members: [], n: 0, marching: false, t: 0, drill: musterYard(o.x, o.y, dir), faction: fidx };
   if (fidx > 0) { G.musters = G.musters || {}; G.musters[fidx] = M; } else G.muster = M;
@@ -11281,7 +11405,7 @@ function updateBuildings(dt) {
     if (b.def.scrapGen) G.scr += b.def.scrapGen * (b.tier || 1) * dt;   // scrap refinery / factory income — scales with its upgrade tier
     if (b.def.supGen) G.sup += b.def.supGen * (b.tier || 1) * dt;       // supply depot / warehouse income
     if (b.def.oilGen) G.oil += b.def.oilGen * (b.tier || 1) * dt;       // oil rig / oil factory income
-    if (b.def.delivery) deliveryStep(b, dt);                             // Supply Delivery Depot: run the Chinook resupply cycle
+    if (b.def.delivery) { deliveryStep(b, dt); depotGuards(b, dt); }     // Supply Delivery Depot: run the Chinook resupply cycle + the four corner spec-ops guards
     if (b.t === 'factory') {                                              // the stacks smoke while the plant runs
       b._smk = (b._smk || 0) - dt;
       if (b._smk <= 0 && G.parts.length < PMAX * .8) { b._smk = .32; for (const sx of [-.3, .05]) { const px = b.x + Math.cos(b.ang || 0) * 0 + sx * b.w * TS, py = b.y - b.h * TS * .32; fxSmoke(px, py, rnd(-6, 6), rnd(-4, 4), rnd(4, 7), rnd(3.5, 5.5), 'rgba(92,90,88,1)'); G.parts[G.parts.length - 1].z = (b.def.hgt || 60) * 1.9; } }
@@ -15430,13 +15554,13 @@ function cardFor() {
     if (UI.tab === 'build' && hasEng) {
       // construction is split by purpose: pick a category first, then the structure
       const CATS = [
-        { id: 'infra', n: 'Infrastructure', k: '1', g: '🏭', tip: 'Economy and tech: Research Lab, Scrap Refinery, Scrap Factory, Supply Warehouse.' },
+        { id: 'infra', n: 'Infrastructure', k: '1', g: '🏭', tip: 'Economy and supply: Scrap Refinery, Supply Warehouse, Oil, plus Supply Support (Helipad & Supply Delivery Depot).' },
         { id: 'unit', n: 'Unit Buildings', k: '2', g: '🏚️', tip: 'Structures that train and assemble units: Barracks, Vehicle Bay, Airbase.' },
         { id: 'def', n: 'Defensive', k: '3', g: '🛡️', tip: 'Emplacements and fortifications: MG Nest, Mortar Battery, Watchtower, Floodlights, walls, fences, gates, traps and the Culvert bunker.' },
-        { id: 'spec', n: 'Specialization', k: '4', g: '🔬', tip: 'Advanced facilities: Research Lab, Airspace Command, Helipad and the Supply Delivery Depot.' }];
+        { id: 'spec', n: 'Specialization', k: '4', g: '🔬', tip: 'Advanced facilities: Research Lab and Airspace Command.' }];
       if (!UI.bcat) {
         btns.title = 'construction';
-        for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, cls: 'cat cat-' + c.id, fn: () => { UI.bcat = c.id; AU.ui('ok'); refreshCard(true); } });
+        for (const c of CATS) btns.push({ g: (typeof catIcon === 'function' && catIcon(c.id)) || c.g, n: c.n, k: c.k, tip: c.tip, cls: 'cat cat-' + c.id, fn: () => { UI.bcat = c.id; UI.buildHighlight = null; AU.ui('ok'); refreshCard(true); } });
         btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.tab = null; UI.place = null; refreshCard(true); } });
         return btns;
       }
@@ -15444,10 +15568,16 @@ function cardFor() {
       btns.title = cat.n;
       const pushBld = k => {
         const d = BDEF[k];
+        const needMet = !d.needs || G.builds.some(b => b.t === d.needs && b.done && !b.dead);
+        const atMax = d.max && G.builds.filter(b => b.t === k && !b.dead && (b.owner == null || b.owner === G.me)).length >= d.max;   // a capped structure already at its limit
         btns.push({
-          g: buildIcon(k) || d.g, n: d.name, k: d.key, cost: d.cost, tip: d.desc + (d.needs ? '\nRequires: ' + BDEF[d.needs].name : ''),
-          dis: !affordable(d.cost) || (d.needs && !G.builds.some(b => b.t === d.needs && b.done && !b.dead)),
-          fn: () => { UI.place = k; UI.placeRot = 0; UI.tab = 'build'; AU.ui('ok'); refreshCard(true); }
+          g: buildIcon(k) || d.g, n: d.name, k: d.key, cost: d.cost,
+          tip: d.desc + (d.max ? '\nLimit: ' + d.max + (atMax ? ' — already built' : '') : '') + (d.needs ? '\nRequires: ' + BDEF[d.needs].name + (needMet ? '' : ' — build one first (tap to jump there)') : ''),
+          dis: needMet ? (!affordable(d.cost) || atMax) : false,          // affordability greys it out; a MISSING REQUIREMENT instead makes it a locked tile that jumps you to what to build first; at the cap it is greyed out
+          cls: (needMet ? '' : 'locked') + (k === UI.buildHighlight ? ' blink' : ''),   // the requirement we were sent to blinks so it's obvious what to build
+          fn: needMet
+            ? () => { UI.buildHighlight = null; UI.place = k; UI.placeRot = 0; UI.tab = 'build'; AU.ui('ok'); refreshCard(true); }
+            : () => { const rd = BDEF[d.needs]; UI.bcat = (rd.cat || 'def'); UI.buildHighlight = d.needs; alertMsg('Build a ' + rd.name + ' first to unlock ' + d.name, 'info'); AU.ui('no'); refreshCard(true); }   // jump to the requirement's menu and BLINK its tile
         });
       };
       if (cat.id === 'infra') {
@@ -15456,18 +15586,19 @@ function cardFor() {
         const genOf = k => (BDEF[k].supGen || BDEF[k].scrapGen || BDEF[k].oilGen || 0);
         const SECT = [
           { res: 'sup', g: '▲', n: 'Supply', cls: 'rSup' },
+          { res: 'sups', g: '🚁', n: 'Supply Support', cls: 'rSup', note: 'auto-collects airdrops on the pad', costSort: true },
           { res: 'scr', g: '◆', n: 'Scrap', cls: 'rScr' },
           { res: 'oil', g: '⬢', n: 'Oil', cls: 'rOil' }];
         let any = false;
         for (const s of SECT) {
-          const grp = inf.filter(k => (BDEF[k].res || '') === s.res).sort((a, b) => genOf(a) - genOf(b));
+          const grp = inf.filter(k => (BDEF[k].res || '') === s.res).sort((a, b) => s.costSort ? ((BDEF[a].cost.s || 0) - (BDEF[b].cost.s || 0)) : (genOf(a) - genOf(b)));
           if (!grp.length) continue;
-          btns.push({ sect: true, g: s.g, n: s.n, cls: s.cls });
+          btns.push({ sect: true, g: s.g, n: s.n, cls: s.cls, note: s.note });
           for (const k of grp) pushBld(k);
           any = true;
         }
         // any infra building without a resource tag (e.g. research lab) falls under a general section
-        const rest = inf.filter(k => !['sup', 'scr', 'oil'].includes(BDEF[k].res || ''));
+        const rest = inf.filter(k => !['sup', 'sups', 'scr', 'oil'].includes(BDEF[k].res || ''));
         if (rest.length) { btns.push({ sect: true, g: '⚙', n: 'Other', cls: '' }); for (const k of rest) pushBld(k); }
         if (!any && !rest.length) for (const k of inf) pushBld(k);
       } else {
@@ -15476,7 +15607,7 @@ function cardFor() {
           pushBld(k);
         }
       }
-      btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.bcat = null; UI.place = null; refreshCard(true); } });
+      btns.push({ g: '↩', n: 'Back', k: 'Esc', fn: () => { UI.bcat = null; UI.place = null; UI.buildHighlight = null; refreshCard(true); } });
       return btns;
     }
     btns.title = units.length > 1 ? units.length + ' units selected' : units[0].def.name;
@@ -15645,7 +15776,7 @@ function refreshCard(force) {
     if (b.sect) {   // resource section divider inside the build grid (not a clickable tile)
       const el = document.createElement('div');
       el.className = 'btn sect ' + (b.cls || '');
-      el.innerHTML = '<span class="g">' + b.g + '</span><span class="n">' + b.n + '</span><span class="ln"></span>';
+      el.innerHTML = '<span class="g">' + b.g + '</span><span class="n">' + b.n + (b.note ? ' <em style="opacity:.66;font-weight:400;font-style:normal;font-size:.82em">· ' + b.note + '</em>' : '') + '</span><span class="ln"></span>';
       host.appendChild(el); UI.cardBtns.push({ el, b });
       continue;
     }
@@ -18767,6 +18898,7 @@ function ctrlHudTick(dt) {
       const beacon = (col, glow, cx, cz) => { g.add(cyl(.035, .035, .42, matFor('#2a2e32', PANEL), cx, D + .21, cz, 'y')); const lamp = sph(.085, matFor(col, { emissive: lin(glow), emissiveIntensity: 1 }), cx, D + .46, cz); g.add(lamp); return lamp; };
       const beR = beacon('#ff5a4a', '#ff2a1a', -w * .43, -h * .43);
       const beG = delivery ? beacon('#54ff88', '#22e060', w * .43, h * .43) : null;
+      if (delivery) { beacon('#cfe6ff', '#7fc0ff', w * .43, -h * .43); beacon('#cfe6ff', '#7fc0ff', -w * .43, h * .43); }   // a light on EACH of the four corners: the two pulsing beacons + two steady blue-white corner lamps
       g.userData.padBeacons = { r: beR, g: beG };
       if (delivery) {
         // ================= CH-47 CHINOOK (redesigned) — built facing +x, wheels resting at local y = 0 =================
@@ -18788,7 +18920,7 @@ function ctrlHudTick(dt) {
           const bar = new THREE.Group(); bar.position.set(.14, .16, 0);
           for (let bd = 0; bd < 6; bd++) { const a = bd / 6 * TAU; bar.add(cyl(.014, .014, .5, matFor('#0e0f11', { metalness: .6, roughness: .3 }), .27, Math.cos(a) * .035, Math.sin(a) * .035, 'x')); }   // 6 rotary barrels
           bar.add(cyl(.05, .05, .12, DK, .04, 0, 0, 'x'));                                                              // barrel clamp
-          G2.add(bar); G2.rotation.z = -.14; CH.add(G2); return bar;                                                    // muzzles depressed a touch
+          G2.add(bar); G2.rotation.z = -.14; bar.userData.mount = G2; bar.userData.side = s; bar.userData.baseYaw = s * .5; CH.add(G2); return bar;   // muzzles depressed a touch; the mount yaws to track a target
         };
         const gatL = mkGat(-1), gatR = mkGat(1);
         // twin rotor pylons: forward low, aft tall (on the boat tail), with engine nacelles on the aft deck
@@ -18836,10 +18968,8 @@ function ctrlHudTick(dt) {
             const cr = box(.34, .30, .38, SM, storeX + cc[0], cy, storeZ + cc[1]); cr.visible = false; g.add(cr);
             const st = box(.36, .05, .40, SW, storeX + cc[0], cy + .17, storeZ + cc[1]); st.visible = false; g.add(st);   // a strap/lid so the pile reads as pallets
             stack.push([cr, st]); } ly++; }
-        // the forklift's PREPARE STATION: a marked platform ON the deck so the parked forklift sits on something (never floats off the edge)
+        // the forklift's prepare-station spot ON the deck (no platform mesh — it just parks here, on the deck, never off the edge)
         const stationX = 1.95, stationZ = -1.15;
-        g.add(box(.9, .06, .78, matFor('#3a3e44', PANEL), stationX, D + .03, stationZ));                                                    // station slab
-        for (const sx of [-1, 1]) g.add(box(.06, .05, .78, matFor('#ffcf5a', { emissive: lin('#c99a20'), emissiveIntensity: .3 }), stationX + sx * .42, D + .055, stationZ));   // yellow guide lines
         g.userData.chk = { CH, rotF, rotR, ramp, forks, fH, deckY: D, RL, gatL, gatR, stack, storeX, storeZ, stationX, stationZ };
       }
       g.userData.padClear = true;   // tell the sim step to flatten + clear tufts under the footprint so nothing pokes through the deck
@@ -20183,7 +20313,19 @@ function ctrlHudTick(dt) {
         if (spin) { const s = G.t * 30; CK.rotF.rotation.z = s; CK.rotR.rotation.z = -s * 1.02;
           for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = .34; }
         else for (const rg of [CK.rotF, CK.rotR]) if (rg.userData.disc) rg.userData.disc.material.opacity = 0;
-        if (CK.gatL) CK.gatL.rotation.x = G.t * 22; if (CK.gatR) CK.gatR.rotation.x = -G.t * 22;   // the door-gun barrels spin
+        { const gt = D.gat, rdt = Math.max(1e-3, render._dt || .016);                              // door gatlings: the mount YAWS to track its target; the barrels spin, faster while firing
+          const aimGun = (bar, gg) => { if (!bar) return; const m = bar.userData.mount;
+            if (m) { const tgt = (gg && gg.on) ? (Math.PI - gg.aim) : bar.userData.baseYaw;         // point the barrels at the target (CH is yaw-flipped, so mount yaw = π − aim); else ease back to the splayed rest angle
+              let d = tgt - m.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); m.rotation.y += d * Math.min(1, rdt * 8); }
+            const firing = gg && gg.fire > 0; bar.rotation.x = (bar.userData.side < 0 ? 1 : -1) * G.t * (firing ? 60 : 22); };
+          aimGun(CK.gatL, gt && gt.L); aimGun(CK.gatR, gt && gt.R); }
+        // four Special-Ops operators standing guard, one on each corner of the pad — each turns to aim at its target and fires
+        if (b._dg && (MODEL.gunner || MODEL.rifleman)) {
+          const GM = MODEL.gunner || MODEL.rifleman, S = GM.S, bs = g.userData.bs || 1, gy = g.position.y + (CK.deckY || .42) * bs;
+          for (let i = 0; i < b._dg.length; i++) { const gd = b._dg[i], rc = gd.fx || 0;
+            drawFigure(gd.x * K - Math.cos(gd.aim) * rc * .05, gy, gd.y * K - Math.sin(gd.aim) * rc * .05, gd.aim, 0, S, { kind: 'mil', gun: 'rifle', scale: .92, limbs: 15, id: b.id * 8 + i + 700, ut: 'gunner', tac: 1 });
+            if (rc > 0) bb(partsAdd, gd.x * K + Math.cos(gd.aim) * .5, gy + .42, gd.y * K + Math.sin(gd.aim) * .5, .26, 1, .92, .6, rc * 8); }   // muzzle flash
+        }
         if (CK.ramp) CK.ramp.rotation.z = rampA;
         // one forklift working the RAMP SIDE (+x). Its whole loop is anchored to the aircraft's LANDED position (no ox term),
         //   so it holds its spot and prepares for the next lift while the Chinook flies off — it never rides up with it.
@@ -20201,17 +20343,36 @@ function ctrlHudTick(dt) {
           const active = (p === 'unload' && rampOpenEnough);
           const lerp = (ax, az, bx, bz, k) => { x = ax + (bx - ax) * k; z = az + (bz - az) * k; ang = Math.atan2((bz - az), (bx - ax)); };
           if (active) {
+            // three loads per landing, keyed off D.fork (0,1,2). The forklift's FORKS are its front, so every straight leg
+            //   drives forks-first (FORWARD); it only REVERSES on the ramp. Each load: drive UP the ramp forward, hook a
+            //   crate, REVERSE back DOWN the ramp, TURN at the foot to face the yard, drive FORWARD to the yard, drop the
+            //   crate, TURN, drive FORWARD back to the staging spot behind the tail ramp, then TURN so the forks point
+            //   straight at the Chinook and WAIT for the next run up the ramp. Load 1 pulls out of the prepare station;
+            //   the LAST load, once stored, drives FORWARD to the prepare station for the next Chinook.
+            const trip = D.fork || 0;                                                    // which of the three loads this landing is on
+            const lastTrip = trip >= 2;                                                  // only the last load parks back at the prepare station
+            const P = Math.PI;                                                           // the flat-ground legs drive cab-first: heading = travel direction + 180°
+            const angAppr = Math.atan2(0 - stnZ, footX - stnX) + P;                       // heading: prepare station → ramp foot
+            const angYard = Math.atan2(stZ - 0, stX - footX) + P;                         // heading: ramp foot → supply yard
+            const angBack = Math.atan2(0 - stZ, footX - stX) + P;                         // heading: yard → behind the tail ramp
+            const angStn = Math.atan2(stnZ - stZ, stnX - stX) + P;                        // heading: yard → prepare station
             const s = 1 - tt / DR.unload;
-            if (s < .10) { lerp(stnX, stnZ, footX, 0, s / .10); }                                                            // pull off the station up to the ramp foot
-            else if (s < .30) { const k = (s - .10) / .20; x = footX + (cabX - footX) * k; z = 0; onRamp = true; ang = Math.PI; }   // climb the ramp into the cabin (empty)
-            else if (s < .42) { x = cabX; z = 0; onRamp = true; loaded = s > .38; ang = Math.PI; }                           // hook a crate
-            else if (s < .58) { const k = (s - .42) / .16; x = cabX + (footX - cabX) * k; z = 0; onRamp = true; loaded = true; ang = 0; }   // reverse back down to the foot
-            else if (s < .78) { const k = (s - .58) / .20; lerp(footX, 0, stX, stZ, k); loaded = true; }                     // carry it to the supply yard
-            else if (s < .86) { x = stX; z = stZ; loaded = s < .82; ang = Math.atan2(stZ, stX - footX); }                    // set it on the stack (pile grows via b.stored)
-            else { lerp(stX, stZ, stnX, stnZ, (s - .86) / .14); }                                                            // trundle back to the prepare station
+            if (s < .08) { if (trip === 0) { const k = s / .08; x = stnX + (footX - stnX) * k; z = stnZ + (0 - stnZ) * k; ang = angAppr; } else { x = footX; z = 0; ang = Math.PI; } }   // load 1: drive out of the prepare station to the ramp foot; later loads already wait behind the tail
+            else if (s < .24) { const k = (s - .08) / .16; x = footX + (cabX - footX) * k; z = 0; onRamp = true; ang = Math.PI; }   // UP the ramp, FORWARD, empty (forks into the cabin)
+            else if (s < .36) { x = cabX; z = 0; onRamp = true; loaded = s > .32; ang = Math.PI; }                           // hook a crate
+            else if (s < .50) { const k = (s - .36) / .14; x = cabX + (footX - cabX) * k; z = 0; onRamp = true; loaded = true; ang = Math.PI; }   // REVERSE back DOWN the ramp (forks still toward the cabin — backing down)
+            else if (s < .56) { x = footX; z = 0; loaded = true; ang = angYard; }                                            // at the foot: TURN to head for the supply yard
+            else if (s < .72) { const k = (s - .56) / .16; x = footX + (stX - footX) * k; z = 0 + (stZ - 0) * k; loaded = true; ang = angYard; }   // drive to the supply yard
+            else if (s < .80) { x = stX; z = stZ; loaded = s < .76; ang = angYard; }                                         // set the crate on the stack (pile grows via b.stored)
+            else if (lastTrip) { if (s < .86) { x = stX; z = stZ; ang = angStn; } else { const k = (s - .86) / .14; x = stX + (stnX - stX) * k; z = stZ + (stnZ - stZ) * k; ang = angStn; } }   // LAST load: TURN, then drive to the prepare station
+            else { if (s < .86) { x = stX; z = stZ; ang = angBack; }                                                         // between loads: TURN to head for the tail
+              else if (s < .94) { const k = (s - .86) / .08; x = stX + (footX - stX) * k; z = stZ + (0 - stZ) * k; ang = angBack; }   //   drive back behind the tail ramp
+              else { x = footX; z = 0; ang = Math.PI; } }                                                                    //   TURN so the forks point straight at the Chinook and WAIT to go up the ramp
           }
-          if (onRamp && x < footX) { y = rampTopY(x); tilt = -rampOpen; } else y = dyD + .04;         // ride the ramp surface on the incline; otherwise sit flat on the deck / station
-          F.g.position.set(x, y, z); F.g.rotation.set(0, ang, tilt); F.load.visible = loaded;
+          if (onRamp && x < footX) { y = rampTopY(x); tilt = -rampOpen; } else y = dyD + .04;         // ride the ramp surface on the incline; otherwise sit flat on the deck
+          const dtF = Math.max(1e-3, render._dt || .016);
+          F._ang = (F._ang === undefined) ? ang : angLerp(F._ang, ang, Math.min(1, dtF * 9));         // ease the heading so it TURNS in place toward its travel direction (fast enough to finish a turn before the next drive leg) instead of snapping
+          F.g.position.set(x, y, z); F.g.rotation.set(0, F._ang, tilt); F.load.visible = loaded;
         }
         // reveal the supply pile: one crate per stored load (the yard fills up as the depot runs)
         if (CK.stack) { const n = b.stored || 0; for (let i = 0; i < CK.stack.length; i++) { const on = i < n; CK.stack[i][0].visible = on; CK.stack[i][1].visible = on; } }
@@ -20635,18 +20796,31 @@ function ctrlHudTick(dt) {
         put(P.cloth, x - .1 * sc, gyc + .06, z - .35 * sc, -HPI - .1, spin - .5, -.06, .95 * sc, .85 * sc, .03, CHUTE2);
         for (let k = 0; k < 3; k++) put(P.cyl, x + (k - 1) * .3 * sc, gyc + .04, z + .1 * sc, HPI, spin + k, 0, .012 * sc, .9 * sc, .012 * sc, CORD);   // slack lines
       }
-      // SUPPORT SOLDIER inspecting the pad crate during the 3-second auto-collect: a real rigged figure stands beside it,
-      //   turns to look it over, and periodically bends down to search it, then straightens up again.
-      if (c.onPad && !c.taken && typeof drawFigure === 'function') {
+      // SUPPORT SOLDIER searching the pad crate during the auto-collect: a real rigged figure STANDS STILL beside it
+      //   (fixed spot, fixed heading — no circling / no spinning), bent over the box working with both hands. The right
+      //   hand rummages in and out on a ~1s cycle while the left hand holds a small flashlight shining into the crate.
+      if (c.onPad && c.landed && !c.taken && typeof drawFigure === 'function') {   // only once the airdrop has TOUCHED DOWN on the pad — never while it is still parachuting in
         const M = MODEL.support || MODEL.rifleman;
         if (M && M.S) {
-          const t = c.padT || 0, off = 20 * K;                              // stand ~20 px off the crate, on the deck
-          const stance = seed + Math.sin(t * .9) * .35;                     // shift around the crate a little while working
-          const sx = x + Math.cos(stance) * off, sz = z + Math.sin(stance) * off;
-          const face = Math.atan2(z - sz, x - sx);                          // face the crate
-          const searching = Math.sin(t * 2.4 + seed) > -.15;                // mostly bent over inspecting; stands up now and then to look around
-          if (c._fid === undefined) c._fid = (Math.random() * 1e6) | 0;
-          drawFigure(sx, y, sz, face, 0, M.S, { kind: 'mil', gun: 'none', scale: .92, limbs: 15, id: c._fid, ut: 'support', crouch: searching });
+          if (c._fid === undefined) { c._fid = (Math.random() * 1e6) | 0; c._sd = Math.random() * TAU; }
+          const off = .62, seedA = c._sd;                                   // FIXED stance just off the crate edge, chosen once — the soldier does not move around
+          const sx = x + Math.cos(seedA) * off, sz = z + Math.sin(seedA) * off;
+          const face = Math.atan2(z - sz, x - sx);                          // face the crate, fixed
+          const cyc = G.t * 6.6;                                            // ~1.05 s search cycle (under 2 s)
+          const ra = 1.46 + Math.sin(cyc) * .30;                            // right hand digs into the crate and lifts back out
+          const la = 1.40 + Math.sin(cyc * .5 + 1.2) * .07;                 // left hand holds the flashlight fairly steady
+          drawFigure(sx, y, sz, face, 0, M.S, { kind: 'mil', gun: 'none', scale: .92, limbs: 15, id: c._fid, ut: 'support', crouch: true, arms: { la, ra } });
+          // small flashlight in the LEFT hand, angled down into the crate, throwing a soft beam on the contents
+          const cf = Math.cos(face), zf = Math.sin(face), pxf = -zf, pzf = cf;
+          const hx = sx + cf * .40 + pxf * .18, hy = y + .56, hz = sz + zf * .40 + pzf * .18;   // approx left-hand position over the box
+          const tx = x, ty = y + .34, tz = z;                               // aim point: down into the crate
+          const dx = tx - hx, dy = ty - hy, dz = tz - hz, dl = Math.hypot(dx, dy, dz) || 1, nx = dx / dl, ny = dy / dl, nz = dz / dl;
+          putRod(P.cyl, hx, hy, hz, nx, ny, nz, .16, .03, col3('#22262c'));  // flashlight barrel
+          putRod(P.cyl, hx, hy, hz, -nx, -ny, -nz, .05, .038, col3('#0f1216'));  // grip cap behind the hand
+          const fl = .7 + Math.sin(cyc * 2) * .12;                          // beam flickers a touch as he works
+          bb(partsAdd, hx + nx * .17, hy + ny * .17, hz + nz * .17, .09, 1, .98, .82, .95);   // glowing lens
+          bb(partsAdd, tx, ty + .04, tz, .34, 1, .96, .78, .5 * fl);        // soft beam pool on the crate
+          bb(partsAdd, tx, ty + .02, tz, .17, 1, 1, .9, .82 * fl);          // bright hotspot
         }
       }
     }
