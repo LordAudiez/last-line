@@ -15218,7 +15218,11 @@ function cardFor() {
   }
   if (bld && !units.length) {
     const d = bld.def;
-    btns.title = d.name;
+    // infrastructure producers show their live output rate right after the name, and their upgrade shows current → upgraded output
+    const _gen = d.scrapGen || d.supGen || d.oilGen || 0;
+    const _rsym = d.scrapGen ? '◆' : d.supGen ? '▲' : d.oilGen ? '⬢' : '';
+    const _tier0 = bld.tier || 1;
+    btns.title = d.name + (_gen ? '  ·  ' + _rsym + ' ' + +(_gen * _tier0).toFixed(2) + '/s' : '');
     if (!bld.done) { btns.push({ g: '🚧', n: 'Building', k: '', dis: true, prog: bld.prog }); return btns; }
     if (d.produces) for (const t of d.produces) {
       const ud = UDEF[t];
@@ -15252,9 +15256,10 @@ function cardFor() {
         btns.push({ g: '⏫', n: 'Upgrading', k: '', dis: true, prog: 1 - bld.upgT / (bld._upgTot || bld.upgT) });
       } else if (tier < 3) {
         const uc = upgradeCost(bld);
+        const _inc = _gen ? '  ' + _rsym + ' ' + +(_gen * tier).toFixed(2) + '→' + +(_gen * (tier + 1)).toFixed(2) + '/s' : '';   // producer output this tier → next tier
         btns.push({
-          g: '⏫', n: 'Upgrade → Mk ' + (tier + 1), k: 'G', cost: uc,
-          tip: 'Reinforce this structure. +55% health, tougher look, and stronger weapons / production.\nMk ' + (tier + 1) + ' of 3.',
+          g: '⏫', n: 'Upgrade → Mk ' + (tier + 1) + _inc, k: 'G', cost: uc,
+          tip: 'Reinforce this structure. +55% health, tougher look, and stronger weapons / production.\nMk ' + (tier + 1) + ' of 3.' + (_gen ? '\nOutput: ' + _rsym + ' ' + +(_gen * tier).toFixed(2) + '/s → ' + +(_gen * (tier + 1)).toFixed(2) + '/s' : ''),
           dis: !affordable(uc),
           fn: () => {
             if (!affordable(uc)) { AU.ui('no'); return; }
