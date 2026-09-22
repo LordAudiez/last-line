@@ -3849,9 +3849,9 @@ const BDEF = {
     desc: 'Air-force headquarters with a long-range radar tower and a transport on station overhead. Calls in the napalm run, the artillery barrage and — at a price — the nuclear strike. Requires an Airbase.'
   },
   helipad: {
-    name: 'Helipad', key: 'H', g: '🚁', cat: 'spec', w: 3, h: 3, mw: 2, mh: 2, hgt: 6, hp: 700, armor: 2, cost: { s: 120, c: 60 }, time: 12,
-    col: ['#43474d', '#2c2f34'], roof: '#565b62', light: 90, flat: true, pad: 1,
-    desc: 'A concrete landing pad with a marked circle, edge lights and a blinking beacon. A forward rotary-wing pad for staging air operations.'
+    name: 'Helipad', key: 'H', g: '🚁', cat: 'spec', w: 6, h: 6, mw: 4, mh: 4, hgt: 6, hp: 900, armor: 2, cost: { s: 120, c: 60 }, time: 14,
+    col: ['#43474d', '#2c2f34'], roof: '#565b62', light: 90, flat: true, pad: 1, dropPad: 1,
+    desc: 'A large concrete landing pad with a marked circle, edge lights and a blinking beacon. While it stands, supply drops come down on the pad instead of scattered around your HQ, and each crate is collected automatically 3 seconds after it touches down — no unit needed.'
   },
   deliverydepot: {
     name: 'Supply Delivery Depot', key: 'K', g: '🚁', cat: 'spec', w: 5, h: 5, mw: 3, mh: 3, hgt: 6, hp: 1600, armor: 3, cost: { s: 40000, c: 12000, o: 5000 }, time: 60, needs: 'airbase',
@@ -8409,11 +8409,21 @@ function callAirdrop(manual) {
   const n = manual ? 3 : rndi(2, 4);
   const bx = G.hq && !G.hq.dead ? G.hq.x : BASE_X;
   const by = G.hq && !G.hq.dead ? G.hq.y : BASE_Y;
+  // a standing Helipad becomes the drop zone: crates come down at random points ON the pad and are auto-collected once landed
+  const pad = G.builds.find(b => b.t === 'helipad' && b.done && !b.dead && b.owner !== 'invader');
   for (let i = 0; i < n; i++) {
-    const p = dropPoint(bx, by, 4 * TS, 9 * TS) || { x: bx, y: by };
-    G.crates.push({ x: p.x, y: p.y, z: 360 + i * 40, vz: 0, amt: (manual ? 90 : 110) * 15, chute: 1, flare: 1, claimed: null, life: 999, bob: rnd(TAU), landed: false });
+    let cx, cy, onPad = false;
+    if (pad) {
+      const rad = Math.min(pad.w, pad.h) * TS * .38;             // scatter within the pad's marked circle
+      const a = rnd(TAU), r = Math.sqrt(Math.random()) * rad;
+      cx = pad.x + Math.cos(a) * r; cy = pad.y + Math.sin(a) * r; onPad = true;
+    } else {
+      const p = dropPoint(bx, by, 4 * TS, 9 * TS) || { x: bx, y: by };
+      cx = p.x; cy = p.y;
+    }
+    G.crates.push({ x: cx, y: cy, z: 360 + i * 40, vz: 0, amt: (manual ? 90 : 110) * 15, chute: 1, flare: onPad ? 0 : 1, claimed: null, life: 999, bob: rnd(TAU), landed: false, onPad: onPad, padT: 0 });
   }
-  alertMsg(manual ? 'Emergency drop inbound' : 'Supply drop inbound at the base', 'info');
+  alertMsg(pad ? (manual ? 'Emergency drop inbound — landing on the pad' : 'Supply drop inbound — landing on the pad') : (manual ? 'Emergency drop inbound' : 'Supply drop inbound at the base'), 'info');
   AU.ui('ready');
 }
 
@@ -11496,8 +11506,20 @@ function updateItems(dt) {
         c.z = 0; c.landed = true; c.chute = 0;
         part('dust', c.x, c.y, 0, 0, .8, 12, 'rgba(170,158,140,1)', { grow: 46 });
         AU.ui('build');
+        if (c.onPad) c.padT = 0;   // start the 3-second auto-collect countdown the moment it touches the pad
       }
-    } else c.bob += dt * 3;
+    } else {
+      c.bob += dt * 3;
+      if (c.onPad && !c.taken) {   // on the Helipad: a ground crew collects it automatically 3 s after touchdown
+        c.padT = (c.padT || 0) + dt;
+        G.lights.push({ x: c.x, y: c.y, r: 120, c: [120, 255, 170], i: .35 + Math.sin(G.t * 6) * .15 });   // green "being collected" glow
+        if (Math.random() < dt * 10) part('spark', c.x + rnd(-6, 6), c.y + rnd(-6, 6), rnd(-10, 10), rnd(-10, 10), rnd(.3, .6), rnd(.4, .7), '#8dffbe', { glow: 1, z: 6, vz: rnd(20, 60), g: 120, drag: .95 });
+        if (c.padT >= 3) {
+          c.taken = true; G.sup += c.amt;
+          popText(c.x, c.y - 14, '+' + c.amt + ' ▲', '#7dffb2'); AU.ui('ready');
+        }
+      }
+    }
     if (c.flare) {
       // the flare is what makes a distant pallet findable
       // a red signal flare burns on the pallet: a hot red-white core with a wide red halo, sputtering sparks, and a thick red smoke plume
