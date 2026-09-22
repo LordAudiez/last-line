@@ -868,7 +868,7 @@ html.uihide #uihide{opacity:.35}html.uihide #uihide:hover{opacity:1}
 #setbox .closex{float:right;border:1px solid #2b4339;background:#12201a;color:#cdeadd;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:15px}
 /* ---------- global HUD scaling (var --ui): applied on the standalone `scale:` property so entrance/menu animations
    (which animate `transform`) can NEVER wipe it out — the panels always keep their --ui size, small or large ---------- */
-#topbar{transform:translateX(-50%);scale:var(--ui);transform-origin:top center}
+#topbar{transform:translateX(-50%);scale:var(--ui);transform-origin:top left}   /* origin TOP-LEFT so the --ui scale can't drag the bar off-centre — with left:50% + translateX(-50%) it stays dead-centre at any UI scale */
 #speed{scale:var(--ui);transform-origin:top right}
 #setbtn{scale:var(--ui);transform-origin:top right}
 #uihide{scale:var(--ui);transform-origin:top right}
