@@ -15275,15 +15275,21 @@ function cardFor() {
         const ut = G.tier[cat] || 1;
         const lbl = cat === 'inf' ? 'Infantry' : cat === 'veh' ? 'Vehicles' : 'Aircraft';
         if (ut < (cat === 'inf' ? 4 : 3)) {
-          const uc = unitUpgradeCost(cat, ut);
+          // "upgrade the whole line" price = the sum of every produced type's individual upgrade, then 20% off for doing them in one click
+          const types = (d.produces || []).filter(t => UDEF[t] && tierOfT(t) <= ut);
+          let full = { s: 0, c: 0 };
+          for (const t of types) { const cc = unitTypeUpgradeCost(t, tierOfT(t)); full.s += cc.s || 0; full.c += cc.c || 0; }
+          const DISC = 0.2;
+          const uc = { s: Math.round(full.s * (1 - DISC)), c: Math.round(full.c * (1 - DISC)) };
+          const saveS = full.s - uc.s, saveC = full.c - uc.c;
           btns.push({
-            g: '🎖️', n: 'Upgrade ' + lbl + ' → Mk ' + (ut + 1), k: 'T', cost: uc,
-            tip: 'Field a stronger model of every ' + lbl.toLowerCase() + ' — new look, tougher armour, hotter weapon effects.\nApplies to units you already have and future ones.',
-            dis: !affordable(uc),
+            g: '🎖️', n: 'Upgrade ' + lbl + ' → Mk ' + (ut + 1), k: 'T', cost: uc, badge: '−20%',
+            tip: 'Field a stronger model of every ' + lbl.toLowerCase() + ' — new look, tougher armour, hotter weapon effects.\nApplies to units you already have and future ones.\n\nUpgrading each ' + lbl.toLowerCase() + ' one by one: ▲' + full.s + ' ◆' + full.c + '\nAll at once here (−20%): ▲' + uc.s + ' ◆' + uc.c + '   (you save ▲' + saveS + ' ◆' + saveC + ')',
+            dis: !affordable(uc) || !types.length,
             fn: () => {
-              if (!affordable(uc)) { AU.ui('no'); return; }
+              if (!affordable(uc) || !types.length) { AU.ui('no'); return; }
               pay(uc); G.tier[cat] = ut + 1; applyUnitTier(cat);
-              alertMsg(lbl + ' upgraded to Mk ' + (ut + 1), 'good'); AU.ui('ready'); refreshCard(true);
+              alertMsg(lbl + ' upgraded to Mk ' + (ut + 1) + ' (−20% bulk)', 'good'); AU.ui('ready'); refreshCard(true);
             }
           });
         } else {
