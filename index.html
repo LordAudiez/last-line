@@ -5272,6 +5272,7 @@ function genWorld() {
   chunks.clear(); propCache.clear(); if (typeof G !== 'undefined' && G) { G.trLanes = null; G.xProps = null; G._trSig = undefined; }   // a new map: drop the cached props of the old one too (they used to leak in — trees where none should be)
 
   // --- elevation: three octaves, with a coastal falloff at the map rim ---
+  if (typeof G !== 'undefined' && G && G.owGeo) OW.geo = owGeoBuild();
   const S = WSEED * 137.5;                                  // per-map seed offset into the noise field
   for (let y = 0; y < MH; y++) {
     for (let x = 0; x < MW; x++) {
@@ -5279,6 +5280,7 @@ function genWorld() {
       // ridged detail lifts the highlands into proper mountain spines
       const ridge = 1 - Math.abs(vnoise((x + S) / 130 + 41, (y + S) / 130 + 17) * 2 - 1);
       e = e * .78 + ridge * ridge * .30;
+      if (G && G.owGeo) { MAP.h[y * MW + x] = clamp(owGeoElev(x, y, e) * 300, 0, 255) | 0; continue; }   // OpenWorld: the coast and relief of Thailand
       // everything falls away to open sea near the edges of the world
       const ex = Math.min(x, MW - 1 - x) / 90, ey = Math.min(y, MH - 1 - y) / 60;
       e *= clamp(Math.min(ex, ey), 0, 1) * .55 + .45;
@@ -5287,6 +5289,7 @@ function genWorld() {
     }
   }
 
+  if (G && G.owGeo && OW.geo) owGeoSmooth();                          // OpenWorld: roll the ground smooth inland (the coast keeps its shape)
   // --- classify ---
   for (let y = 0; y < MH; y++) {
     for (let x = 0; x < MW; x++) {
@@ -5302,7 +5305,8 @@ function genWorld() {
       else if (m > .54) t = T_FOREST;
       else if (m > .30) t = T_GRASS;
       else t = T_DIRT;
-      if (t !== T_ROCK && t !== T_SNOW && !WATER(t) && vnoise(x / 19 + 71, y / 19 + 53) > .80) t = T_RUBBLE;
+      if (G && G.owGeo && OW.geo) t = owGeoTile(x, y, h, m, t);          // OpenWorld: the ground follows Thailand's regions
+      if (t !== T_ROCK && t !== T_SNOW && !WATER(t) && !(G && G.owGeo && t === T_SAND) && vnoise(x / 19 + 71, y / 19 + 53) > .80) t = T_RUBBLE;
       MAP.t[i] = t;
     }
   }
@@ -5315,6 +5319,7 @@ function genWorld() {
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       const i = y * MW + x, t = MAP.t[i];
       if (t !== T_GRASS && t !== T_FOREST && t !== T_DIRT) continue;                       // only gentle ground becomes field
+      if (G && G.owGeo && !owGeoFieldOk(i, t)) continue;                                   // OpenWorld: no meadows in the desert or the hill forests
       fv[i] = vnoise((x + S) / 72 + 500, (y + S) / 72 + 700) * .75 + vnoise((x + S) / 23 + 41, (y + S) / 23 + 97) * .25;
       wv[i] = vnoise((x + S) / 58 + 900, (y + S) / 58 + 300);
       land.push(i);
@@ -5322,7 +5327,7 @@ function genWorld() {
     const nLand = land.length;
     if (nLand) {
       let landAll = 0; for (let i = 0; i < N; i++) { const t = MAP.t[i]; if (t !== T_DEEP && t !== T_SEA) landAll++; }
-      const want = Math.min(nLand, Math.round(landAll * .35));                                                   // 35% of ALL the land becomes field
+      const want = Math.min(nLand, Math.round(landAll * (G && G.owGeo ? .2 : .35)));                                                   // 35% of ALL the land becomes field
       const fs = land.map(i => fv[i]).sort((a, b) => a - b), cut = fs[Math.max(0, nLand - want)];
       const field = land.filter(i => fv[i] >= cut);
       for (const i of field) { MAP.f[i] = 1; MAP.t[i] = T_GRASS; }
@@ -5594,7 +5599,7 @@ function chunkProps(cx, cy) {
     else if (t === T_FOREST) { if (r < .385) s = 'tree'; else if (r >= .55 && r < .82) s = 'bush'; }
     else if (t === T_GRASS) { if (r < .126) s = 'tree'; else if (r >= .18 && r < .36) s = 'bush'; }
     else if (t === T_SWAMP) { if (r < .3) s = 'bush'; else if (r < .44) s = 'tree'; }
-    else if (t === T_SAND) { if (r < .16) s = 'rock'; }
+    else if (t === T_SAND) { if (r < (G && G.owRegion ? .045 : .16)) s = 'rock'; }   // the region's desert: open dunes, a boulder here and there
     else if (t === T_DIRT) { if (r < .3) s = r < .14 ? 'rock' : 'bush'; }
     else if (t === T_RUBBLE) { if (r < .62) s = r < .3 ? 'rock' : (r < .48 ? 'barrel' : 'wreck'); }
     else if (t === T_ROCK) { if (r < .40) s = 'rock'; }
@@ -9620,6 +9625,7 @@ function blockedBy(e, x, y, friendly, heavy) {
 /* ==================== TIME, WAVES, AIRDROPS, WEATHER ==================== */
 // real-time day cycle: 2 min of daylight (clock span 0.54) + 1 min of night (clock span 0.46)
 const DAY_LIGHT_SECS = 120, DAY_NIGHT_SECS = 60, DAY_LIGHT_RATE = 0.54 / DAY_LIGHT_SECS, DAY_NIGHT_RATE = 0.46 / DAY_NIGHT_SECS;
+const OW_DAY_RATE = 0.54 / 300, OW_NIGHT_RATE = 0.46 / 90;   // OpenWorld (region, settlements, battles): 5 minutes of daylight, 1 minute 30 of night
 function updateTime(dt) {
   // the clock advances on the host (and in single player); a co-op client takes the time from the host, and "Hold" freezes it for everyone
   const netFollowTime = (typeof NP !== 'undefined' && NP.on && !NP.host);
@@ -9628,7 +9634,8 @@ function updateTime(dt) {
     // dawn (.14→.30) and dusk (.68→.86) so the light glides through sunrise/sunset instead of snapping speed at a boundary.
     const s01 = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
     const dayF = Math.min(s01((G.day - .12) / .18), s01((.86 - G.day) / .18));   // 1 in full daylight, 0 in deep night, smooth ramps between
-    const rate = DAY_NIGHT_RATE + (DAY_LIGHT_RATE - DAY_NIGHT_RATE) * dayF;
+    const owT = G.owRegion || G.owMode, LR = owT ? OW_DAY_RATE : DAY_LIGHT_RATE, NR = owT ? OW_NIGHT_RATE : DAY_NIGHT_RATE;
+    const rate = NR + (LR - NR) * dayF;
     const host = G.started && !G.over && !(typeof NP !== 'undefined' && NP.on && !NP.host);
     const AM6 = 0.25, prev = G._prevClock === undefined ? G.day : G._prevClock;
     G.day += dt * rate;
@@ -18065,6 +18072,7 @@ function drawCursor() {
 
 /* ---------------- minimap ---------------- */
 function makeMiniBase() {
+  if (typeof G !== 'undefined' && G && G.owGeo) { const c = document.createElement('canvas'); c.width = 2; c.height = 2; miniBase = c; return; }   // the OpenWorld region draws its own minimap
   /* satellite imagery, not a tile map: two pixels per tile, hill-shaded from the north-west, fine sensor grain, water that
      deepens away from the shore with a pale surf line, forest canopy speckle, roads as thin grey threads, fields as pale strips */
   const R = 2, W = MW * R, H = MH * R;
@@ -19505,7 +19513,7 @@ function cardFor() {
       return btns;
     }
     btns.title = units.length > 1 ? units.length + ' units selected' : units[0].def.name;
-    if (hasEng) btns.push({ g: '🏗️', n: 'Build', k: 'B', tip: 'Open the construction menu.', cls: 'blink', fn: () => { UI.tab = 'build'; refreshCard(true); } });
+    if (hasEng && !G.owBattle) btns.push({ g: '🏗️', n: 'Build', k: 'B', tip: 'Open the construction menu.', cls: 'blink', fn: () => { UI.tab = 'build'; refreshCard(true); } });
     if (hasEng) {
       btns.push({ g: '🗺️', n: 'Map Adjust', k: 'X', cls: 'mapadj', act: !!(UI.brush && UI.brush.on), tip: 'Terraform tools: clear trees, paint or clear grass tufts, and repaint the ground as grass, sand or concrete. Alt + scroll resizes the brush.', fn: () => { UI.tab = 'mapadj'; AU.ui('ok'); refreshCard(true); } });
     }
@@ -19723,7 +19731,7 @@ function revealAdvance() {
     }
     if (el < REVEAL_DUR) return; UI.reveal = null;
   }
-  const q = UI.revealQueue; if (!q || !q.length) return;
+  const q = UI.revealQueue; if (!q || !q.length) return; if (G.owBattle) return;
   const engSel = G.sel.length > 0 && G.sel.every(e => e.kind === 'unit' && e.def.builder);
   const menuOpen = UI.tab === 'build' && engSel;
   if (!menuOpen) {
@@ -19748,6 +19756,7 @@ function revealAdvance() {
 /* what the BUILD shortcut (button or the B key) does: with engineers → grab them and open the build menu;
    with NONE left → go to the Command Post, select it and blink its Engineer buy tile so the player trains one */
 function buildShortcutGo() {
+  if (G.owBattle) return false;   // OpenWorld battle: nothing to build
   const engs = activeEngineers();
   if (engs.length) { setSel(engs); popText(engs[0].x, engs[0].y - 14, engs.length + ' SELECTED', '#7dffb2'); UI.tab = 'build'; UI.bcat = null; UI.unitHighlight = null; if (typeof AU !== 'undefined' && AU.ui) AU.ui('ok'); refreshCard(true); return true; }   // only engineers on their feet — a downed one can't build
   if (G.hq && !G.hq.dead) {
@@ -19830,6 +19839,7 @@ function updateProdTray(anchor) {
   tr.style.bottom = ((parseFloat(anchor.style.bottom) || 14) + (anchor.offsetHeight || 60) * as + 8) + 'px';   // stacked just above the shortcut (at its scale), wherever it currently sits
 }
 function refreshCard(force) {
+  if (G.owBattle && G.started && (UI.tab === 'build' || UI.place || UI.pending)) { UI.tab = null; UI.place = null; UI.pending = null; UI.bcat = null; }   // OpenWorld battle: no construction at all
   // the placement tip card (bottom-right, under the eye button) shows only while a building is being placed / queued
   try { document.documentElement.classList.toggle('place-active', !!(UI.place || UI.pending || (UI.queue && UI.queue.length))); } catch (e) {}
   const btns = cardFor();
@@ -21774,6 +21784,10 @@ function ctrlHudTick(dt) {
     if (was !== on || wasSoft !== soft) scene3.traverse(o2 => { if (o2.material && o2.material.needsUpdate !== undefined) o2.material.needsUpdate = true; });
   }
   window.applyShadowOpt = applyShadowOpt;
+  window.owLite = on => {   // the OpenWorld region view: skip the shadow pass (the miniature reads fine without it and renders far faster)
+    if (on) { if (!renderer.shadowMap.enabled && !sun.castShadow) return; renderer.shadowMap.enabled = false; sun.castShadow = false; scene3.traverse(o2 => { if (o2.material && o2.material.needsUpdate !== undefined) o2.material.needsUpdate = true; }); }
+    else if (!renderer.shadowMap.enabled) applyShadowOpt();
+  };
   window.applyMsaa = () => { FX.w = 0; if (FX.on) fxResize(); };
   window.setQuality = setQuality; window.getQuality = () => QUAL.level;
   (function () { let lv = null; try { lv = localStorage.getItem('zrts_qual'); } catch (e) {} if (!lv) { const coarse = (window.matchMedia && matchMedia('(pointer:coarse)').matches) || ('ontouchstart' in window); lv = (coarse && Math.min(innerWidth, innerHeight) < 900) ? 'mobile' : 'high'; } setQuality(lv, false); })();
@@ -22506,7 +22520,7 @@ function ctrlHudTick(dt) {
         const white = MAP.f && MAP.f[ti] === 2 && h1 < .66;                 // a silvergrass field is ~2/3 white plumes with plain green tufts mixed through, so it isn't a solid white cap
         const cols = 4, cellx = (k % cols) / cols, celly = (((k / cols) | 0) % 4) / 4;
         const wx = (tx + cellx + h1 * .33) * TS, wy = (ty + celly + h2 * .5) * TS;
-        const bh = (.30 + h1 * .19) * (white ? 1.1 : 1) * 1.2, thick = 1.1 + h2 * .7;   // +20% height   // knee-to-chest height so a man stands clear above the field; silvergrass only a little taller
+        const owk = G.owRegion ? (G.owTreeK || 1) : 1, bh = (.30 + h1 * .19) * (white ? 1.1 : 1) * 1.2 * owk, thick = (1.1 + h2 * .7) * owk;   // +20% height   // knee-to-chest height so a man stands clear above the field; silvergrass only a little taller
         _p.set(wx * K, groundY(wx, wy), wy * K); _gq.setFromAxisAngle(_gUP, h2 * TAU); _s.set(thick, bh, thick);
         _m.compose(_p, _gq, _s);
         const stained = bloodTuft(wx, wy, hash2(tx * 17 + k * 3, ty * 19 + k * 7));
@@ -22577,6 +22591,14 @@ function ctrlHudTick(dt) {
   /* leaf cards: a square cut-out of a leaf cluster (nine pointed leaves with pale midribs radiating from the centre), scattered
      over the crown shells so the canopy silhouette is ragged and leafy instead of a smooth sphere. Alpha-tested, two-sided,
      and shadow-cast through a depth material that honours the cut-out, so the dappled shade under a tree is leaf-shaped too. */
+  /* a leaf cut-out texture whose see-through pixels carry the leaves' own colour (alpha 0) instead of black: a canvas stores
+     clear pixels as black, so the smaller mip levels blended every leaf with black — distant crowns went dark and, once under
+     the alpha cut-off, see-through. With the colour bled into the gaps a far crown keeps its colour. */
+  const bleedTex = (c, like) => { const w = c.width, h = c.height, d = c.getContext('2d').getImageData(0, 0, w, h).data, o = new Uint8Array(w * h * 4);
+    let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    n = n || 1; r = r / n | 0; g = g / n | 0; b = b / n | 0;
+    for (let i = 0; i < d.length; i += 4) { const a = d[i + 3], k = a / 255; o[i] = Math.round(d[i] * k + r * (1 - k)); o[i + 1] = Math.round(d[i + 1] * k + g * (1 - k)); o[i + 2] = Math.round(d[i + 2] * k + b * (1 - k)); o[i + 3] = a; }
+    const t = new THREE.DataTexture(o, w, h, THREE.RGBAFormat); t.flipY = true; t.encoding = THREE.sRGBEncoding; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 4; if (like) { t.wrapS = like.wrapS; t.wrapT = like.wrapT; t.repeat.copy(like.repeat); } t.needsUpdate = true; return t; };
   TEX.leafCard = mkTex(128, () => [0, 0, 0, 0], (g, S) => {
     /* a leafy SPRIG, not a star: three thin twigs fan up from the bottom of the card and each carries a run of small rounded
        oval leaves set alternately along it (broadleaf / mango-like), overlapping into a loose clump — nothing radial */
@@ -22598,6 +22620,7 @@ function ctrlHudTick(dt) {
     twig(S * .5, S * .96, -HPI - .55, S * .62, 5); twig(S * .5, S * .96, -HPI + .5, S * .6, 5); twig(S * .5, S * .96, -HPI - .05, S * .78, 6);
     for (let i = 0; i < 4; i++) leaf(S * (.25 + rn() * .5), S * (.25 + rn() * .45), rn() * TAU, S * .15, S * .08, .45 + rn() * .3);   // a few loose leaves filling the clump
   }, { clamp: 1 });
+  if (TEX.leafCard.image && TEX.leafCard.image.getContext) TEX.leafCard = bleedTex(TEX.leafCard.image, TEX.leafCard);
   const leafCardM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TEX.leafCard, alphaTest: .5, side: THREE.DoubleSide, roughness: .85, metalness: 0, envMapIntensity: .3 });
   /* cards are lit as foliage, not as flat plates: the shading normal is mostly world-up (the way a leafy canopy takes light from
      the sky) with a third of the card's own facing mixed in, so no card ever goes black just because it happens to face away */
@@ -22616,7 +22639,7 @@ function ctrlHudTick(dt) {
     g.fillStyle = '#fff'; g.beginPath(); g.moveTo(0, -27); g.bezierCurveTo(18, -16, 17, 12, 0, 24); g.bezierCurveTo(-17, 12, -18, -16, 0, -27); g.fill();
     g.strokeStyle = 'rgba(70,70,70,.55)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(0, -24); g.lineTo(0, 29); g.stroke();
     g.lineWidth = .9; for (let k = -3; k <= 3; k++) { if (!k) continue; const yy = k * 6; g.beginPath(); g.moveTo(0, yy + 3); g.lineTo(11 * Math.sign(k) * (1 - Math.abs(k) * .08), yy - 3); g.moveTo(0, yy + 3); g.lineTo(-11 * Math.sign(k) * (1 - Math.abs(k) * .08), yy - 3); g.stroke(); }
-    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; })();
+    return bleedTex(c); })();
   const leafPM = new THREE.MeshStandardMaterial({ map: LEAF1T, color: 0xffffff, side: THREE.DoubleSide, alphaTest: .45, roughness: .75, metalness: 0 });
   leafPM.onBeforeCompile = sh => { cloudHook(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', '#include <aomap_fragment>\n#if NUM_DIR_LIGHTS > 0\n{ float bk = pow(max(dot(normalize(-vViewPosition), directionalLights[0].direction), 0.0), 3.0); reflectedLight.indirectDiffuse += diffuseColor.rgb * directionalLights[0].color * (bk * .6 + .12); }\n#endif'); };
   leafPM.customProgramCacheKey = () => 'leaf1';
@@ -22717,12 +22740,14 @@ function ctrlHudTick(dt) {
      Each tree is split at its first fork into a LOW trunk and a HIGH crown, so a felled tree can snap in two on impact. */
   const VEG = (() => {
     let seed = 1;
+    const VLOD = { k: 1, m: 1, r: 0 };   // level of detail for the grown trees: k = share of leaf cards kept (each card grows to keep the crown's cover), m = share of bark sides
     const R = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const rr = (a, b) => a + (b - a) * R(), V = THREE.Vector3, lerpN = (a, b, t) => a + (b - a) * t;
     const hexL = h => { const c = new THREE.Color(h); c.convertSRGBToLinear(); return [c.r, c.g, c.b]; };
     const randUnit = () => { const z = rr(-1, 1), a = R() * TAU, s = Math.sqrt(1 - z * z); return new V(Math.cos(a) * s, z, Math.sin(a) * s); };
     /* ---------- canvas textures (grey leaves: the vertex colour carries the species' hue) ---------- */
     const ctex = (w, h, draw, rep) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); draw(g, w, h);
+      if (!rep) return bleedTex(c);   // leaf cut-outs: see bleedTex
       const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
     const leafShape = (g, x, y, a, s, w, l, vein) => { g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = `hsl(0,0%,${l}%)`; g.beginPath(); g.moveTo(0, -s);
       g.bezierCurveTo(s * w, -s * .45, s * w * .8, s * .5, 0, s); g.bezierCurveTo(-s * w * .8, s * .5, -s * w, -s * .45, 0, -s); g.fill();
@@ -22752,6 +22777,7 @@ function ctrlHudTick(dt) {
       constructor() { this.p = []; this.n = []; this.uv = []; this.c = []; this.f = []; this.i = []; }
       vert(x, y, z, nx, ny, nz, u, v, col, f) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.uv.push(u, v); this.c.push(col[0], col[1], col[2]); this.f.push(f); return this.p.length / 3 - 1; }
       tube(a, b, r0, r1, sides, col, v0) {
+        if (VLOD.m < 1) { sides = Math.max(3, Math.round(sides * VLOD.m)); if (Math.max(r0, r1) < VLOD.r) return; }   // lighter builds: fewer sides, and the thinnest twigs left out
         const d = new V().subVectors(b, a).normalize(), up = Math.abs(d.y) < .99 ? new V(0, 1, 0) : new V(1, 0, 0);
         const u1 = new V().crossVectors(d, up).normalize(), u2 = new V().crossVectors(d, u1).normalize(), base = this.p.length / 3, L = a.distanceTo(b), vv = v0 || a.y * 1.4;
         const cDark = [col[0] * .72, col[1] * .72, col[2] * .72];   // a darker crotch where the limb leaves its parent
@@ -22762,7 +22788,7 @@ function ctrlHudTick(dt) {
         }
         for (let k = 0; k < sides; k++) { const i0 = base + k * 2; this.i.push(i0, i0 + 2, i0 + 1, i0 + 1, i0 + 2, i0 + 3); }
       }
-      ball(c, r, col) { const base = this.p.length / 3, W = 6, H = 4;
+      ball(c, r, col) { if (VLOD.m < .5) return; const base = this.p.length / 3, W = 6, H = 4;
         for (let j = 0; j <= H; j++) for (let k = 0; k <= W; k++) { const th = j / H * Math.PI, ph = k / W * TAU, nx = Math.sin(th) * Math.cos(ph), ny = Math.cos(th), nz = Math.sin(th) * Math.sin(ph); this.vert(c.x + nx * r, c.y + ny * r, c.z + nz * r, nx, ny, nz, k / W, j / H, col, 0); }
         for (let j = 0; j < H; j++) for (let k = 0; k < W; k++) { const a = base + j * (W + 1) + k, b = a + W + 1; this.i.push(a, b, a + 1, a + 1, b, b + 1); } }
       quad(c, ax, ay, n, f, col, uv) {
@@ -22789,6 +22815,7 @@ function ctrlHudTick(dt) {
        with a normal bent out from the crown centre (soft crown shading) and a colour that is darker deep inside the crown
        and on its underside, brighter and warmer on the sunlit outer top */
     function leafCluster(L, tip, Rc, n, cardS, crown, crownR, pal, flat) {
+      if (VLOD.k < 1) { const n0 = n; n = Math.max(1, Math.round(n * VLOD.k)); cardS *= Math.min(2.4, Math.sqrt(n0 / n)); }
       for (let k = 0; k < n; k++) {
         const o = randUnit().multiplyScalar(Rc * .55 * Math.cbrt(R())); if (flat) o.y *= flat; const p = o.add(tip);
         const nr = randUnit(); if (nr.y < -.15) nr.y = -nr.y; if (flat) { nr.y = Math.abs(nr.y) + .8; nr.normalize(); }
@@ -22858,11 +22885,11 @@ function ctrlHudTick(dt) {
       for (let s = 1; s <= 9; s++) { const q = at(s / 9); S.tube(s > 1 ? prev.clone().lerp(q, -.04) : prev, q, s === 1 ? .34 : lerpN(.26, .2, s / 9), lerpN(.26, .2, s / 9), 7, PALM_B, (s - 1) * 1.6); prev = q; }
       S.y = H * .55; const top = prev.clone();
       for (let k = 0; k < 4; k++) S.ball(top.clone().add(new V(Math.cos(k * 1.7) * .32, -.35, Math.sin(k * 1.7) * .32)), .2, hexL('#6a5a3a'));   // coconuts
-      const nF = 13, V0 = new V();
+      const nF = VLOD.k < .1 ? 5 : VLOD.k < .3 ? 7 : VLOD.k < .6 ? 10 : 13, JS = VLOD.k < .5 ? 3 : 6, V0 = new V();
       for (let k = 0; k < nF; k++) {
         const an = k / nF * TAU + rr(-.2, .2), dir = new V(Math.cos(an), 0, Math.sin(an)), side = new V(-dir.z, 0, dir.x), up0 = rr(.25, .75), Lf = rr(3.6, 4.6), col = PAL.palm[(R() * 4) | 0], f = R();
         for (const sgn of [-1, 1]) { const pts = [];
-          for (let j = 0; j <= 6; j++) { const t = j / 6, droop = t * t * rr(1.6, 2.1), p = top.clone().addScaledVector(dir, Lf * t).add(new V(0, Lf * (up0 * t - droop * .5), 0));
+          for (let j = 0; j <= JS; j++) { const t = j / JS, droop = t * t * rr(1.6, 2.1), p = top.clone().addScaledVector(dir, Lf * t).add(new V(0, Lf * (up0 * t - droop * .5), 0));
             const w = Lf * .3 * Math.sin(Math.min(1, t * 1.15 + .08) * Math.PI) * (t < .05 ? .3 : 1);
             const sd2 = side.clone().multiplyScalar(sgn).add(new V(0, -.42, 0)).normalize();   // the two halves are set in a shallow V
             pts.push({ p, side: sd2, w, v: t, nn: new V(0, 1, 0).addScaledVector(sd2, .35).normalize() }); }
@@ -22929,11 +22956,18 @@ function ctrlHudTick(dt) {
       broad: [401, 402, 403].map(s => mkT(genBroad(s, 1.75), 'bark', 'broad', 900)),
       bush: [501, 502, 503].map(s => mkT(genBush(s, .44), 'bark', 'bush', 1200))
     };
+    /* lighter builds of the SAME trees (same seeds, same shapes) for the OpenWorld region's distant forest: geometry only */
+    const mkG = (T, bark, leaf) => ({ lo: T.lo ? { geometry: T.lo, material: M[bark] } : null, hi: T.hi ? { geometry: T.hi, material: M[bark] } : null, leaf: T.leaf ? { geometry: T.leaf, material: M[leaf] } : null, top: T.top, split: T.split, palm: T.palm });
+    const LODS = [[.36, .6, .05], [.16, .45, .1], [.08, .3, .17]];
+    const SPL = [SP].concat(LODS.map(([k, m, r]) => { VLOD.k = k; VLOD.m = m; VLOD.r = r; try { return {
+      palm: [101, 102, 103].map(s => mkG(genPalm(s, 3.0), 'palmBark', 'palm')), yang: [201, 202].map(s => mkG(genYang(s, 2.85), 'bark', 'broad')),
+      rain: [301, 302].map(s => mkG(genRain(s, 1.45), 'bark', 'fine')), broad: [401, 402, 403].map(s => mkG(genBroad(s, 1.75), 'bark', 'broad')), bush: [501, 502, 503].map(s => mkG(genBush(s, .44), 'bark', 'bush')) }; } finally { VLOD.k = 1; VLOD.m = 1; VLOD.r = 0; } }));
     const tris = g => g ? g.index.count / 3 : 0; const stats = {}; for (const k in SP) stats[k] = SP[k].map(t => (t.lo ? tris(t.lo.geometry) : 0) + (t.hi ? tris(t.hi.geometry) : 0) + (t.leaf ? tris(t.leaf.geometry) : 0));
     const LC = { r: 0, g: 0, b: .5 };
     /* draw one plant: q = the prop, (x,y,z) root, lean (world, see BEND), rotation (rx/rz tilt about the root, ry yaw),
        parts: 1 = low trunk, 2 = high crown (+ leaves); off* move the crown part on its own (a snapped tree) */
     function draw(q, x, y, z, lx, lz, rx, ry, rz, sc, parts, crx, cdx, cdy, cdz) {
+      if (G.owTreeK) sc *= G.owTreeK;   // the OpenWorld region is a miniature: its trees and bushes stand at a sixth of their size
       const sp = q.s === 'bush' ? 'bush' : (() => { const v = hash2(q.id, 13); return v < .36 ? 'palm' : v < .5 ? 'yang' : v < .62 ? 'rain' : 'broad'; })();
       const L = SP[sp], T = L[(hash2(q.id, 7) * L.length) | 0];
       LC.r = lx; LC.g = lz; LC.b = hash2(q.id, 29);
@@ -22942,8 +22976,119 @@ function ctrlHudTick(dt) {
       if (parts & 2) { const X = x + (cdx || 0), Y = y + (cdy || 0), Z = z + (cdz || 0), RX = rx + (crx || 0); if (T.hi) put(T.hi, X, Y, Z, RX, ry, rz, sc, sc, sc, LC); if (T.leaf) put(T.leaf, X, Y, Z, RX, ry, rz, sc, sc, sc, LC); }
       return T;
     }
-    return { draw, pools: all, SP, stats, species: q => q.s === 'bush' ? 'bush' : (v => v < .36 ? 'palm' : v < .5 ? 'yang' : v < .62 ? 'rain' : 'broad')(hash2(q.id, 13)) };
+    return { draw, pools: all, SP, SPL, stats, species: q => q.s === 'bush' ? 'bush' : (v => v < .36 ? 'palm' : v < .5 ? 'yang' : v < .62 ? 'rain' : 'broad')(hash2(q.id, 13)) };
   })();
+  /* ======================= LEAVES KEEP THEIR BODY AT A DISTANCE =======================
+     Alpha-tested leaf textures used to thin out and turn see-through as trees got further away: the smaller mip levels
+     average each leaf's alpha with the gaps around it, so more and more of the crown fell under the alpha cut-off. Every
+     alpha-cut foliage material now scales its alpha back up by the mip level it is sampling (coverage-preserving alpha), so
+     a crown is as solid far away as it is up close — in every mode, for the grown trees, bushes, palm fronds and leaf cards
+     and for their shadows. */
+  function mipAlphaKeep(m, tex) {
+    const prev = m.onBeforeCompile, key0 = m.customProgramCacheKey;
+    m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', '#include <alphamap_fragment>\n#if __VERSION__ >= 300 && defined( USE_UV )\n' +
+        '{ vec2 mts = vec2(textureSize(' + tex + ', 0)); vec2 mgx = dFdx(vUv * mts), mgy = dFdy(vUv * mts); float mlv = max(0.0, 0.5 * log2(max(dot(mgx, mgx), dot(mgy, mgy))));' +
+        ' diffuseColor.a *= 1.0 + mlv * 0.32; }\n#endif'); };
+    m.customProgramCacheKey = () => (key0 ? key0.call(m) : '') + '|mipA' + tex; m.needsUpdate = true; return m;
+  }
+  for (const im of VEG.pools) { if (im.material && im.material.alphaTest > 0 && !im.material._mipA) { im.material._mipA = 1; mipAlphaKeep(im.material, 'map'); }
+    if (im.customDepthMaterial && im.customDepthMaterial.alphaTest > 0 && !im.customDepthMaterial._mipA) { im.customDepthMaterial._mipA = 1; mipAlphaKeep(im.customDepthMaterial, 'map'); } }
+  for (const im of [P.leafCard, P.frond]) if (im) { const tx = im.material.alphaMap ? 'alphaMap' : 'map'; if (!im.material._mipA) { im.material._mipA = 1; mipAlphaKeep(im.material, tx); }
+    const dm = im.customDepthMaterial; if (dm && !dm._mipA) { dm._mipA = 1; mipAlphaKeep(dm, dm.alphaMap ? 'alphaMap' : 'map'); } }
+  for (const k in P) { const im = P[k]; if (im && im.material && im.material.alphaTest > 0 && !im.material._mipA && (im.material.map || im.material.alphaMap)) { im.material._mipA = 1; mipAlphaKeep(im.material, im.material.alphaMap ? 'alphaMap' : 'map'); } }
+
+  /* ======================= THE REGION'S FOREST: COMBINED, WIND-BLOWN BATCHES OF THE REAL TREES =======================
+     The region draws the same grown trees as a normal map (coconut palms, yang, rain trees, broadleaves and bushes, with
+     their bark and leaf textures), planted ten times denser than the old region woods. Each map block (32 × 32 tiles) plants
+     its trees once, and the visible blocks are combined into one static batch per tree model: nothing is touched per tree per
+     frame, and the wind moves on the GPU (each crown leans downwind on the same travelling gust fronts as the normal game, every
+     limb rocks on its own phase, the leaves flutter). Blocks near the middle of the view use the full or a lightly thinned
+     build of each tree; further out, lighter builds of the SAME trees (fewer, larger leaf cards) keep the frame smooth. */
+  const OWF = (() => {
+    const U = { uGO: { value: new THREE.Vector2() }, uWind: { value: new THREE.Vector3(1, 0, 0) } };
+    const hsh = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+    const GUST = 'uniform vec2 uGO; uniform vec3 uWind;\nfloat owGust(vec2 q){ float t = uLeafT; float g = .55 + .225 * sin(q.x * .17 + q.y * .08 + sin(q.y * .12 - q.x * .05 + t * .15) * 1.5) + .225 * sin(q.y * .16 - q.x * .09 + sin(q.x * .11 + q.y * .04 - t * .12) * 1.5);' +
+      ' g *= .75 + .25 * sin(q.x * .41 - q.y * .33 + t * .35); g += .12 * sin(q.x * .63 + q.y * .47 - t * .5) * sin(q.y * .39 - q.x * .2 + t * .3); return max(g, 0.0); }';
+    const MATS = new Map();
+    const regionMat = src => { let m = MATS.get(src.uuid); if (m) return m;
+      m = new THREE.MeshStandardMaterial({ map: src.map, alphaMap: src.alphaMap, color: 0xffffff, vertexColors: src.vertexColors, roughness: src.roughness, metalness: src.metalness, envMapIntensity: src.envMapIntensity, side: src.side, alphaTest: src.alphaTest });
+      m.alphaToCoverage = src.alphaToCoverage;
+      m.onBeforeCompile = (sh, r) => { src.onBeforeCompile.call(src, sh, r); Object.assign(sh.uniforms, U);
+        sh.vertexShader = sh.vertexShader.replace('attribute float aF;', 'attribute float aF;\n' + GUST)
+          .replace('lean = instanceColor.xy;', 'lean = uWind.xy * uWind.z * (.07 + ((owGust(tp - uGO) - .62) * 1.35 + sin(uLeafT * 2.9 + instanceColor.y * 60.0) * .18) * .05);'); };
+      const k0 = src.customProgramCacheKey; m.customProgramCacheKey = () => 'owreg|' + (k0 ? k0.call(src) : src.uuid); MATS.set(src.uuid, m); return m; };
+    const SPS = ['broad', 'yang', 'rain', 'palm', 'bush'], KEYS = []; for (const sp of SPS) VEG.SP[sp].forEach((T, v) => KEYS.push([sp, v]));
+    const root = new THREE.Group(); root.name = 'owForest'; scene3.add(root);
+    const BAT = {};
+    const partsOf = (sp, v, lod) => { const T = VEG.SPL[lod][sp][v]; return [T.lo, T.hi, T.leaf].filter(Boolean); };
+    const ensure = (key, sp, v, lod, n) => { let b = BAT[key]; if (b && b.cap >= n) return b;
+      if (b) for (const im of b.parts) root.remove(im);
+      const cap = Math.max(256, Math.ceil(n * 1.4)), ma = new THREE.InstancedBufferAttribute(new Float32Array(cap * 16), 16), ca = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+      ma.setUsage(THREE.DynamicDrawUsage); ca.setUsage(THREE.DynamicDrawUsage);
+      const parts = []; for (const part of partsOf(sp, v, lod)) { const im = new THREE.InstancedMesh(part.geometry, regionMat(part.material), cap);
+        im.instanceMatrix = ma; im.instanceColor = ca; im.count = 0; im.frustumCulled = false; im.matrixAutoUpdate = false; im.castShadow = false; im.receiveShadow = true; root.add(im); parts.push(im); }
+      b = BAT[key] = { parts, ma, ca, cap }; return b; };
+    /* the region's woods follow its geography: teak / dipterocarp hills in the north and west (no palms), dry dipterocarp and
+       rain trees on the Isan plateau, palms and rain trees on the central plain, coconut palms along the east and the south */
+    function spOf(reg, h) {
+      if (reg === 0 || reg === 4) return h < .42 ? 'broad' : h < .78 ? 'yang' : 'rain';
+      if (reg === 1) return h < .1 ? 'palm' : h < .5 ? 'rain' : h < .85 ? 'broad' : 'yang';
+      if (reg === 2) return h < .3 ? 'palm' : h < .58 ? 'rain' : h < .88 ? 'broad' : 'yang';
+      return h < .45 ? 'palm' : h < .62 ? 'yang' : h < .76 ? 'rain' : 'broad'; }
+    // trees per tile by ground (seven times the old region woods); fields stay open meadow
+    const DENS = []; DENS[T_FOREST] = 2.1; DENS[T_SWAMP] = .91; DENS[T_GRASS] = .49; DENS[T_DIRT] = .14; DENS[T_RUBBLE] = .1;   // (30% fewer than the first ten-fold planting)
+    const BLK = 16, blocks = new Map(); let sig = '', visSig = '';
+    function bake(bx, by) {
+      const out = {}; for (const [sp, v] of KEYS) out[sp + v] = [];
+      const kk = G.owTreeK || 1, clr = (G._owClr || []).filter(c => c[0] + c[2] > bx * BLK * TS && c[0] - c[2] < (bx + 1) * BLK * TS && c[1] + c[2] > by * BLK * TS && c[1] - c[2] < (by + 1) * BLK * TS);
+      const hasReg = typeof owRegOfTile === 'function' && OW.geo;
+      for (let ty = by * BLK; ty < Math.min(MH, (by + 1) * BLK); ty++) for (let tx = bx * BLK; tx < Math.min(MW, (bx + 1) * BLK); tx++) {
+        const ti = ty * MW + tx, t = MAP.t[ti], dn = DENS[t]; if (!dn || (MAP.f && MAP.f[ti])) continue;
+        const n = Math.floor(dn) + (hash2(tx * 3 + 1, ty * 5 + 2) < dn % 1 ? 1 : 0); if (!n) continue;
+        const reg = hasReg ? owRegOfTile(tx, ty) : 2;
+        for (let k = 0; k < n; k++) {
+          const id = ti * 8 + k, x = (tx + hash2(id, 3)) * TS, y = (ty + hash2(id, 5)) * TS;
+          if (clr.length && clr.some(c => (x - c[0]) ** 2 + (y - c[1]) ** 2 < c[2] * c[2])) continue;
+          const bush = t === T_DIRT || t === T_RUBBLE ? hash2(id, 9) < .7 : hash2(id, 9) < (t === T_FOREST ? .14 : .3);
+          const sp = bush ? 'bush' : spOf(reg, hash2(id, 13)), v = (hash2(id, 7) * VEG.SP[sp].length) | 0;
+          const s = (bush ? (.8 + hash2(id, 11) * .4) * 2 : 1.5 + hash2(id, 11) * 1.2) * kk, a = hash2(id, 17) * TAU, co = Math.cos(a), si = Math.sin(a), gy = groundY(x, y);
+          out[sp + v].push(co * s, 0, -si * s, 0, 0, s, 0, 0, si * s, 0, co * s, 0, x * K, gy, y * K, 1, 0, hash2(id, 31), hash2(id, 29));
+        }
+      }
+      const r = {}; for (const k in out) r[k] = new Float32Array(out[k]); return r;
+    }
+    const ST = 19;
+    function update(vx0, vy0, vx1, vy1, wdx, wdz, wm, gox, goz) {
+      U.uWind.value.set(wdx, wdz, wm); U.uGO.value.set(gox, goz);
+      const on = !!G.owRegion; root.visible = on;
+      if (!on) { if (blocks.size) { blocks.clear(); visSig = ''; for (const k in BAT) for (const im of BAT[k].parts) im.count = 0; } return; }
+      const S2 = (typeof WSEED !== 'undefined' ? WSEED : 0) + ':' + MW + ':' + MH + ':' + (G._owClrV | 0);
+      if (S2 !== sig) { sig = S2; blocks.clear(); visSig = ''; }
+      const BP = BLK * TS, m = 40, vwT = CAM.vw / TS, cx = (CAM.x + CAM.vw / 2) / BP, cy = (CAM.y + CAM.vh / 2) / BP;
+      const x0 = Math.max(0, Math.floor((vx0 - m) / BP)), x1 = Math.min(Math.ceil(MW / BLK) - 1, Math.floor((vx1 + m) / BP)), y0 = Math.max(0, Math.floor((vy0 - m) / BP)), y1 = Math.min(Math.ceil(MH / BLK) - 1, Math.floor((vy1 + m) / BP));
+      // the build each block uses, by its distance from the middle of the view (in view widths)
+      const base = vwT < 14 ? 0 : vwT < 30 ? 1 : 2, lodOf = (bx, by) => { const d = Math.hypot(bx + .5 - cx, by + .5 - cy) * BLK / Math.max(8, vwT); return d < .75 ? base : d < 1.6 ? Math.min(3, Math.max(2, base + 1)) : 3; };   // zoomed out, every tree is a few pixels: lighter builds all round
+      let vs = x0 + ',' + x1 + ',' + y0 + ',' + y1 + ':'; for (let by = y0; by <= y1; by++) for (let bx = x0; bx <= x1; bx++) vs += lodOf(bx, by);
+      if (vs === visSig) return;
+      const need = []; for (let by = y0; by <= y1; by++) for (let bx = x0; bx <= x1; bx++) if (!blocks.has(by * 4096 + bx)) need.push([bx, by]);
+      need.sort((a, b) => Math.hypot(a[0] + .5 - cx, a[1] + .5 - cy) - Math.hypot(b[0] + .5 - cx, b[1] + .5 - cy));
+      const t0 = performance.now(); let made = 0;
+      for (const [bx, by] of need) { if (made && performance.now() - t0 > 10) break; blocks.set(by * 4096 + bx, bake(bx, by)); made++; }
+      const vis = [[], [], [], []]; for (let by = y0; by <= y1; by++) for (let bx = x0; bx <= x1; bx++) { const b = blocks.get(by * 4096 + bx); if (b) vis[lodOf(bx, by)].push(b); }
+      for (let lod = 0; lod < 4; lod++) for (const [sp, v] of KEYS) { const key = sp + v + '@' + lod, src0 = sp + v; let n = 0;
+        for (const b of vis[lod]) n += b[src0].length / ST;
+        if (!n) { const B0 = BAT[key]; if (B0) for (const im of B0.parts) { im.count = 0; im.visible = false; } continue; }
+        const B = ensure(key, sp, v, lod, n), A = B.ma.array, C = B.ca.array; let k = 0;
+        for (const b of vis[lod]) { const src = b[src0], cnt = src.length / ST; for (let j = 0; j < cnt; j++) { const o = j * ST; A.set(src.subarray(o, o + 16), (k + j) * 16); C[(k + j) * 3] = 0; C[(k + j) * 3 + 1] = src[o + 17]; C[(k + j) * 3 + 2] = src[o + 18]; } k += cnt; }
+        B.ma.needsUpdate = true; B.ca.needsUpdate = true; for (const im of B.parts) { im.count = n; im.visible = true; } }
+      if (blocks.size > 2400) { let drop = blocks.size - 2400; for (const key of blocks.keys()) { if (drop <= 0) break; const bx = key % 4096, by = (key / 4096) | 0; if (bx >= x0 && bx <= x1 && by >= y0 && by <= y1) continue; blocks.delete(key); drop--; } }
+      if (made === need.length) visSig = vs;
+    }
+    const stats = () => { let n = 0, t = 0; for (const k in BAT) for (const im of BAT[k].parts) if (im.visible) { t += im.count * im.geometry.index.count / 3; if (im === BAT[k].parts[0]) n += im.count; } return { trees: n, tris: t }; };
+    return { update, root, BAT, blocks, stats };
+  })();
+  window._owf = OWF;
   const PER_FRAME = [P.box, P.cam, P.cloth, P.head, P.helm, P.cyl, P.metal, P.gore, P.ring, P.tracer, P.sel, P.shadow, P.scorch, P.canopy, P.cone, P.crown, P.bush, P.beam, P.grass, P.flower, P.pebble, P.reed, P.leafLit, P.branch, P.frond, P.trunk, P.leafCard, P.camCap, P.clothCap, P.capW, P.blade, P.holo, P.holoArc, P.holoDot].concat(P.splat);   // trunks are per-frame now: they BEND with the wind so the crowns stay on them
   PER_FRAME.push(...VEG.pools, P.limbCam, P.limbCloth, P.leaf3, P.zfl, P.zhead, P.zflCap, P.zflLimb); window._veg = VEG;   // the grown trees / bushes are per-frame instanced pools like the rest
   /* ======================= LIGHT FX (redesign) =======================
@@ -28130,6 +28275,7 @@ function ctrlHudTick(dt) {
         if (a < 0 || b < 0 || a * CH >= WW || b * CH >= WH) continue;
         const ps = chunkProps(a, b);
         for (let i = 0; i < ps.length; i++) { const q = ps[i]; if (G.deadProps.has(q.id) || underBuild(q.x, q.y)) continue; const x = q.x * K, z = q.y * K, y = groundY(q.x, q.y), sc = q.sc;
+          if (G.owRegion && (q.s === 'tree' || q.s === 'bush')) continue;   // the region's forest is one baked, wind-blown batch (OWF)
           if (q.s === 'tree') {
             // Thai forest species (by the prop's hash): coconut palm / tall yang / spreading rain tree / rounded broadleaf
             const sp = hash2(q.id, 13), palm = sp < .36, yang = sp >= .36 && sp < .5, con = false, birch = false, dead = false;
@@ -28137,7 +28283,7 @@ function ctrlHudTick(dt) {
             // (root flares are drawn every frame with the crowns — P.branch is a per-frame pool, so drawing them here made them flicker)
             foliage.push(q); }
           else if (q.s === 'bush') foliage.push(q);
-          else if (q.s === 'rock') { const rv = hash2(q.id, 17), rp = rv < .4 ? P.rock : rv < .7 ? P.rockB : P.rockC; put(rp, x, y + .06 * sc, z, 0, q.a * 3.1, 0, sc * .3, sc * .3, sc * .27); }   // three boulder shapes, upright on their flat base
+          else if (q.s === 'rock') { const rv = hash2(q.id, 17), rp = rv < .4 ? P.rock : rv < .7 ? P.rockB : P.rockC; const rk = G.owTreeK ? .38 : 1; put(rp, x, y + .06 * sc * rk, z, 0, q.a * 3.1, 0, sc * .3 * rk, sc * .3 * rk, sc * .27 * rk); }   // region: boulders shrink with the miniature trees   // three boulder shapes, upright on their flat base
           else if (q.s === 'barrel') put(P.barrel, x, y + .21, z, 0, 0, 0, 1, 1, 1);
           else if (q.s === 'wreck') put(P.wreck, x, y + .2, z, 0, -q.a, 0, sc, sc, sc); }
       }
@@ -28151,6 +28297,7 @@ function ctrlHudTick(dt) {
       /* JS twin of the shader's gustAtW(): the same travelling gust fronts bend the trees, shake the leaves loose and carry the fluff */
       { const adv = (3.2 + 2.6 * Math.min(2.2, wm)) * fdt; G._gox = (G._gox || 0) + wdx * adv; G._goz = (G._goz || 0) + wdz * adv; if (Math.abs(G._gox) > 4000 || Math.abs(G._goz) > 4000) { G._gox %= 1000; G._goz %= 1000; } }   // the air carries the gust pattern downwind
       const gox = G._gox || 0, goz = G._goz || 0;
+      OWF.update(vx0, vy0, vx1, vy1, wdx, wdz, wm, gox, goz);
       const gustJ = (x, z) => { const qx = x - gox, qz = z - goz; let g = .55 + .225 * Math.sin(qx * .17 + qz * .08 + Math.sin(qz * .12 - qx * .05 + tt * .15) * 1.5) + .225 * Math.sin(qz * .16 - qx * .09 + Math.sin(qx * .11 + qz * .04 - tt * .12) * 1.5);
         g *= .75 + .25 * Math.sin(qx * .41 - qz * .33 + tt * .35); g += .12 * Math.sin(qx * .63 + qz * .47 - tt * .5) * Math.sin(qz * .39 - qx * .2 + tt * .3); return g > 0 ? g : 0; };
       /* ---- who is pushing through the vegetation this frame ---- */
@@ -28276,9 +28423,13 @@ function ctrlHudTick(dt) {
       // (same extent the terrain/entity cull uses), so the grass carpet must reach that far or the top strip renders bare.
       const gmx = CAM.vw * .16, gvx0 = cxw - HW - gmx + fdx - fm * ars, gvx1 = cxw + HW + gmx + fdx + fm * ars;
       const gvy0 = cyw - HH - Math.max(150, CAM.vh * .3) + fdy - fm * arc, gvy1 = cyw + HH + CAM.vh * .16 + fdy + fm * arc;
-      const gtx0 = Math.max(0, (gvx0 / TS) | 0), gtx1 = Math.min(MW - 1, (gvx1 / TS) | 0), gty0 = Math.max(0, (gvy0 / TS) | 0), gty1 = Math.min(MH - 1, (gvy1 / TS) | 0);
+      let gtx0 = Math.max(0, (gvx0 / TS) | 0), gtx1 = Math.min(MW - 1, (gvx1 / TS) | 0), gty0 = Math.max(0, (gvy0 / TS) | 0), gty1 = Math.min(MH - 1, (gvy1 / TS) | 0);
+      if (G.owRegion) {   // the region: miniature tufts (at the trees' scale) under the trees and across the meadows and silvergrass fields, in a window round the middle of the view, when zoomed in enough to see them
+        const vT = CAM.vw / TS, ctx = ((CAM.x + CAM.vw / 2) / TS) | 0, cty = ((CAM.y + CAM.vh / 2) / TS) | 0, hr = Math.min(56, Math.max(20, vT * 1.4));
+        if (vT > 48) gtx1 = -1; else { gtx0 = Math.max(gtx0, ctx - hr); gtx1 = Math.min(gtx1, ctx + hr); gty0 = Math.max(gty0, cty - hr * 1.5); gty1 = Math.min(gty1, cty + hr); }
+      }
       const dense = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1) < 3600;   // zoomed in: 6 blades a tile for a full carpet; zoomed out: 2 (stay under the pool cap)
-      const gArea = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1), per = gArea < 1500 ? QUAL.gd : gArea < 3600 ? Math.max(QUAL.gs, Math.round(QUAL.gd * .65)) : gArea < 7000 ? QUAL.gs : Math.max(2, QUAL.gs - 2);   // grass LOD: four densities by how much ground is in view
+      const gArea = (gtx1 - gtx0 + 1) * (gty1 - gty0 + 1), per = G.owRegion || gArea < 1500 ? QUAL.gd : gArea < 3600 ? Math.max(QUAL.gs, Math.round(QUAL.gd * .65)) : gArea < 7000 ? QUAL.gs : Math.max(2, QUAL.gs - 2);   // grass LOD: four densities by how much ground is in view
       const clutter = dense && QUAL.gd >= 5;                                                   // clutter only up close and above 'mobile'
       const useGpuGrass = GPU_GRASS_OK && G.gpuGrass !== false;
       // the live rotor downwash sources (low / landing / landed helicopters, mine and allies' alike): the tufts under the rotor are
@@ -28290,8 +28441,10 @@ function ctrlHudTick(dt) {
       }
       for (let ui = 0; ui < G.units.length && DOWN_N < 8; ui++) { const u = G.units[ui]; if (u.dead || !u.def.fly || !u.def.rotor) continue; const fade = u._washK || 0; if (fade <= .01) continue; const D = DOWN_SRC[DOWN_N++]; D.x = u.x; D.y = u.y; D.r = u.r * 10.2 * (.45 + .55 * fade); D.s = 1.3 * fade; }   // ring 300% wider than the rotor; strength and radius follow the sim's time-eased downwash value (the same one the dust ring and ally ghosts use) so the press swells in and releases smoothly — on any ground, so a helicopter over a grass/dirt edge never pops
       if (useGpuGrass) {                                                                       // static chunks + shader wind/trample (see GPU GRASS above)
-        if (!G.grassTex || G.grassTex.ww !== WW || G.grassTex.wh !== WH) allocGrassTex();
-        uploadGrassTex();
+        if (G.owRegion) { if (!G.grassTex || !G.grassTex.ow) { if (G.grassTex && G.grassTex.tex) G.grassTex.tex.dispose(); const tx1 = new THREE.DataTexture(new Float32Array(1), 1, 1, THREE.RedFormat, THREE.FloatType); tx1.magFilter = tx1.minFilter = THREE.NearestFilter; tx1.generateMipmaps = false; tx1.needsUpdate = true;
+            G.grassTex = { ow: 1, w: 0, h: 0, d: new Float32Array(1), tex: tx1, dirty: null, ww: WW, wh: WH, clear() {} }; GU.uTr.value = tx1; GU.uTrInv.value.set(1, 1); } }   // the region: no trample map (it would be huge), the tufts just stand in the wind
+        else { if (!G.grassTex || G.grassTex.ow || G.grassTex.ww !== WW || G.grassTex.wh !== WH) allocGrassTex();
+        uploadGrassTex(); }
         GU.uTime.value = tt; GU.uWind.value.set(wdx, wdz, wm); GU.uGO.value.set(gox, goz);
         for (let i = 0; i < DOWN_N; i++) { const D = DOWN_SRC[i]; GU.uDown.value[i].set(D.x * K, D.y * K, D.r * K, D.s); }   // feed the shader the downwash sources so the tufts flow outward from under the rotor
         GU.uDownN.value = DOWN_N;
@@ -30070,7 +30223,7 @@ const DIFFS = {
 function newGame(opts) {
   opts = opts || {};
   G.noDropFx = false;   // default: real construction drops in cinematically (only the menu showcase suppresses it)
-  G.owBattle = !!opts.owBattle; G.owRegion = false;   // OpenWorld battle map: terrain only — no Command Post, no scattered dead, no dawn waves
+  G.owBattle = !!opts.owBattle; G.owRegion = false; G.owTreeK = 0;   // OpenWorld battle map: terrain only — no Command Post, no scattered dead, no dawn waves
   if (opts.size) setMapSize(opts.size.w, opts.size.h);
   if (opts.seed != null) WSEED = opts.seed;
   G.diff = DIFFS[opts.diff] || DIFFS.normal; G.diffName = opts.diff || 'normal';
@@ -32153,19 +32306,16 @@ function attachFirebaseIfPresent() {
 #owbat{position:fixed;left:50%;top:58px;transform:translateX(-50%);z-index:8;display:none;align-items:center;gap:10px;background:rgba(10,15,19,.88);border-radius:12px;padding:7px 10px 7px 14px;box-shadow:inset 0 0 0 1px rgba(255,120,100,.35);font:700 12px ui-monospace,Consolas,monospace;color:#eaf2f6}
 #owbat.on{display:flex}
 #owbat .v{color:#8fd8ff}#owbat .z{color:#ff8a7a}#owbat .q{color:#9fb0ba}
-html.owbattle #wavebox,html.owsettle #play2,html.owbattle #play2{display:none!important}
+html.owbattle #buildShortcut,html.owbattle #placebar,html.owbattle #placetips,html.owbattle #wavebox,html.owsettle #play2,html.owbattle #play2{display:none!important}
 
 html:not(.owsettle) #owOverBtn{display:none}
 
 .owbadge.site{color:#e6e6e6;font-weight:700;opacity:.85}
-#owminiw{position:absolute;left:12px;bottom:12px;pointer-events:auto;padding:8px}
-#owminiw canvas{display:block;width:200px;height:200px;border-radius:6px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
-#owminiw .owttl{margin-bottom:6px}
 .owspd{display:flex;gap:2px;pointer-events:auto;background:rgba(18,26,32,.92);border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:2px}
 .owspd button{background:transparent;border:0;color:#cfe0e8;padding:6px 8px;font:800 11px ui-monospace,Consolas,monospace;cursor:pointer;border-radius:6px}
 .owspd button.on{background:#1e6a45;color:#fff}
 #owhint{pointer-events:none}
-html.owregion #hud>*:not(#fps){display:none!important}
+html.owregion #hud>*:not(#fps){display:none!important}#owminiw{position:absolute;left:12px;bottom:12px;pointer-events:auto;padding:8px 9px;max-height:calc(100vh - 250px);overflow:visible}.owmhd{display:flex;align-items:center;gap:5px;margin-bottom:6px}.owmhd .owttl{margin:0 auto 0 0}.owfbtn{background:#18232a;color:#dcecf4;border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:4px 7px;font:800 10px ui-monospace,Consolas,monospace;letter-spacing:.06em;cursor:pointer}.owfbtn:hover{border-color:#7dffb2}.owfbtn.go{background:#1e6a45;border-color:#7dffb2;color:#fff}.owflist{position:absolute;left:calc(100% + 8px);bottom:0;width:230px;background:rgba(10,15,19,.96);border-radius:10px;padding:8px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 10px 26px rgba(0,0,0,.45);font:600 11.5px/1.2 ui-monospace,Consolas,monospace;color:#dfeaf0}.owflist label{display:flex;align-items:center;gap:7px;padding:4px 3px;cursor:pointer;border-radius:5px}.owflist label:hover{background:rgba(255,255,255,.06)}.owflist label i{width:10px;height:10px;border-radius:2px;display:inline-block}.owflist label b{margin-left:auto;color:#9fb0ba;font-weight:700}.owfrow{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}.owmgrid{display:grid;grid-template-columns:15px 130px;grid-template-rows:15px auto;gap:2px}#owrx{width:130px;height:15px;display:block}#owry{width:15px;display:block}#owmini{width:130px;display:block;border-radius:4px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}.owcoord{margin-top:5px;font:700 10.5px ui-monospace,Consolas,monospace;color:#ffd76a;letter-spacing:.04em}
 html.owregion #fps{left:50%!important;top:10px!important;transform:translateX(-50%)}
 </style>
 <script>
@@ -32183,21 +32333,21 @@ const OW_V = 1;
 const OW = { view: null, st: null, R: null, busy: false };
 const OW_RW = 160, OW_RH = 160, OW_SEA = .34;
 const OW_BIOME = { WATER: 0, BEACH: 1, GRASS: 2, FOREST: 3, ROCK: 4, DESERT: 5, SWAMP: 6, SNOW: 7 };
-const OW_BNAME = ['Water', 'Beach', 'Grassland', 'Forest', 'Hills', 'Desert', 'Swamp', 'Peaks'];
+const OW_BNAME = ['Water', 'Beach', 'Grassland', 'Forest', 'Mountains', 'Desert', 'Swamp', 'Peaks'];
 const OW_BSPD = [0, .9, 1, .7, .6, .9, .5, .45];                   // march speed factor per biome (water impassable)
 const OW_START_ARMY = [['gunner', 10], ['engineer', 4], ['medic', 3], ['marksman', 2], ['riot', 2], ['humvee', 2]];
 const OW_CARRY = { humvee: 3, stryker: 5, abrams: 8, spg: 6 };     // carry weight toward the 1,000-unit cap (air = 6)
 const OW_CAP = 1000, OW_FIELD = 200;
 const OW_SPEED = 1.0;                                                // cells per second at speed 1.0
 const OW_SIGHT = 9;
-const OW_PACKS = 32;                                                 // roaming packs kept alive on the (larger) region
-const OW_SITE_SC = 2.2, OW_SET_SC = 1.5;                             // region models stand larger than life so they read on the wide strategic view
+const OW_PACKS = 64;                                                 // roaming packs kept alive on the (larger) region
+const OW_SITE_SC = .44, OW_SET_SC = .175;                            // region models stand larger than life so they read on the wide strategic view
 const OW_PROD = { oil: ['oil', 30], scrap: ['scr', 25], supply: ['sup', 45], ore: ['ore', 20], uranium: ['ura', 6] };   // what a held site makes per minute (kept at the site until collected)
 const OW_CAPR = 7;                                                   // capture-zone radius on a battle map (tiles)                                                  // a zombie pack's sight radius (cells)
 const OW_SITES = [                                                   // type, count, label, preferred biomes
-  ['town', 12, 'Settlement', [2, 3]], ['oil', 12, 'Oil Field', [5, 2, 1]], ['scrap', 9, 'Scrap Factory', [2, 4]], ['supply', 9, 'Supply Factory', [2]],
-  ['ore', 9, 'Ore Mine', [4]], ['uranium', 5, 'Uranium Mine', [4, 7]], ['power', 6, 'Power Plant', [2, 4]], ['nuclear', 2, 'Nuclear Power Plant', [2, 1]],
-  ['station', 8, 'Train Station', [2]], ['enrich', 2, 'Uranium Enrichment', [4, 2]], ['silo', 2, 'ICBM Launch Silo', [5, 4]]
+  ['town', 24, 'Town', [2, 3]], ['oil', 22, 'Oil Field', [5, 2, 1]], ['scrap', 18, 'Scrap Factory', [2, 4]], ['supply', 18, 'Supply Factory', [2]],
+  ['ore', 18, 'Ore Mine', [4]], ['uranium', 9, 'Uranium Mine', [4, 7]], ['power', 12, 'Power Plant', [2, 4]], ['nuclear', 3, 'Nuclear Power Plant', [2, 1]],
+  ['station', 16, 'Train Station', [2]], ['enrich', 3, 'Uranium Enrichment', [4, 2]], ['silo', 3, 'ICBM Launch Silo', [5, 4]]
 ];
 const OW_SITE_VAL = { town: 3, oil: 2, scrap: 1.5, supply: 1.5, ore: 1.5, uranium: 3, power: 2, nuclear: 4, station: 2, enrich: 4, silo: 4 };
 const owRng = seed => { let s = (seed >>> 0) || 1; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; };
@@ -32215,7 +32365,7 @@ function owPath(R, sx, sy, tx, ty) {
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = k * 2 + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
   const tx0 = t % W, ty0 = (t / W) | 0, hEst = i => { const dx = Math.abs(i % W - tx0), dy = Math.abs(((i / W) | 0) - ty0); return (Math.max(dx, dy) + .41 * Math.min(dx, dy)) * 1.0; };
   g[s] = 0; push(s, hEst(s)); let it = 0;
-  while (heap.length && it++ < 260000) {
+  while (heap.length && it++ < 900000) {
     const [, i] = pop(); if (closed[i]) continue; closed[i] = 1; if (i === t) break;
     const x = i % W, y = (i / W) | 0;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
@@ -32241,17 +32391,20 @@ const OW_CELL = 4, OW_WORLD = 1280;                  // 1280 × 1280 tiles: four
 const owPx = c => c * OW_CELL * TS;                                         // cell coordinate → world px
 const owTileBiome = t => (t === T_DEEP || t === T_SEA) ? 0 : t === T_SAND ? 1 : t === T_FOREST ? 3 : t === T_ROCK ? 4 : t === T_SNOW ? 7 : t === T_SWAMP ? 6 : 2;
 function owBuildWorld(seed) {
-  newGame({ mode: 'defense', diff: 'normal', size: { w: OW_WORLD, h: OW_WORLD }, seed: (seed % 90000) + 7, owBattle: true });
-  G.owRegion = true; G.owBattle = true; G.started = false; G.showcase = false; G.paused = false; OW.loaded = null;
+  G.owGeo = true; try { newGame({ mode: 'defense', diff: 'normal', size: { w: OW_WW, h: OW_WH }, seed: (seed % 90000) + 7, owBattle: true }); } finally { G.owGeo = false; }
+  G.owRegion = true; G.owBattle = true; G.owTreeK = 1 / 6; G.started = false; G.showcase = false; G.paused = false; OW.loaded = null;
+  if (typeof propCache !== 'undefined') propCache.clear(); if (typeof chunks !== 'undefined') chunks.clear();   // re-plant with the region's denser woods
   if (OW.st && OW.st.day != null) { G.day = OW.st.day; G.days = OW.st.days || 0; }
 }
 function owClearSites() {                             // no trees growing through the sites and settlements
+  const C = []; if (OW.R) for (const q of OW.R.sites) C.push([owPx(q.x), owPx(q.y), 9 * OW_SITE_SC * TS]); if (OW.st) for (const q of OW.st.settles) C.push([owPx(q.x), owPx(q.y), 23 * OW_SET_SC * TS + 2 * TS]);
+  G._owClr = C; G._owClrV = (G._owClrV | 0) + 1;   // the region's baked forest keeps clear of them too
   if (typeof clearProps !== 'function') return;
   if (OW.R) for (const s of OW.R.sites) clearProps(owPx(s.x), owPx(s.y), 9 * OW_SITE_SC * TS);
-  if (OW.st) for (const s of OW.st.settles) clearProps(owPx(s.x), owPx(s.y), 12 * OW_SET_SC * TS);
+  if (OW.st) for (const s of OW.st.settles) clearProps(owPx(s.x), owPx(s.y), 23 * OW_SET_SC * TS);
 }
 function owGen(seed) {
-  const W = OW_WORLD / OW_CELL, H = W, N = W * H;
+  const W = (MW / OW_CELL) | 0, H = (MH / OW_CELL) | 0, N = W * H;
   const h = new Float32Array(N), b = new Uint8Array(N), zone = new Uint8Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const cnt = [0, 0, 0, 0, 0, 0, 0, 0]; let hs = 0;
@@ -32260,9 +32413,14 @@ function owGen(seed) {
     b[y * W + x] = bi; h[y * W + x] = hs / (OW_CELL * OW_CELL) / 255;
   }
   const Hf = (x, y) => { const tx = Math.max(0, Math.min(MW - 1, (x * OW_CELL) | 0)), ty = Math.max(0, Math.min(MH - 1, (y * OW_CELL) | 0)); return MAP.h[ty * MW + tx] / 255; };
-  const rng = owRng(seed * 7 + 3), zs = [];
-  for (let k = 0; k < 2400 && zs.length < 24; k++) { const x = 10 + rng() * (W - 20), y = 10 + rng() * (H - 20); if (b[(y | 0) * W + (x | 0)] === 0) continue; if (zs.some(z => (z.x - x) ** 2 + (z.y - y) ** 2 < 40 * 40)) continue; zs.push({ x, y, val: 0, lv: 1, id: zs.length }); }
-  for (let i = 0; i < N; i++) { const x = i % W, y = (i / W) | 0; let best = 0, bd = 1e9; for (const z of zs) { const d = (z.x - x) ** 2 + (z.y - y) ** 2; if (d < bd) { bd = d; best = z.id; } } zone[i] = best; }
+  const rng = owRng(seed * 7 + 3), geo = OW.geo;
+  // the zones are Thailand's provinces
+  const zs = OW_PROV.map(([name, lo, la, reg, big], id) => { const t = owLL2T(lo, la); return { x: t[0] / OW_CELL, y: t[1] / OW_CELL, val: 0, lv: 1, id, name, reg, big }; });
+  for (let i = 0; i < N; i++) zone[i] = geo && geo.prov && geo.CW === W ? geo.prov[i] : 0;
+  // the deserts and the mountain tops read as their own terrain on the region
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, ti = (y * OW_CELL + 2) * MW + x * OW_CELL + 2;
+    if ((b[i] === 1 || b[i] === 2) && geo && geo.arid && geo.arid[ti] > .28 && geo.d[ti] > 8) b[i] = 5;
+    else if (b[i] === 4 && h[i] > .83) b[i] = 7; }
   const sites = []; let sid = 1;
   for (const [type, n, label, pref] of OW_SITES) for (let c = 0; c < n; c++) {
     let placed = null;
@@ -32276,9 +32434,20 @@ function owGen(seed) {
     }
     if (placed) { sites.push(placed); zs[placed.zone].val += OW_SITE_VAL[type] || 1; }
   }
+  // every island with room for a fight gets its own capture site(s)
+  const ISL_T = [['supply', 'Supply Factory'], ['oil', 'Oil Field'], ['scrap', 'Scrap Factory'], ['town', 'Town'], ['ore', 'Ore Mine'], ['power', 'Power Plant']];
+  OW_ISLANDS.forEach(([name, lo, la], k) => { const t = owLL2T(lo, la), ix = t[0] / OW_CELL, iy = t[1] / OW_CELL;
+    let land = 0; for (let dy = -12; dy <= 12; dy++) for (let dx = -12; dx <= 12; dx++) { const x = (ix + dx) | 0, y = (iy + dy) | 0; if (x >= 0 && y >= 0 && x < W && y < H && b[y * W + x]) land++; }
+    const want = land > 300 ? 3 : land > 110 ? 2 : land > 18 ? 1 : 0; let have = sites.filter(s => Math.hypot(s.x - ix, s.y - iy) < 12).length;
+    for (let a = 0; a < 600 && have < want; a++) { const x = ix + (rng() - .5) * 22, y = iy + (rng() - .5) * 22, i = (y | 0) * W + (x | 0); if (x < 2 || y < 2 || x >= W - 2 || y >= H - 2 || !b[i] || b[i] === 7) continue;
+      let wet = false; for (let oy = -1; oy <= 1 && !wet; oy++) for (let ox = -1; ox <= 1; ox++) if (!b[((y | 0) + oy) * W + ((x | 0) + ox)]) { wet = true; break; } if (wet) continue;
+      if (sites.some(s => (s.x - x) ** 2 + (s.y - y) ** 2 < 5 * 5)) continue;
+      const [type, label] = ISL_T[(k + have) % ISL_T.length]; const st = { id: sid++, type, label, x, y, zone: zone[i], owner: 0, island: name }; sites.push(st); zs[st.zone].val += OW_SITE_VAL[type] || 1; have++; }
+  });
   const vmax = Math.max(1, ...zs.map(z => z.val));
-  for (const z of zs) z.lv = Math.max(1, Math.min(10, Math.round(1 + 9 * Math.pow(z.val / vmax, .8))));
-  return { seed, W, H, h, b, zone, zones: zs, sites, Hf };
+  for (const z of zs) z.lv = Math.max(1, Math.min(10, Math.round(OW_REG[z.reg][3] * .6 + (z.big || 0) * .9 + 5 * Math.pow(z.val / vmax, .8))));   // regional danger + the size of the city + what it holds
+  const islands = OW_ISLANDS.map(([name, lo, la]) => { const t = owLL2T(lo, la); return { name, x: t[0] / OW_CELL, y: t[1] / OW_CELL }; });
+  return { seed, W, H, h, b, zone, zones: zs, sites, Hf, islands };
 }
 const owCell = (R, x, y) => { const cx = Math.max(0, Math.min(R.W - 1, x | 0)), cy = Math.max(0, Math.min(R.H - 1, y | 0)); return cy * R.W + cx; };
 const owBiomeAt = (R, x, y) => R.b[owCell(R, x, y)];
@@ -32303,7 +32472,7 @@ function owSiteModel(type) {                         // the sites the game has n
   const g = new THREE.Group(), B = (x, y, z, sx, sy, sz, hex, r, m) => owPart(g, new THREE.BoxGeometry(sx, sy, sz), hex, x, y + sy / 2, z, r, m), C = (x, y, z, r0, r1, h, hex, seg, r, m) => owPart(g, new THREE.CylinderGeometry(r0, r1, h, seg || 18), hex, x, y + h / 2, z, r, m);
   B(0, -.1, 0, 11, .22, 11, '#6d6f68', .95);
   if (type === 'power') { B(-2, 0, 0, 5, 3, 4, '#8a8a84'); B(-2, 3, 0, 5.2, .3, 4.2, '#5a5a56'); C(2.8, 0, -2, .55, .7, 9, '#9a9a94', 14); C(2.8, 0, 1.6, .55, .7, 8, '#9a9a94', 14); for (let k = 0; k < 4; k++) B(-4 + k * 1.6, 0, 3.6, .9, 1.4, .9, '#4a5a66', .5, .4); }
-  else if (type === 'nuclear') { const pts = []; for (let k = 0; k <= 12; k++) { const t = k / 12; pts.push(new THREE.Vector2(2.3 - Math.sin(t * Math.PI) * .75 + t * .1, t * 7.5)); } for (const x of [-2.7, 2.7]) { const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 28), owMat('#d4d4ce', .9)); m.position.set(x, 0, -1.8); m.castShadow = true; m.receiveShadow = true; g.add(m); } C(0, 0, 3, 1.8, 1.8, 2.4, '#e2e2de', 24); const d = new THREE.Mesh(new THREE.SphereGeometry(1.8, 24, 12, 0, 6.283, 0, 1.57), owMat('#e8e8e4', .6)); d.position.set(0, 2.4, 3); d.castShadow = true; g.add(d); }
+  else if (type === 'nuclear') { owNuclearModel(g); }
   else if (type === 'station') { B(0, 0, 0, 9, .9, 2.6, '#a09a8e'); for (const x of [-3.6, 0, 3.6]) B(x, .9, 0, .3, 2.2, .3, '#5a4a3c'); B(0, 3.1, 0, 9.6, .35, 3.2, '#8a3a2c'); for (const z of [-2.6, 2.6]) { B(0, 0, z, 11, .14, .22, '#3a3430', .6, .5); B(0, 0, z + .8, 11, .14, .22, '#3a3430', .6, .5); for (let k = -5; k <= 5; k++) B(k, -.02, z + .4, .3, .1, 1.3, '#5a4030'); } }
   else if (type === 'uranium') { B(-2, 0, -1, 3.6, 2, 3, '#5a6a58'); B(-2, 2, -1, .7, 2.6, .7, '#2a2a2a'); for (let k = 0; k < 4; k++) C(2 + (k % 2) * 1.4, 0, 1 + (k >> 1) * 1.4, .5, .5, 1.1, '#c9c83a', 12, .6, .3); }
   else if (type === 'enrich') { B(0, 0, -1, 8, 2.4, 4, '#bcc0c4', .7, .2); for (let k = 0; k < 8; k++) C(-3.2 + k * .9, 2.4, -1, .25, .25, 1.4, '#8a9aa6', 10, .4, .6); const d = new THREE.Mesh(new THREE.SphereGeometry(1.6, 20, 10, 0, 6.283, 0, 1.57), owMat('#e2e6e8', .5)); d.position.set(2.8, 0, 3); d.castShadow = true; g.add(d); }
@@ -32320,6 +32489,7 @@ function owSiteGroup(s) {
   if (list) list.forEach((t, k) => { const m = owBld(t, px, py); if (m) { m.position.set((k ? 5.5 : -1.5), 0, (k ? 3 : -1)); m.rotation.y = k * 1.57; g.add(m); ok = true; } });
   else if (s.type === 'town') { for (let k = 0; k < 6; k++) { try { const o = G._r3d.mkStruct({ st: 'house' + (1 + (k % 4)), x: 0, y: 0, sc: 1 }); const g0 = o && o.isObject3D ? o : (o && o.g); if (g0) { if (g0.parent) g0.parent.remove(g0); const a = k / 6 * 6.283 + .4; g0.position.set(Math.cos(a) * 6.5, 0, Math.sin(a) * 6.5); g0.rotation.y = -a + 1.57; g.add(g0); ok = true; } } catch (e) {} } }
   if (!ok) g.add(owSiteModel(s.type));
+  try { owAddLife(g, s.type); } catch (e) { console.warn('ow life', e); }
   const fg = new THREE.Group(); owFlag(fg, '#d9d9d9', 7); fg.position.set(4.6, 0, -4.6); g.add(fg); g.userData.flag = fg.userData.flag;
   g.scale.setScalar(OW_SITE_SC); g.userData.sid = s.id; owSiteFlagCol(s, g);
   g.position.set(px * K3, G._r3d.groundY(px, py), py * K3);
@@ -32333,9 +32503,8 @@ function owSiteDef(s) {                              // the infected holding a s
 }
 function owSettleGroup(s) {
   const g = new THREE.Group(), px = owPx(s.x), py = owPx(s.y);
-  const hq = owBld('hq', px, py); if (hq) g.add(hq); else g.add(owSiteModel('x'));
-  for (let k = 0; k < 22; k++) { const a = k / 22 * 6.283; const b = owPart(g, new THREE.BoxGeometry(1.5, .55, .6), '#a8935f', Math.cos(a) * 8.5, .27, Math.sin(a) * 8.5, .95); b.rotation.y = -a; }   // the sandbag ring
-  const fg = new THREE.Group(); owFlag(fg, '#2f8fff', 9); fg.position.set(5, 0, -5); g.add(fg); g.userData.flag = fg.userData.flag;
+  try { owSettleModel(g, px, py); } catch (e) { console.warn('ow settle', e); const hq = owBld('hq', px, py); if (hq) g.add(hq); }
+  const fg = new THREE.Group(); owFlag(fg, '#2f8fff', 9); fg.position.set(4.2, 0, 4.6); g.add(fg); g.userData.flag = fg.userData.flag;
   g.scale.setScalar(OW_SET_SC); g.position.set(px / TS, G._r3d.groundY(px, py), py / TS);
   return g;
 }
@@ -32394,7 +32563,7 @@ function owSyncTokens(dt) {
     if (!P) { P = { z: [], off: [] }; const n = Math.min(7, pk.units.length), rng = owRng(pk.id * 13 + 5);
       for (let k = 0; k < n; k++) { const t = pk.units[(k * 5) % pk.units.length].t, z = spawnZed(t, owPx(pk.x), owPx(pk.y)); if (!z) continue; z._owTok = 1; z.hp = z.maxHp = 1e9; z.mode = 'idle'; P.z.push(z); P.off.push([(rng() - .5) * 5.5, (rng() - .5) * 5.5, rng() * 6.28]); }
       T.packs.set(pk.id, P); }
-    const px = owPx(pk.x), py = owPx(pk.y), sp = pk.moving ? (pk.chase ? 1.5 : 1.3) * OW_SPEED * OW_CELL * TS * (st.tmul || 1) : 0;
+    const px = owPx(pk.x), py = owPx(pk.y), sp = pk.moving ? (pk.chase ? .75 : 1.3) * OW_SPEED * OW_CELL * TS * (st.tmul || 1) : 0;
     P.z.forEach((z, k) => { const o = P.off[k], tx = px + o[0] * TS, ty = py + o[1] * TS, dx = tx - z.x, dy = ty - z.y, d = Math.hypot(dx, dy), mv = Math.min(d, Math.max(sp * 1.2, 22) * dt);
       if (d > .6) { z.x += dx / d * mv; z.y += dy / d * mv; z.ang = Math.atan2(dy, dx); z.step = (z.step || 0) + mv * .09; z.vx = dx / d * mv / dt; z.vy = dy / d * mv / dt; }
       else { z.vx = z.vy = 0; z.ang += Math.sin(G.t * .4 + o[2]) * .004; }
@@ -32428,23 +32597,21 @@ function owDom() {
   const v = document.createElement('div'); v.id = 'owv';
   v.innerHTML = '<div class="owtop"><div class="owpan" id="owarmy"></div><div id="owbtns"><div class="owspd" id="owSpd"><button data-m="1" class="on">▶ ×1</button><button data-m="2">×2</button><button data-m="4">×4</button></div><button id="owBtnArmy" title="Centre on your army">⚑ ARMY</button><button id="owBtnHome" title="Centre on your settlement">⌂ SETTLEMENT</button><button id="owBtnMenu" title="Save and return to the main menu">☰ SAVE &amp; EXIT</button></div></div>' +
     '<div id="owhint"><div class="t" id="owhintT"></div><button class="owbtn go" id="owConfirm" style="display:none">✓ CONFIRM SETTLEMENT</button></div>' +
-    '<div class="owpan" id="owminiw"><div class="owttl" id="owclock">REGION</div><canvas id="owmini" width="200" height="200"></canvas></div>' +
     '<div id="owtip"></div><div id="owbadges"></div>';
   document.body.appendChild(v);
   const f = document.createElement('div'); f.id = 'owfade'; f.innerHTML = '<div class="lbl" id="owfadeL"></div>'; document.body.appendChild(f);
   const e = document.createElement('div'); e.id = 'owedge'; e.innerHTML = ['n', 's', 'w', 'e'].map(d => '<button class="' + d + '" data-dir="' + d + '">' + ({ n: '▲ EXPLORE', s: '▼ EXPLORE', w: '◀ EXPLORE', e: 'EXPLORE ▶' })[d] + '</button>').join(''); document.body.appendChild(e);
   e.addEventListener('click', ev => { const b = ev.target.closest('[data-dir]'); if (b) owOpenLeave(b.dataset.dir); });
   const m = document.createElement('div'); m.className = 'owmodal'; m.id = 'owmodal'; m.innerHTML = '<div class="box" id="owmbox"></div>'; document.body.appendChild(m);
-  const bb = document.createElement('div'); bb.id = 'owbat'; bb.innerHTML = '<span id="owbatT"></span><button class="owbtn red" id="owRetreat">⟵ RETREAT</button>'; document.body.appendChild(bb);
+  const bb = document.createElement('div'); bb.id = 'owbat'; bb.innerHTML = '<span id="owbatT"></span><button class="owbtn go" id="owLand" style="display:none" disabled>🪂 LAND</button><button class="owbtn red" id="owRetreat">⟵ RETREAT</button>'; document.body.appendChild(bb);
+  document.getElementById('owLand').onclick = () => owLand();
   document.getElementById('owRetreat').onclick = () => owEndBattle('retreat');
   document.getElementById('owBtnArmy').onclick = () => { const a = OW.st && OW.st.army; if (a) owLook(a.x, a.y); };
   document.getElementById('owBtnHome').onclick = () => { const s = OW.st && OW.st.settles[0]; if (s) owLook(s.x, s.y); };
   document.getElementById('owBtnMenu').onclick = () => { owStoreView(); owSave(() => {}); owExitToMenu(); };
   document.getElementById('owConfirm').onclick = () => owConfirmSettle();
   document.getElementById('owSpd').addEventListener('click', ev => { const b = ev.target.closest('[data-m]'); if (!b || !OW.st) return; OW.st.tmul = +b.dataset.m; document.querySelectorAll('#owSpd button').forEach(x => x.classList.toggle('on', x === b)); });
-  const mini = document.getElementById('owmini');
-  const miniGo = ev => { if (!OW.R) return; const r = mini.getBoundingClientRect(); owLook((ev.clientX - r.left) / r.width * OW.R.W, (ev.clientY - r.top) / r.height * OW.R.H, true); };
-  mini.addEventListener('mousedown', ev => { miniGo(ev); mini._drag = true; }); window.addEventListener('mouseup', () => mini._drag = false); mini.addEventListener('mousemove', ev => { if (mini._drag) miniGo(ev); });
+  owMapDom(v);
   owInput();
 }
 function owLook(cx, cy, keepZoom) { CAM.x = owPx(cx) - CAM.vw / 2; CAM.y = owPx(cy) - CAM.vh / 2; if (!keepZoom) { CAM.zoomT = Math.max(CAM.zoom, 1.1 * (typeof DPR !== 'undefined' ? DPR : 1) / PIX); } clampCam(); }
@@ -32461,7 +32628,7 @@ function owOpenRegion(focus) {
   const st = OW.st;
   owBuildWorld(st.seed);
   if (!OW.R || OW.R.seed !== st.seed) { if (OW.R) owWorldShow(false); OW.R = owGen(st.seed); OW.R.mini = null; }
-  owClearSites(); owWorldObjs(); owClearBanner();
+  owClearSites(); owWorldObjs(); owClearBanner(); try { window.owLite && window.owLite(true); } catch (e) {}
   if (!st.packs.length && st.placed) owSeedPacks();
   OW.view = st.placed ? 'region' : 'place';
   const menu = document.getElementById('menu'); if (menu) menu.style.display = 'none';
@@ -32482,7 +32649,7 @@ function owOpenRegion(focus) {
   owArmyPanel(); owMiniDraw(true);
 }
 function owExitToMenu() {
-  owWorldShow(false); OW.view = null; owSetHtmlMode(null);
+  owWorldShow(false); OW.view = null; owSetHtmlMode(null); try { window.owLite && window.owLite(false); } catch (e) {}
   ['owv', 'owedge', 'owbat'].forEach(id => { const e = document.getElementById(id); if (e) e.classList.remove('on'); });
   G.owBattle = false; G.owMode = false; G.owRegion = false;
   try { returnToMenu(); } catch (e) { location.reload(); }
@@ -32491,10 +32658,10 @@ function owExitToMenu() {
 /* ======================================== INPUT (region view) ======================================== */
 function owInput() {
   let down = null;
-  const own = e => (OW.view === 'region' || OW.view === 'place') && e.target === cv;
+  const own = e => (OW.view === 'region' || OW.view === 'place' || OW.view === 'land') && e.target === cv;
   window.addEventListener('mousedown', e => { if (!own(e)) return; e.stopImmediatePropagation(); e.preventDefault(); const [x, y] = evPos(e); IN.mx = x; IN.my = y; down = { x: e.clientX, y: e.clientY, b: e.button, drag: false }; }, true);
   window.addEventListener('mousemove', e => {
-    if (OW.view !== 'region' && OW.view !== 'place') return;
+    if (OW.view !== 'region' && OW.view !== 'place' && OW.view !== 'land') return;
     if (e.target === cv || down) { const [x, y] = evPos(e); IN.mx = x; IN.my = y; OW.mx = e.clientX; OW.my = e.clientY; OW.hoverDirty = true; }
     if (!down) return; e.stopImmediatePropagation();
     const dx = e.clientX - down.x, dy = e.clientY - down.y; if (!down.drag && Math.hypot(dx, dy) > 5) down.drag = true;
@@ -32504,12 +32671,12 @@ function owInput() {
     else { const [px, py] = camPan(-dx * k / CAM.zoom, -dy * k / (CAM.zoom * VY)); CAM.x += px; CAM.y += py; clampCam(); }
     down.x = e.clientX; down.y = e.clientY;
   }, true);
-  window.addEventListener('mouseup', e => { if (!down) return; const d = down; down = null; if (OW.view !== 'region' && OW.view !== 'place') return; e.stopImmediatePropagation(); if (!d.drag && d.b === 0 && e.target === cv) { const [x, y] = evPos(e); owClick(s2wx(x, y) / TS / OW_CELL, s2wy(y, x) / TS / OW_CELL); } }, true);
+  window.addEventListener('mouseup', e => { if (!down) return; const d = down; down = null; if (OW.view !== 'region' && OW.view !== 'place' && OW.view !== 'land') return; e.stopImmediatePropagation(); if (!d.drag && d.b === 0 && e.target === cv && OW.view === 'land') { const [x, y] = evPos(e); owLandPick(s2wx(x, y), s2wy(y, x)); return; } if (!d.drag && d.b === 0 && e.target === cv) { const [x, y] = evPos(e); owClick(s2wx(x, y) / TS / OW_CELL, s2wy(y, x) / TS / OW_CELL); } }, true);
   window.addEventListener('wheel', e => {
     if (!own(e)) return; e.stopImmediatePropagation(); e.preventDefault();
     if (e.shiftKey) { camOrbit((e.deltaY || e.deltaX) > 0 ? .12 : -.12, 0); return; }
     const dpr = (typeof DPR !== 'undefined') ? DPR : 1, cur = CAM.zoomT !== undefined ? CAM.zoomT : CAM.zoom;
-    const disp = clamp(cur * PIX / dpr * (e.deltaY > 0 ? .87 : 1.15), .17, 6);   // the region zooms further out than a match, down to a wide strategic view
+    const disp = clamp(cur * PIX / dpr * (e.deltaY > 0 ? .87 : 1.15), OW.view === 'land' ? .45 : .17, 6);   // the region zooms further out than a match, down to a wide strategic view
     CAM.zoomT = disp * dpr / PIX; const [x, y] = evPos(e); IN.mx = x; IN.my = y;
     CAM.zoomAnchor = { wx: s2wx(x, y), wy: s2wy(y, x), mx: x, my: y };
   }, { passive: false, capture: true });
@@ -32517,25 +32684,25 @@ function owInput() {
 }
 function owSettleOk(x, y) {
   const R = OW.R; if (x < 10 || y < 10 || x > R.W - 10 || y > R.H - 10) return 'Too close to the edge of the region';
-  for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) { const b = owBiomeAt(R, x + ox, y + oy); if (b === 0) return 'Needs dry land'; if (b === 7) return 'Too high in the mountains'; if (b === 6) return 'Too swampy'; }
-  if (R.sites.some(s => (s.x - x) ** 2 + (s.y - y) ** 2 < 7 * 7)) return 'Too close to another site';
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) { const b = owBiomeAt(R, x + ox, y + oy); if (b === 0) return 'Needs dry land'; if (b === 7) return 'Too high in the mountains'; if (b === 6) return 'Too swampy'; }
+  if (R.sites.some(s => (s.x - x) ** 2 + (s.y - y) ** 2 < 4 * 4)) return 'Too close to another site';
   return '';
 }
-function owSiteAt(x, y) { const R = OW.R; let best = null, bd = 3.3 * 3.3; for (const s of R.sites) { const d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
+function owSiteAt(x, y) { const R = OW.R; let best = null, bd = 1.8 * 1.8; for (const s of R.sites) { const d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
 function owClick(x, y) {
   const st = OW.st, R = OW.R; if (!R || OW.busy) return;
   if (OW.view === 'place') {
     const why = owSettleOk(x, y), O = R.obj;
     if (why) { owHint('✗ ' + why + ' — pick another spot'); document.getElementById('owConfirm').style.display = 'none'; OW.pend = null; if (O.ghost) O.ghost.visible = false; return; }
     OW.pend = [x, y];
-    if (!O.ghost) { O.ghost = new THREE.Group(); const hq = owBld('hq', owPx(x), owPx(y)); if (hq) { hq.traverse(o => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = .55; o.material.depthWrite = false; } }); O.ghost.add(hq); } O.ghostRing = owRingLine(0x7dffb2); }
+    if (!O.ghost) { O.ghost = new THREE.Group(); const hq = owBld('hq', owPx(x), owPx(y)); if (hq) { hq.traverse(o => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = .55; o.material.depthWrite = false; } }); O.ghost.add(hq); } O.ghost.scale.setScalar(.25); O.ghostRing = owRingLine(0x7dffb2); }   // the HQ placement ghost: a quarter of its old size, like the compound
     if (O.ghost.parent !== G._r3d.scene3) G._r3d.scene3.add(O.ghost, O.ghostRing);
-    O.ghost.position.set(owPx(x) / TS, G._r3d.groundY(owPx(x), owPx(y)), owPx(y) / TS); O.ghost.visible = true; owRingFit(O.ghostRing, x, y, 2.4); O.ghostRing.visible = true;
-    owHint('Zone level ' + owLevelAt(R, x, y) + ' · ' + OW_BNAME[owBiomeAt(R, x, y)] + ' — found your settlement here?');
+    O.ghost.position.set(owPx(x) / TS, G._r3d.groundY(owPx(x), owPx(y)), owPx(y) / TS); O.ghost.visible = true; owRingFit(O.ghostRing, x, y, 1.0); O.ghostRing.visible = true;
+    owHint(owProvTxt(R, x, y) + ' · Lv ' + owLevelAt(R, x, y) + ' · ' + owBName(R, x, y) + ' — found your settlement here?');
     document.getElementById('owConfirm').style.display = ''; return;
   }
   if (OW.view !== 'region') return;
-  const home = st.settles.find(s => (s.x - x) ** 2 + (s.y - y) ** 2 < 3.5 * 3.5);
+  const home = st.settles.find(s => (s.x - x) ** 2 + (s.y - y) ** 2 < 1.4 * 1.4);
   const site = !home && owSiteAt(x, y);
   if (!st.army || !st.army.units.length) { if (home) owDiveIn(home); else owToast(site ? 'Take an army out of your settlement to capture ' + site.label : 'You have no army out — click your settlement to go inside and rally one'); return; }
   if (site) {                                                       // a capture point: march on it; arriving starts the capture battle (or collects what it made, if it is already yours)
@@ -32543,7 +32710,7 @@ function owClick(x, y) {
     if (!path) { owToast('✗ No land route to ' + site.label); return; }
     st.army.path = path; st.army.enter = 0; st.army.capture = site.id;
     owHint(ss.own ? 'Marching to ' + site.label + ' to collect what it has made' : 'Marching to capture ' + site.label + ' — ~' + owSiteDef(site).length + ' infected hold it');
-    const M = R.obj.mark; owRingFit(M, site.x, site.y, 3.2); M.visible = true; OW.markT = 1.6; return;
+    const M = R.obj.mark; owRingFit(M, site.x, site.y, 1.6); M.visible = true; OW.markT = 1.6; return;
   }
   const tgt = home ? [home.x, home.y] : [x, y];
   if (owBiomeAt(R, tgt[0], tgt[1]) === 0) { owToast('✗ Your army cannot march over water'); return; }
@@ -32564,13 +32731,15 @@ function owRegionTick(dt) {
   G.t += dt; st.day = G.day; st.days = G.days || 0;
   owSyncTokens(dt);
   const R = OW.R, O = R.obj, t = performance.now() / 1000, w = G.wind ? Math.min(1.2, Math.hypot(G.wind.x, G.wind.y) / 40) : .5;
-  for (const [, g] of O.sites) owWaveFlag(g.userData.flag, t + g.id * .3, w);
+  const vcx = CAM.x + CAM.vw / 2, vcy = CAM.y + CAM.vh / 2, vr = Math.max(CAM.vw, CAM.vh) * .8, onScr = g => Math.abs(g.position.x * TS - vcx) < vr && Math.abs(g.position.z * TS - vcy) < vr;
+  for (const [, g] of O.sites) { if (!onScr(g)) continue; owWaveFlag(g.userData.flag, t + g.id * .3, w); owLifeTick(g, dt); }
+  for (const [, g] of O.settles) if (onScr(g)) owLifeTick(g, dt);
   for (const [, g] of O.settles) owWaveFlag(g.userData.flag, t, w);
   if (O.flag) owWaveFlag(O.flag.userData.flag, t * 1.1, w);
   if (O.mark) { OW.markT = (OW.markT || 0) - dt; O.mark.visible = OW.markT > 0; }
   if ((OW._bt = (OW._bt || 0) + dt) > .033) { OW._bt = 0; owBadges(); }
   if (OW.hoverDirty && (OW._hf = (OW._hf || 0) + 1) % 4 === 0) { OW.hoverDirty = false; owHover(); }
-  if ((OW._pt = (OW._pt || 0) + dt) > .5) { OW._pt = 0; owArmyPanel(); owMiniDraw(false); owClock(); }
+  if ((OW._pt = (OW._pt || 0) + dt) > .5) { OW._pt = 0; owArmyPanel(); owMiniDraw(false); owClock(); } else if (OW.pulse) owMiniDraw(false);
 }
 function owClock() { const e = document.getElementById('owclock'); if (!e) return; const h = ((G.day * 24 + 24) % 24), hh = Math.floor(h), mm = Math.floor((h - hh) * 60); e.textContent = 'DAY ' + ((G.days || 0) + 1) + ' · ' + String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + (G.night ? ' · NIGHT' : ''); }
 function owScr(px, py, lift) { const s = G._r3d.toScreen(px, py, G._r3d.groundY(px, py) + (lift || 0)); if (!s || s[2] > 1) return null; const r = cv.getBoundingClientRect(), k = (r.width || 1) / cv.width; return [s[0] * k + r.left, s[1] * k + r.top]; }
@@ -32583,41 +32752,24 @@ function owBadges() {
   while (box.children.length < out.length) { const d = document.createElement('div'); d.className = 'owbadge'; box.appendChild(d); }
   for (let i = 0; i < box.children.length; i++) { const el = box.children[i], o = out[i]; if (!o) { if (el.style.display !== 'none') el.style.display = 'none'; continue; } el.style.display = ''; if (el._c !== o[0]) { el.className = 'owbadge ' + o[0]; el._c = o[0]; } if (el._t !== o[2]) { el.textContent = o[2]; el._t = o[2]; } el.style.transform = 'translate(' + (o[1][0] | 0) + 'px,' + (o[1][1] | 0) + 'px) translate(-50%,-100%)'; }
 }
-function owHoverRing(site) { const O = OW.R && OW.R.obj; if (!O) return; if (!O.hov) { O.hov = owRingLine(0xffd76a); G._r3d.scene3.add(O.hov); } if (O.hov.parent !== G._r3d.scene3) G._r3d.scene3.add(O.hov); if (!site) { O.hov.visible = false; O.hovId = 0; return; } if (O.hovId !== site.id) { owRingFit(O.hov, site.x, site.y, 3.3); O.hovId = site.id; } O.hov.visible = OW.view === 'region'; }
+function owHoverRing(site) { const O = OW.R && OW.R.obj; if (!O) return; if (!O.hov) { O.hov = owRingLine(0xffd76a); G._r3d.scene3.add(O.hov); } if (O.hov.parent !== G._r3d.scene3) G._r3d.scene3.add(O.hov); if (!site) { O.hov.visible = false; O.hovId = 0; return; } if (O.hovId !== site.id) { owRingFit(O.hov, site.x, site.y, 1.6); O.hovId = site.id; } O.hov.visible = OW.view === 'region'; }
 function owHover() {
   const tip = document.getElementById('owtip'); if (OW.mx == null || !OW.R) return;
   const x = s2wx(IN.mx, IN.my) / TS / OW_CELL, y = s2wy(IN.my, IN.mx) / TS / OW_CELL; if (!(x >= 0 && y >= 0 && x < OW.R.W && y < OW.R.H)) { tip.style.display = 'none'; return; }
   const st = OW.st, R = OW.R, lv = owLevelAt(R, x, y), near = (o, r) => Math.hypot(o.x - x, o.y - y) < r;
   let html = '';
   const pk = OW.view === 'region' && st.packs.find(q => q.vis && near(q, 2));
-  const home = st.settles.find(s => near(s, 3.5)), site = !home && owSiteAt(x, y);
+  const home = st.settles.find(s => near(s, 1.4)), site = !home && owSiteAt(x, y);
   owHoverRing(site && !pk ? site : null);
   if (pk) { const c = {}; pk.units.forEach(u => c[u.t] = (c[u.t] || 0) + 1); html = '<b>☣ Zombie pack</b> <span class="lv">Lv ' + pk.lv + '</span><br>' + Object.keys(c).map(k => owUdef(k).name + ' × ' + c[k]).join('<br>') + '<br><span class="dim">' + (pk.chase ? 'Hunting your army!' : 'Stay outside the red ring to slip past') + '</span>'; }
   else if (home) html = '<b>⌂ ' + home.name + '</b><br><span class="dim">Your settlement — click to march home and go inside</span>';
   else if (site) { const ss = owSS(site), P = OW_PROD[site.type], slv = owLevelAt(R, site.x, site.y), RN = { sup: 'supply', scr: 'scrap', oil: 'oil', ore: 'ore', ura: 'uranium' };
     const what = P ? P[1] + ' ' + RN[P[0]] + ' / min' : ({ town: 'a second base (later update)', power: 'electricity (later update)', nuclear: 'electricity · nuclear requirement', station: 'unlocks railways (later update)', enrich: 'nuclear bombs (later update)', silo: 'ICBM launches (later update)' })[site.type] || '';
-    html = '<b>' + site.label + '</b> <span class="lv">Zone Lv ' + slv + '</span>' + (ss.own ? ' <b style="color:#7fd4ff">✔ YOURS</b>' : '') + '<br>Makes: ' + what +
+    html = '<b>' + site.label + '</b> <span class="lv">Lv ' + slv + '</span><br><span class="dim">' + owProvTxt(R, site.x, site.y) + '</span>' + (ss.own ? ' <b style="color:#7fd4ff">✔ YOURS</b>' : '') + '<br>Makes: ' + what +
       (ss.own ? (P ? '<br>Stored: <b>' + Math.floor(ss.store[P[0]] || 0) + '</b> <span class="dim">— march your army here to load it</span>' : '') : '<br><span style="color:#ff9a8a">Held by ~' + owSiteDef(site).length + ' infected</span><br><span class="dim">Click to march your army here and capture it</span>'); }
   else if (st.army && OW.view === 'region' && near(st.army, 1.6)) html = '<b>⚑ Your army</b><br>' + st.army.units.length + ' units · carry ' + owArmyWeight(st.army.units) + ' / ' + OW_CAP;
-  else { const b = owBiomeAt(R, x, y); html = '<b>' + OW_BNAME[b] + '</b> <span class="lv">Zone Lv ' + lv + '</span>' + (b ? '<br><span class="dim">March speed ×' + OW_BSPD[b].toFixed(2) + '</span>' : ''); }
+  else { const b = owBiomeAt(R, x, y), pn = b ? owPlaceAt(x, y) : '', pz = owProvAt(R, x, y); html = '<b>' + (pn || owBName(R, x, y)) + '</b>' + (pn ? ' <span class="dim">' + owBName(R, x, y) + '</span>' : '') + (b && pz ? ' <span class="lv">Lv ' + lv + '</span><br>' + pz.name + ' <span style="color:' + OW_REG[pz.reg][2] + '">· ' + OW_REG[pz.reg][0] + '</span>' : '') + (b ? '<br><span class="dim">March speed ×' + OW_BSPD[b].toFixed(2) + '</span>' : ''); }
   tip.innerHTML = html; tip.style.display = ''; tip.style.left = Math.min(innerWidth - 270, OW.mx + 16) + 'px'; tip.style.top = Math.min(innerHeight - 130, OW.my + 14) + 'px';
-}
-/* the overview map: the region's ground at a glance, your camera's footprint, and everything you know about */
-function owMiniDraw(full) {
-  const R = OW.R, c = document.getElementById('owmini'); if (!R || !c) return; const g = c.getContext('2d'), S = c.width;
-  if (!R.mini || full) { const off = document.createElement('canvas'); off.width = R.W; off.height = R.H; const og = off.getContext('2d'), id = og.createImageData(R.W, R.H);
-    const BC = [[34, 70, 92], [196, 182, 138], [96, 130, 62], [52, 88, 44], [120, 116, 104], [196, 168, 100], [74, 84, 54], [226, 232, 236]];
-    for (let i = 0; i < R.W * R.H; i++) { const b = R.b[i], cc = BC[b], sh = b ? .75 + R.h[i] * .5 : 1; id.data[i * 4] = cc[0] * sh; id.data[i * 4 + 1] = cc[1] * sh; id.data[i * 4 + 2] = cc[2] * sh; id.data[i * 4 + 3] = 255; }
-    og.putImageData(id, 0, 0); R.mini = off; }
-  g.imageSmoothingEnabled = true; g.drawImage(R.mini, 0, 0, S, S);
-  const k = S / R.W, st = OW.st;   // (sites below)
-  for (const s of R.sites) { const own = st.ss && st.ss[s.id] && st.ss[s.id].own; g.fillStyle = own ? '#4aa8ff' : '#e8e8e8'; g.fillRect(s.x * k - 2, s.y * k - 2, own ? 5 : 4, own ? 5 : 4); }
-  for (const s of st.settles) { g.fillStyle = '#2f8fff'; g.beginPath(); g.arc(s.x * k, s.y * k, 4.5, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); }
-  for (const p of st.packs) if (p.vis) { g.fillStyle = '#ff5a4a'; g.beginPath(); g.arc(p.x * k, p.y * k, 3, 0, 7); g.fill(); }
-  if (st.army && st.army.units.length) { g.fillStyle = '#7fd4ff'; g.beginPath(); g.arc(st.army.x * k, st.army.y * k, 3.6, 0, 7); g.fill(); g.strokeStyle = '#0b1014'; g.stroke(); }
-  // camera footprint
-  const cx = (CAM.x + CAM.vw / 2) / TS / OW_CELL * k, cy = (CAM.y + CAM.vh / 2) / TS / OW_CELL * k, w = CAM.vw / TS / OW_CELL * k, h = CAM.vh / TS / OW_CELL * k;
-  g.save(); g.translate(cx, cy); g.rotate(-(CAM.rot || 0)); g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.2; g.strokeRect(-w / 2, -h / 2, w, h); g.restore();
 }
 function owArmyPanel() {
   const el = document.getElementById('owarmy'); if (!el) return; const st = OW.st, a = st.army;
@@ -32631,7 +32783,8 @@ function owArmyPanel() {
 function owHook(dt) {
   if (!OW.view) return false;
   if (OW.view === 'region' || OW.view === 'place') { if (OW.R && OW.R.obj) owRegionTick(dt); return false; }
-  if (OW.view === 'battle') owBattleTick(dt);
+  if (OW.view === 'battle') owBattleTick(dt);   // (the landing phase ('land') just waits for the pick)
+  if ((OW.view === 'battle' || OW.view === 'land') && OW.batObj && OW.batObj[0]) owLifeTick(OW.batObj[0], dt);
   return false;
 }
 
@@ -32674,12 +32827,12 @@ function owSim(dt) {
       if (!a.path.length && a.enter) { const s = st.settles.find(q => q.id === a.enter); a.enter = 0; if (s) { owDiveIn(s); return; } }
     }
     if (a.capture && a.units.length) { const s = R.sites.find(q => q.id === a.capture);
-      if (s && Math.hypot(s.x - a.x, s.y - a.y) < 3.2) { a.capture = 0; a.path = null; if (owSS(s).own) owCollect(s); else if (!OW.busy) { owStartBattle(null, s); return; } } }
+      if (s && Math.hypot(s.x - a.x, s.y - a.y) < 2) { a.capture = 0; a.path = null; if (owSS(s).own) owCollect(s); else if (!OW.busy) { owStartBattle(null, s); return; } } }
   }
   // held sites produce, and an army standing at one loads what it has made
   st.prodT = (st.prodT || 0) + dt;
   if (st.prodT >= 1) { const k = st.prodT / 60; st.prodT = 0; for (const s of R.sites) { const ss = st.ss && st.ss[s.id]; if (!ss || !ss.own) continue; const P = OW_PROD[s.type]; if (!P) continue; ss.store[P[0]] = Math.min(3000, (ss.store[P[0]] || 0) + P[1] * k); }
-    if (a && a.units.length) for (const s of R.sites) { const ss = st.ss && st.ss[s.id]; if (ss && ss.own && Math.hypot(s.x - a.x, s.y - a.y) < 3.4) owCollect(s, true); } }
+    if (a && a.units.length) for (const s of R.sites) { const ss = st.ss && st.ss[s.id]; if (ss && ss.own && Math.hypot(s.x - a.x, s.y - a.y) < 2.2) owCollect(s, true); } }
   const vis = p => (a && Math.hypot(p.x - a.x, p.y - a.y) < 15) || st.settles.some(s => Math.hypot(p.x - s.x, p.y - s.y) < 17);
   for (let i = st.packs.length - 1; i >= 0; i--) {
     const p = st.packs[i]; p.vis = vis(p); if (p.stun > 0) { p.stun -= dt; continue; }
@@ -32688,7 +32841,7 @@ function owSim(dt) {
     if (a && a.units.length && da < OW_SIGHT && owLOS(p.x, p.y, a.x, a.y)) { if (!p.chase) { p.chase = 1; if (p.vis) owToast('A zombie pack has seen your army — it is coming for you'); } p.lost = 0; }
     else if (p.chase) { p.lost += dt; if (da > OW_SIGHT * 1.6 || p.lost > 4) p.chase = 0; }
     let tx, ty, spd;
-    if (p.chase && a) { tx = a.x; ty = a.y; spd = 1.5; }
+    if (p.chase && a) { tx = a.x; ty = a.y; spd = .75; }   // (half the old 1.5 — a pack on your trail is slower than your march now)
     else { if (p.idle > 0) { p.idle -= dt; continue; } if (Math.hypot(p.wx - p.x, p.wy - p.y) < .6) { const q = owLandNear(p.hx, p.hy, 2, 16, Math.random); if (q && !st.settles.some(s => Math.hypot(q[0] - s.x, q[1] - s.y) < 6)) { p.wx = q[0]; p.wy = q[1]; } p.idle = 1.5 + Math.random() * 4; continue; } tx = p.wx; ty = p.wy; spd = 1.3; }
     const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy) || 1, step = Math.min(d, OW_SPEED * spd * OW_BSPD[Math.max(1, owBiomeAt(R, p.x, p.y))] * dt), nx = p.x + dx / d * step, ny = p.y + dy / d * step;
     if (owBiomeAt(R, nx, ny) === 0) { p.wx = p.x; p.wy = p.y; if (p.chase) { const sx = p.x - dy / d * step, sy = p.y + dx / d * step; if (owBiomeAt(R, sx, sy) !== 0) { p.x = sx; p.y = sy; } } }
@@ -32710,6 +32863,8 @@ function owEnterSettle(s) {
     else newGame({ mode: 'defense', diff: 'normal', size: MAP_PRESETS.small, seed: s.seed, deploy: true });
     OW.loaded = s.id;
   }
+  if (st.day != null) { G.day = st.day; G.days = st.days || 0; G._prevClock = G.day; G.night = (G.day < .22 || G.day > .76); }   // the settlement shares the region's clock
+  try { window.owLite && window.owLite(false); } catch (e) {}
   G.owMode = true; G.owSettle = s.id; G.started = true; G.showcase = false; G.paused = false; G.over = false;
   try { AU.init(); AU.stopMenu(); } catch (e) {}
   const menu = document.getElementById('menu'); if (menu) menu.style.display = 'none';
@@ -32765,6 +32920,7 @@ function owOpenLeave(dir) {
   draw(); modal.classList.add('on');
 }
 function owLeave(dir, pool, take, carry) {
+  OW.st.day = G.day; OW.st.days = G.days || 0;   // the clock carries on out onto the region
   const st = OW.st, s = st.settles.find(q => q.id === G.owSettle); if (!s) return;
   const units = [];
   for (const t in take) { const L = pool[t].slice().sort((a, b) => b.hp / b.maxHp - a.hp / a.maxHp).slice(0, take[t]); for (const u of L) { units.push({ t: u.t, hp: +(u.hp / u.maxHp).toFixed(3) }); const i = G.units.indexOf(u); if (i >= 0) G.units.splice(i, 1); u.dead = true; u.sel = false; } }
@@ -32780,35 +32936,65 @@ function owLeave(dir, pool, take, carry) {
 const OW_ZREW = { walker: [4, 1], runner: [5, 2], splitter: [6, 2], brute: [12, 5], bloater: [8, 3], predator: [10, 4] };
 function owBuildBattle(pk, site) {
   const st = OW.st, a = st.army, ox = site ? site.x : pk.x, oy = site ? site.y : pk.y;
-  newGame({ mode: 'defense', diff: 'normal', size: MAP_PRESETS.small, seed: 5000 + ((ox | 0) * 131 + (oy | 0) * 17) % 40000, owBattle: true });
+  newGame({ mode: 'defense', diff: 'normal', size: site ? MAP_PRESETS.small : { w: 240, h: 170 }, seed: 5000 + ((ox | 0) * 131 + (oy | 0) * 17) % 40000, owBattle: true });
   OW.loaded = null;
-  let A, Z = null;
-  if (site) {                                                       // capture map: the site stands in the middle, the army comes in from the west
-    Z = findSpawn(.5, .5) || [MW >> 1, MH >> 1];
-    for (let d = 34; d <= 70 && !A; d += 3) for (let k = 0; k < 16 && !A; k++) { const an = Math.PI + (k % 2 ? 1 : -1) * Math.floor((k + 1) / 2) * .35, tx = Math.round(Z[0] + Math.cos(an) * d), ty = Math.round(Z[1] + Math.sin(an) * d); if (inMap(tx, ty) && !WATER(MAP.t[tileIdx(tx, ty)]) && MAP.t[tileIdx(tx, ty)] !== T_ROCK) A = [tx, ty]; }
-    if (!A) A = findSpawn(.3, .5) || [MW * .3 | 0, MH >> 1];
-    if (typeof clearProps === 'function') clearProps(Z[0] * TS, Z[1] * TS, 11 * TS);
-  } else {
-    A = findSpawn(.45, .5) || [MW * .45 | 0, MH >> 1];
-    for (let d = 30; d <= 60 && !Z; d += 3) for (let k = 0; k < 16 && !Z; k++) { const an = (k % 2 ? 1 : -1) * Math.floor((k + 1) / 2) * .35, tx = Math.round(A[0] + Math.cos(an) * d), ty = Math.round(A[1] + Math.sin(an) * d); if (inMap(tx, ty) && !WATER(MAP.t[tileIdx(tx, ty)]) && MAP.t[tileIdx(tx, ty)] !== T_ROCK) Z = [tx, ty]; }   // the pack comes on from ~30 tiles away — in sight, not across the map
-    if (!Z) Z = findSpawn(.6, .5) || [MW * .6 | 0, MH >> 1];
-  }
+  if (st.day != null) { G.day = st.day; G.days = st.days || 0; G._prevClock = G.day; G.night = (G.day < .22 || G.day > .76); }   // the battle is fought at the region's time of day
+  let Z = null;
+  if (site) { Z = findSpawn(.5, .5) || [MW >> 1, MH >> 1]; if (typeof clearProps === 'function') clearProps(Z[0] * TS, Z[1] * TS, 11 * TS); }
   const foes = site ? owSiteDef(site).slice() : pk.units.slice(), z0 = {}; for (const u of foes) z0[u.t] = (z0[u.t] || 0) + 1;
-  const B = st.battle = { pack: pk ? pk.id : 0, site: site ? site.id : 0, qA: a.units.slice(), qZ: foes, z0, ax: A[0] * TS, ay: A[1] * TS, zx: Z[0] * TS, zy: Z[1] * TS, t: 0, tk: 0, startA: a.units.length, startZ: foes.length, lostA: 0, cap: 0 };
+  const B = st.battle = { pack: pk ? pk.id : 0, site: site ? site.id : 0, qA: a.units.slice(), qZ: foes, z0, ax: 0, ay: 0, zx: Z ? Z[0] * TS : 0, zy: Z ? Z[1] * TS : 0, t: 0, tk: 0, startA: a.units.length, startZ: foes.length, lostA: 0, cap: 0, landed: false };
   a.units = [];
-  owBFill(B);
   if (site) {                                                       // the site itself, the capture zone round it
     try { const g = owSiteGroup(site); g.scale.setScalar(1); g.position.set(B.zx / TS, G._r3d.groundY(B.zx, B.zy), B.zy / TS); G._r3d.scene3.add(g); OW.batObj = [g];
       const ring = owRingLine(0x7fd4ff), n = ring.userData.n, arr = ring.geometry.attributes.position.array; for (let k = 0; k < n; k++) { const t = k / n * 6.283, x = B.zx + Math.cos(t) * OW_CAPR * TS, y = B.zy + Math.sin(t) * OW_CAPR * TS; arr[k * 3] = x / TS; arr[k * 3 + 1] = G._r3d.groundY(x, y) + .2; arr[k * 3 + 2] = y / TS; } ring.geometry.attributes.position.needsUpdate = true; G._r3d.scene3.add(ring); OW.batObj.push(ring); } catch (e) { console.warn('ow site', e); }
   }
-  G.owMode = true; G.owBattle = true; G.started = true; G.showcase = false; G.paused = false; G.over = false;
+  try { window.owLite && window.owLite(false); } catch (e) {}
+  G.owMode = true; G.owBattle = true; G.started = true; G.showcase = false; G.paused = true; G.over = false;   // paused while you pick the landing zone
   try { AU.init(); AU.stopMenu(); } catch (e) {}
   document.getElementById('menu').style.display = 'none'; document.getElementById('hud').style.display = ''; document.getElementById('over').style.display = 'none';
   try { menuVidLeave(); } catch (e) {}
-  CAM.rot = 0; CAM.rotT = undefined; CAM.pitch = 0; CAM.pitchT = undefined; centerOn((B.ax + B.zx) / 2, (B.ay + B.zy) / 2);
+  const dpr = (typeof DPR !== 'undefined') ? DPR : 1;
+  CAM.rot = 0; CAM.rotT = undefined; CAM.pitch = 0; CAM.pitchT = undefined; CAM.zoom = .62 * dpr / PIX; CAM.zoomT = undefined; CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY);
+  centerOn(site ? B.zx : MW * TS / 2, site ? B.zy : MH * TS / 2);
   owFlyIn();
-  OW.view = 'battle'; owSetHtmlMode('battle'); document.getElementById('owbat').classList.add('on'); document.getElementById('owedge').classList.remove('on');
-  alertMsg(site ? 'Capture ' + site.label + '! Clear the ' + B.startZ + ' infected or hold the blue ring with no enemy inside it' : 'Battle! ' + B.startA + ' troops vs a pack of ' + B.startZ + '. Fight, or press ⟵ RETREAT', 'good');
+  OW.view = 'land'; owSetHtmlMode('battle'); document.getElementById('owedge').classList.remove('on');
+  const bar = document.getElementById('owbat'); bar.classList.add('on');
+  document.getElementById('owbatT').innerHTML = '<span class="v">CHOOSE YOUR LANDING ZONE</span> <span class="q">— click the map' + (site ? ' (outside the blue ring)' : '') + '</span>';
+  document.getElementById('owLand').style.display = ''; document.getElementById('owLand').disabled = true; document.getElementById('owRetreat').textContent = '⟵ CANCEL';
+  alertMsg(site ? 'Pick where your army lands, then press LAND — ' + B.startZ + ' infected hold ' + site.label : 'Pick where your army lands, then press LAND — the pack of ' + B.startZ + ' comes from the far side of the map', 'good');
+}
+function owLandOk(px, py) {
+  const tx = (px / TS) | 0, ty = (py / TS) | 0, B = OW.st.battle; if (!B) return 'No battle';
+  if (tx < 10 || ty < 10 || tx > MW - 10 || ty > MH - 10) return 'Too close to the map edge';
+  for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) { const t = MAP.t[tileIdx(tx + ox, ty + oy)]; if (WATER(t)) return 'Your troops need dry land'; if (t === T_ROCK) return 'Too rocky to land there'; }
+  if (B.site && Math.hypot(px - B.zx, py - B.zy) < (OW_CAPR + 18) * TS) return 'Too close to the site — land further out';
+  return '';
+}
+function owLandPick(px, py) {
+  const why = owLandOk(px, py), btn = document.getElementById('owLand');
+  if (why) { alertMsg(why, ''); try { AU.ui('no'); } catch (e) {} btn.disabled = true; OW.landPt = null; if (OW.landRing) OW.landRing.visible = false; return; }
+  OW.landPt = [px, py]; btn.disabled = false; try { AU.ui('ok'); } catch (e) {}
+  if (!OW.landRing) OW.landRing = owRingLine(0x7dffb2); if (OW.landRing.parent !== G._r3d.scene3) G._r3d.scene3.add(OW.landRing);
+  const r = OW.landRing, n = r.userData.n, arr = r.geometry.attributes.position.array; for (let k = 0; k < n; k++) { const t = k / n * 6.283, x = px + Math.cos(t) * 5 * TS, y = py + Math.sin(t) * 5 * TS; arr[k * 3] = x / TS; arr[k * 3 + 1] = G._r3d.groundY(x, y) + .2; arr[k * 3 + 2] = y / TS; }
+  r.geometry.attributes.position.needsUpdate = true; r.visible = true;
+  document.getElementById('owbatT').innerHTML = '<span class="v">LANDING ZONE SET</span> <span class="q">— press LAND, or click somewhere else</span>';
+}
+async function owLand() {
+  const B = OW.st.battle, P = OW.landPt; if (!B || !P || B.landed) return;
+  B.landed = true; B.ax = P[0]; B.ay = P[1]; if (OW.landRing) OW.landRing.visible = false; document.getElementById('owLand').style.display = 'none'; document.getElementById('owRetreat').textContent = '⟵ RETREAT';
+  if (!B.site) {                                                    // the pack comes from the far side of the map and marches on you
+    const cx = MW * TS / 2, cy = MH * TS / 2, base = Math.atan2(cy - P[1], cx - P[0]); let Zp = null;
+    for (let tries = 0; tries < 80 && !Zp; tries++) { const an = base + (Math.random() - .5) * 1.2, d = (50 + Math.random() * 18) * TS, x = P[0] + Math.cos(an) * d, y = P[1] + Math.sin(an) * d, tx = (x / TS) | 0, ty = (y / TS) | 0;
+      if (tx < 8 || ty < 8 || tx > MW - 8 || ty > MH - 8) continue; const t = MAP.t[tileIdx(tx, ty)]; if (WATER(t) || t === T_ROCK) continue; Zp = [x, y]; }
+    if (!Zp) { const d = findSpawn(P[0] / TS / MW < .5 ? .85 : .15, P[1] / TS / MH < .5 ? .8 : .2); Zp = d ? [d[0] * TS, d[1] * TS] : [MW * TS - P[0], MH * TS - P[1]]; }
+    B.zx = Zp[0]; B.zy = Zp[1];
+  }
+  G.paused = false; OW.view = 'battle';
+  owBFill(B);
+  for (const u of G.units) if (u._owRec && !u.dead) { u.order = null; }
+  const dpr = (typeof DPR !== 'undefined') ? DPR : 1, z0 = CAM.zoom, z1 = 1.05 * dpr / PIX, x0 = CAM.x + CAM.vw / 2, y0 = CAM.y + CAM.vh / 2, T0 = performance.now();
+  for (;;) { const k = Math.min(1, (performance.now() - T0) / 900), e = k * k * (3 - 2 * k); CAM.zoomT = undefined; CAM.zoom = z0 * Math.pow(z1 / z0, e); CAM.vw = scene.width / CAM.zoom; CAM.vh = scene.height / (CAM.zoom * VY); CAM.x = x0 + (P[0] - x0) * e - CAM.vw / 2; CAM.y = y0 + (P[1] - y0) * e - CAM.vh / 2; clampCam(); if (k >= 1) break; await owWait(16); }
+  alertMsg(B.site ? 'Landed. Take ' + OW.R.sites.find(q => q.id === B.site).label + ' — clear it or hold the blue ring' : 'Landed. The pack is coming — ' + B.startZ + ' of them from the far side', 'good');
 }
 function owClearBanner() { try { if (_bigMsgEl) { _bigMsgEl.classList.remove('show'); _bigMsgT = 0; } } catch (e) {} }   // no leftover banner from the last map
 function owFlyIn() {                                              // arriving on a map: the camera drops out of the sky onto it (the zoom-in half of every transition)
@@ -32827,7 +33013,7 @@ function owBFill(B) {
   k = 0; while (nZ < OW_FIELD && B.qZ.length) { const r = B.qZ.shift(), an = Math.random() * 6.283, d = Math.random() * 150; const z = spawnZed(r.t, B.zx + Math.cos(an) * d, B.zy + Math.sin(an) * d); if (!z) continue; z._ow = 1; z._owT = r.t; z.mode = 'hunt'; nZ++; k++; }
 }
 function owBattleTick(dt) {
-  const B = OW.st && OW.st.battle; if (!B || OW.busy || B.done) return;
+  const B = OW.st && OW.st.battle; if (!B || OW.busy || B.done || !B.landed) return;
   B.t += dt; B.tk -= dt; if (B.tk > 0) return; B.tk = .35;
   owBFill(B);
   const A = G.units.filter(u => !u.dead && u._owRec), Z = G.zeds.filter(z => !z.dead && z._ow);
@@ -32857,7 +33043,7 @@ function owEndBattle(kind) {
   if (site) { const ss = owSS(site); if (kind === 'win') { ss.own = 1; ss.def = null; ss.store = ss.store || {}; owSiteFlagCol(site); } else ss.def = zLeft.length ? zLeft : null; }
   if (OW.batObj) { for (const o of OW.batObj) if (o.parent) o.parent.remove(o); OW.batObj = null; }
   if (!a.units.length) { const home = st.settles[0]; st.army = null; }
-  st.battle = null; G.paused = true;
+  st.battle = null; G.paused = true; st.day = G.day; st.days = G.days || 0; if (OW.landRing) OW.landRing.visible = false; document.getElementById('owLand').style.display = 'none'; document.getElementById('owRetreat').textContent = '⟵ RETREAT';
   const title = site && kind === 'win' ? 'CAPTURED — ' + site.label.toUpperCase() + ' IS YOURS' : kind === 'win' ? 'VICTORY — THE PACK IS DESTROYED' : kind === 'lose' ? 'DEFEAT — YOUR ARMY HAS FALLEN' : 'RETREAT — YOU BROKE CONTACT';
   const box = document.getElementById('owmbox'), modal = document.getElementById('owmodal');
   box.innerHTML = '<h2>' + title + '</h2><div class="owres"><span>Zombies killed</span><b>' + kills + '</b><span>Troops lost</span><b>' + lost + '</b><span>Troops still with you</span><b>' + survivors.length + '</b>' + (kind !== 'lose' ? '<span>Supply gained</span><b style="color:#8fe28f">+' + sup + '</b><span>Scrap gained</span><b style="color:#ffc46a">+' + scr + '</b>' : '<span>Carried resources</span><b style="color:#ff8a7a">lost</b>') + (zLeft.length && kind !== 'win' ? '<span>Zombies left in the pack</span><b>' + zLeft.length + '</b>' : '') + '</div>' +
@@ -32918,6 +33104,426 @@ async function owStartBattle(pk, site) {
   try { owWorldShow(false); owBuildBattle(pk, site); } catch (e) { console.error('ow battle', e); OW.busy = false; owFade(false); return; }
   document.getElementById('owv').classList.remove('on'); document.getElementById('owtip').style.display = 'none';
   await owWait(60); owFade(false); OW.busy = false;
+}
+
+/* ======================================== LIVING SITES ========================================
+   Every site and settlement on the region is busy: trucks drive in along their access road, stop at the loading dock and
+   drive out again, forklifts shuttle pallets with the forks rising and dropping, workers in hard hats and hi-vis vests walk
+   between the sheds, patrols walk the walls, and the cooling towers breathe steam. All of it is a few cheap meshes per site,
+   animated only while the site is on screen. */
+const owCol = h => new THREE.Color(h).convertSRGBToLinear();
+const OW_M = {};
+function owM(hex, rough, metal, extra) { const k = hex + '|' + rough + '|' + metal; return OW_M[k] || (OW_M[k] = new THREE.MeshStandardMaterial(Object.assign({ color: owCol(hex), roughness: rough == null ? .8 : rough, metalness: metal || 0 }, extra || {}))); }
+function owBox(g, x, y, z, sx, sy, sz, hex, r, m) { const o = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), owM(hex, r, m)); o.position.set(x, y + sy / 2, z); o.castShadow = true; o.receiveShadow = true; g.add(o); return o; }
+function owCylP(g, x, y, z, r0, r1, h, hex, seg, r, m) { const o = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, seg || 14), owM(hex, r, m)); o.position.set(x, y + h / 2, z); o.castShadow = true; o.receiveShadow = true; g.add(o); return o; }
+/* ---- movers ---- */
+function owTruckModel(hex) {
+  const g = new THREE.Group();
+  owBox(g, 1.05, .28, 0, .9, .78, 1.0, hex || '#c9a13a', .5, .3);                 // cab
+  owBox(g, 1.22, .72, 0, .5, .3, .96, '#1c2530', .15, .6);                         // windscreen band
+  owBox(g, -.55, .3, 0, 2.3, .95, 1.06, '#d8d8d2', .7);                            // box trailer
+  owBox(g, -.55, 1.24, 0, 2.32, .06, 1.08, '#b8b8b2', .7);
+  owBox(g, .1, .2, 0, 3.4, .12, .7, '#2a2a2a', .6, .4);                            // chassis
+  for (const x of [1.05, -.2, -1.2]) for (const z of [-.5, .5]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, .16, 12), owM('#161616', .9)); w.rotation.x = Math.PI / 2; w.position.set(x, .22, z); w.castShadow = true; g.add(w); }
+  return g;
+}
+function owForkModel() {
+  const g = new THREE.Group();
+  owBox(g, 0, .14, 0, 1.0, .5, .7, '#e3b21f', .5, .2);                             // body
+  owBox(g, -.3, .64, 0, .4, .45, .6, '#2a2a2a', .5);                               // counterweight / seat
+  owBox(g, .05, .64, 0, .06, .7, .06, '#222', .5, .5); owBox(g, .05, 1.3, 0, .6, .05, .55, '#222', .5, .5);   // overhead guard
+  const mast = new THREE.Group(); mast.position.set(.55, 0, 0); g.add(mast);
+  owBox(mast, 0, .1, -.22, .07, 1.5, .07, '#333', .5, .6); owBox(mast, 0, .1, .22, .07, 1.5, .07, '#333', .5, .6);
+  const car = new THREE.Group(); mast.add(car); owBox(car, .25, 0, -.18, .6, .05, .09, '#444', .5, .6); owBox(car, .25, 0, .18, .6, .05, .09, '#444', .5, .6);
+  const pal = owBox(car, .3, .05, 0, .6, .12, .6, '#9a7a4a', .9); owBox(car, .3, .17, 0, .55, .4, .55, '#b89a6a', .9);   // pallet + crate
+  car.position.y = .12; g.userData.car = car;
+  for (const x of [.3, -.3]) for (const z of [-.3, .3]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(.14, .14, .12, 10), owM('#151515', .9)); w.rotation.x = Math.PI / 2; w.position.set(x, .14, z); g.add(w); }
+  return g;
+}
+function owWorkerModel(vest, helm) {
+  const g = new THREE.Group(), legs = [];
+  for (const z of [-.07, .07]) { const L = new THREE.Group(); L.position.set(0, .34, z); const m = new THREE.Mesh(new THREE.BoxGeometry(.09, .34, .09), owM('#2c3440', .9)); m.position.y = -.17; m.castShadow = true; L.add(m); g.add(L); legs.push(L); }
+  owBox(g, 0, .34, 0, .16, .3, .26, vest || '#ff8a1a', .7);                        // hi-vis vest
+  const h = new THREE.Mesh(new THREE.SphereGeometry(.08, 10, 8), owM('#c8a07a', .8)); h.position.y = .74; g.add(h);
+  const hat = new THREE.Mesh(new THREE.SphereGeometry(.09, 10, 6, 0, 6.283, 0, 1.6), owM(helm || '#f2d21a', .5)); hat.position.y = .76; g.add(hat);
+  g.userData.legs = legs; return g;
+}
+function owSoldierModel() { const g = owWorkerModel('#4a5c3a', '#3e4c32'); owBox(g, .12, .44, .1, .34, .05, .05, '#1a1a1a', .5, .5); return g; }   // a patrol: olive kit, a rifle across the chest
+/* ---- a path the mover follows: ping-pong (with a pause at each end) or a closed loop (with a pause at a stop) ---- */
+function owPathOf(pts, loop) { const P = loop ? pts.concat([pts[0]]) : pts.slice(), cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1])); return { P, cum, L: cum[cum.length - 1], loop: !!loop }; }
+function owAlong(W, s) { const P = W.P, c = W.cum; let i = 1; while (i < c.length - 1 && c[i] < s) i++; const a = P[i - 1], b = P[i], k = Math.max(0, Math.min(1, (s - c[i - 1]) / Math.max(1e-6, c[i] - c[i - 1]))); return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, Math.atan2(b[1] - a[1], b[0] - a[0])]; }
+function owLife(g, kind, obj, pts, o) {
+  o = o || {}; g.add(obj); const L = g.userData.life || (g.userData.life = []);
+  const it = { kind, obj, W: pts ? owPathOf(pts, o.loop) : null, v: o.v || 1, s: o.s0 || 0, dir: 1, wait: o.wait0 || 0, p0: o.p0 == null ? 2 : o.p0, p1: o.p1 == null ? 2 : o.p1, stop: o.stop, stopIdx: o.stopIdx, stopT: o.stopT || 4, stopped: false, ph: Math.random() * 6.28, y: o.y || 0, rev: !!o.rev };
+  if (it.W && it.stopIdx != null) it.stop = it.W.cum[it.stopIdx];
+  L.push(it); if (it.W) { const p = owAlong(it.W, it.s); obj.position.set(p[0], it.y, p[1]); obj.rotation.y = -p[2]; }
+  return it;
+}
+function owLifeTick(g, dt) {
+  const L = g.userData.life; if (!L) return; const T = performance.now() / 1000;
+  for (const it of L) {
+    if (it.kind === 'steam') { for (const b of it.obj.children) { const u = ((T * .12 + b.userData.ph) % 1), r = .8 + u * 2.4; b.position.set(b.userData.dx * u * 3 + Math.sin(T * .3 + b.userData.ph * 9) * .4, 1 + u * 9, b.userData.dz * u * 3); b.scale.setScalar(r); b.material.opacity = .5 * Math.sin(Math.PI * Math.min(1, u * 1.15)) * (1 - u * .4); } continue; }
+    if (it.kind === 'blink') { it.obj.material.emissiveIntensity = (Math.sin(T * 3 + it.ph) > .6) ? 2.5 : .15; continue; }
+    const W = it.W; if (!W) continue; let moving = true;
+    if (it.wait > 0) { it.wait -= dt; moving = false; }
+    else if (W.loop) {
+      const prev = it.s; it.s += it.v * dt;
+      if (it.stop != null && !it.stopped && prev < it.stop && it.s >= it.stop) { it.s = it.stop; it.wait = it.stopT; it.stopped = true; }
+      if (it.s >= W.L) { it.s -= W.L; it.stopped = false; }
+    } else {
+      it.s += it.dir * it.v * dt;
+      if (it.s >= W.L) { it.s = W.L; it.dir = -1; it.wait = it.p1; } else if (it.s <= 0) { it.s = 0; it.dir = 1; it.wait = it.p0; }
+    }
+    const p = owAlong(W, it.s), o = it.obj, fwd = W.loop || it.dir > 0 || !it.rev;
+    o.position.x = p[0]; o.position.z = p[1]; o.rotation.y = -(p[2] + (W.loop || it.dir > 0 ? 0 : (it.rev ? 0 : Math.PI)));
+    if (it.kind === 'walker') { const sw = moving ? Math.sin(T * 7 + it.ph) * .5 : 0; const lg = o.userData.legs; if (lg) { lg[0].rotation.z = sw; lg[1].rotation.z = -sw; } o.position.y = it.y + (moving ? Math.abs(Math.sin(T * 7 + it.ph)) * .03 : 0); }
+    if (it.kind === 'fork') { const c = o.userData.car; if (c) c.position.y = .12 + (moving ? .05 : Math.min(.9, (it.p1 - Math.max(0, it.wait)) * .45) * (it.dir < 0 ? 1 : 0)); }
+    if (it.kind === 'truck') o.position.y = it.y + (moving ? Math.sin(T * 20 + it.ph) * .008 : 0);
+  }
+}
+function owSteam(g, x, y, z) {                        // a steam plume: soft puffs rising, swelling and thinning out
+  const s = new THREE.Group(); s.position.set(x, y, z);
+  for (let k = 0; k < 7; k++) { const m = new THREE.MeshStandardMaterial({ color: owCol('#eef2f4'), roughness: 1, transparent: true, opacity: .4, depthWrite: false }); const b = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), m); b.userData = { ph: k / 7, dx: (Math.random() - .5) * .6 + .4, dz: (Math.random() - .5) * .6 }; s.add(b); }
+  g.add(s); owLife(g, 'steam', s, null); return s;
+}
+/* a site's working life: an access road + a truck on it, a forklift at the dock, workers about the yard */
+function owAddLife(g, type) {
+  const R = owBox(g, -12.5, -.08, 7.2, 15, .1, 2.4, '#3a3a38', .95); R.receiveShadow = true;                                   // the access road into the yard
+  owBox(g, -12.5, .03, 7.2, 15, .01, .1, '#d8d0a0', .6);                                                                        // its centre line
+  const tr = owTruckModel(['#c9a13a', '#b23a2e', '#2e6ab2', '#ececec'][(Math.random() * 4) | 0]);
+  owLife(g, 'truck', tr, [[-22, 7.8], [-4, 7.8], [-1.5, 7.2], [-.4, 6.5], [-1.5, 6.6], [-4, 6.6], [-22, 6.6]], { loop: true, v: 2.6, stopIdx: 3, stopT: 5, s0: Math.random() * 20 });
+  const fk = owForkModel(); owLife(g, 'fork', fk, [[1.5, 6.3], [4, 6.3], [4, 7.4]], { v: 1.3, p0: 1.8, p1: 2.2, rev: true });
+  const pts = [[[-4, -6.3], [0, -6.6], [3, -6.2]], [[5.9, 3], [6.3, 0], [5.9, -3]], [[1, 5.9], [3.5, 6.1]]];
+  for (let k = 0; k < (type === 'town' ? 3 : 3); k++) owLife(g, 'walker', owWorkerModel(k === 2 ? '#e8e8e8' : '#ff8a1a'), pts[k], { v: .7 + Math.random() * .3, p0: 1 + Math.random() * 3, p1: 1 + Math.random() * 3 });
+}
+/* ---- the nuclear power plant ---- */
+function owNuclearModel(g) {
+  owBox(g, 1, -.1, 0, 17, .22, 14, '#6e706a', .95);                                                   // the plant's apron
+  const pts = []; for (let k = 0; k <= 16; k++) { const t = k / 16; pts.push(new THREE.Vector2(2.6 - Math.sin(Math.pow(t, .9) * Math.PI) * .95 + t * .25, t * 8.5)); }
+  for (const x of [-4.2, 1.4]) { const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 36), owM('#d6d6d0', .9)); m.position.set(x, 0, -3.4); m.castShadow = true; m.receiveShadow = true; g.add(m);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(2.05, .08, 6, 36), owM('#9a9a94', .8)); rim.rotation.x = Math.PI / 2; rim.position.set(x, 8.5, -3.4); g.add(rim);
+    const inner = new THREE.Mesh(new THREE.CircleGeometry(1.98, 32), owM('#3a3c3a', 1)); inner.rotation.x = -Math.PI / 2; inner.position.set(x, 7.2, -3.4); g.add(inner);
+    for (let k = 0; k < 10; k++) { const a = k / 10 * 6.283; owBox(g, x + Math.cos(a) * 2.75, 0, -3.4 + Math.sin(a) * 2.75, .3, .6, .3, '#8a8a84'); }   // the legs at the air intake
+    owSteam(g, x, 7.6, -3.4); }
+  owCylP(g, 5.6, 0, -2.4, 2.1, 2.1, 3.4, '#e4e2dc', 32, .6); const d = new THREE.Mesh(new THREE.SphereGeometry(2.1, 28, 14, 0, 6.283, 0, 1.57), owM('#ecebe6', .5)); d.position.set(5.6, 3.4, -2.4); d.castShadow = true; g.add(d);   // containment
+  owBox(g, 5.6, 0, .9, 3.6, 2.2, 2.2, '#c9cbc6', .8); owBox(g, 1.2, 0, 2.6, 7.5, 2.6, 3.2, '#a9b2b8', .7, .2); owBox(g, 1.2, 2.6, 2.6, 7.6, .25, 3.3, '#7c868c', .6, .3);   // aux building · turbine hall
+  for (let k = 0; k < 5; k++) owBox(g, -1.6 + k * 1.4, 2.85, 2.6, .5, .3, 2.4, '#8a9298', .6, .3);                                      // roof vents
+  const stack = owCylP(g, 8.2, 0, 1.8, .32, .42, 9, '#e8e8e4', 14, .6); for (let k = 0; k < 3; k++) owCylP(g, 8.2, 6.4 + k * 1, 1.8, .345 - k * .02, .35 - k * .02, .45, '#c23a2e', 14, .6);
+  const bl = new THREE.Mesh(new THREE.SphereGeometry(.12, 8, 6), new THREE.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 2 })); bl.position.set(8.2, 9.1, 1.8); g.add(bl); owLife(g, 'blink', bl, null);   // aircraft warning light
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { owBox(g, -6 + i * 1.6, 0, 3.4 + j * 1.8, .9, .9, .7, '#5a6068', .6, .4); owCylP(g, -6 + i * 1.6, .9, 3.4 + j * 1.8, .08, .08, .5, '#c9b88a', 8, .5); }   // switchyard transformers
+  for (const z of [3, 6.4]) { owBox(g, -8.6, 0, z, .12, 3.4, .12, '#8a8e92', .5, .6); owBox(g, -8.6, 3.2, z, .12, .08, 1.6, '#8a8e92', .5, .6); }   // pylons
+  for (let k = 0; k < 26; k++) { const t = k / 26, x = -8.2 + t * 17.6; owBox(g, x, 0, 7, .06, .9, .06, '#9a9e98', .5, .6); owBox(g, x, 0, -10.2, .06, .9, .06, '#9a9e98', .5, .6); }   // security fence
+  for (let k = 0; k < 4; k++) owBox(g, 5 + k * 1.1, 0, 5.6, .9, .45, .5, ['#b23a2e', '#2e6ab2', '#dcdcdc', '#3a3a3a'][k], .4, .5);   // staff car park
+}
+/* ---- the settlement: the Command Post in its walled compound ---- */
+function owSettleModel(g, px, py) {
+  owBox(g, 0, -.12, 0, 40, .22, 40, '#7a7c72', .95);                                                   // the levelled compound
+  const hq = owBld('hq', px, py); if (hq) g.add(hq);
+  const place = (t, x, z, ry) => { const m = owBld(t, px, py); if (m) { m.position.set(x, 0, z); m.rotation.y = ry || 0; g.add(m); } return m; };
+  place('barracks', -11.5, -3); place('armory', 11.5, -3); place('helipad', -11, 10.5); place('warehouse', 11, 11);
+  for (const [x, z] of [[-17.5, -17.5], [17.5, -17.5], [-17.5, 17.5], [17.5, 17.5]]) place('tower', x, z);
+  for (const [x, z] of [[-6, -17], [6, -17], [-17, 0], [17, 0]]) place('flood', x, z);
+  // perimeter: a concrete wall with a sandbag berm outside it, the gate gap on the south side
+  for (let k = -19; k <= 19; k += 2) { for (const [x, z, rot] of [[k, -19.5, 0], [-19.5, k, 1], [19.5, k, 1], [k, 19.5, 0]]) { if (rot === 0 && z > 0 && Math.abs(k) <= 3) continue; const w = owBox(g, x, 0, z, rot ? .7 : 2.05, 2.1, rot ? 2.05 : .7, '#9a9a92', .9); w.receiveShadow = true; owBox(g, x + (rot ? (x > 0 ? .9 : -.9) : 0), 0, z + (rot ? 0 : (z > 0 ? .9 : -.9)), rot ? .8 : 2, .7, rot ? 2 : .8, '#a8935f', .95); } }
+  for (const x of [-3.6, 3.6]) owBox(g, x, 0, 19.5, 1, 3, 1, '#7a7a74', .8); const bar = owBox(g, 0, 1.4, 19.8, 6.2, .18, .18, '#d8d8d0', .6); bar.material = owM('#c23a2e', .6);   // gate posts + boom
+  for (let k = 0; k < 3; k++) { const t = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 4, 3, 1), owM('#5a6446', .95)); t.rotation.z = Math.PI / 2; t.rotation.y = Math.PI / 2; t.position.set(-4 + k * 4, .8, -13); t.castShadow = true; g.add(t); }   // tents
+  owBox(g, 6, 0, -8, .25, 11, .25, '#b8b8b0', .5, .6); for (let k = 0; k < 3; k++) owBox(g, 6, 3 + k * 3, -8, 1.8, .06, .06, '#b8b8b0', .5, .6);   // radio mast
+  try { if (G._r3d.mkVehicle) for (let k = 0; k < 3; k++) { const v = G._r3d.mkVehicle('humvee', 1); if (v && v.g) { if (v.g.parent) v.g.parent.remove(v.g); if (v.disc) v.disc.visible = false; v.g.scale.setScalar(.95); v.g.position.set(3.5 + k * 2.6, 0, 14.5); v.g.rotation.y = Math.PI / 2; g.add(v.g); } } } catch (e) {}
+  // life: a supply truck in through the gate to the warehouse, a forklift at its door, patrols on the walls, men about the yard
+  owLife(g, 'truck', owTruckModel('#4e5a3a'), [[1.2, 34], [1.2, 18], [6, 12.4], [8, 11.6], [5.5, 12.8], [-1.2, 18], [-1.2, 34]], { loop: true, v: 2.6, stopIdx: 3, stopT: 6, s0: Math.random() * 30 });
+  owLife(g, 'fork', owForkModel(), [[13, 7.5], [9, 7.5], [9, 9.5]], { v: 1.2, p0: 1.8, p1: 2.2, rev: true });
+  owLife(g, 'walker', owSoldierModel(), [[-17.8, -17.8], [17.8, -17.8], [17.8, 17.8], [4.5, 17.8], [4.5, 17.2], [-4.5, 17.2], [-4.5, 17.8], [-17.8, 17.8]], { loop: true, v: .9 });
+  owLife(g, 'walker', owSoldierModel(), [[17.8, 17.8], [17.8, -17.8], [-17.8, -17.8], [-17.8, 17.8], [-4.5, 17.8], [-4.5, 17.2], [4.5, 17.2], [4.5, 17.8]], { loop: true, v: .9, s0: 40 });
+  for (let k = 0; k < 4; k++) owLife(g, 'walker', k % 2 ? owSoldierModel() : owWorkerModel(), [[-6 + k * 3, 6], [-3 + k * 2, 9.5]], { v: .8, p0: 1 + k, p1: 2 + k });
+}
+
+/* ======================================== THE REGION IS THAILAND ========================================
+   The region's land is the real outline of Thailand (lon 97.2°–105.9° E, lat 5.4°–20.6° N, ≈1 km a tile), with its islands
+   in the Gulf and the Andaman Sea. The game's own terrain generator shapes it: the elevation noise gives the relief, but the
+   coast follows the country, the north and the western border ranges are raised into highlands, the Chao Phraya basin is
+   flattened into the central plain, and a low spine runs down the southern peninsula. */
+const OW_WW = 2144, OW_WH = 3848;                    // tiles (x: 8.7° of longitude, y: 15.2° of latitude — the country is 1.8× taller than wide)
+const OW_LON0 = 97.2, OW_LON1 = 105.9, OW_LAT0 = 20.6, OW_LAT1 = 5.4;
+const OW_TH = [   // the mainland, clockwise from Mae Sai (lon, lat)
+  [99.9, 20.42], [100.1, 20.36], [100.5, 20.16], [100.58, 19.62], [100.9, 19.55], [101.22, 19.52], [101.28, 19.0], [101.05, 18.42], [101.12, 17.9], [101.3, 17.65],
+  [101.8, 17.58], [102.1, 18.12], [102.7, 17.94], [103.1, 18.28], [103.35, 18.42], [103.9, 18.3], [104.2, 17.85], [104.35, 17.55], [104.75, 16.85], [104.8, 16.4],
+  [105.4, 15.98], [105.62, 15.4], [105.5, 14.9], [105.52, 14.38], [105.2, 14.34], [104.8, 14.42], [104.3, 14.38], [103.9, 14.35], [103.4, 14.4], [103.0, 14.3],
+  [102.72, 13.95], [102.55, 13.7], [102.35, 13.58], [102.38, 13.2], [102.45, 12.8], [102.62, 12.45], [102.78, 12.2], [102.9, 11.95], [102.92, 11.66],
+  [102.7, 11.9], [102.5, 12.1], [102.25, 12.3], [102.05, 12.52], [101.75, 12.66], [101.4, 12.68], [101.05, 12.66], [100.9, 12.8], [100.88, 13.1], [100.96, 13.42],
+  [100.75, 13.52], [100.5, 13.5], [100.2, 13.46], [99.98, 13.3], [99.98, 12.95], [99.96, 12.6], [99.95, 12.25], [99.82, 11.8], [99.65, 11.4], [99.5, 10.95],
+  [99.25, 10.45], [99.18, 10.05], [99.2, 9.7], [99.32, 9.3], [99.6, 9.22], [99.92, 9.3], [99.98, 8.9], [100.1, 8.4], [100.25, 8.05], [100.4, 7.6],
+  [100.52, 7.2], [100.9, 6.95], [101.3, 6.88], [101.7, 6.52], [102.1, 6.24], [101.88, 5.95], [101.62, 5.78], [101.2, 5.72], [101.1, 6.1], [100.8, 6.4],
+  [100.35, 6.5], [100.12, 6.45], [99.88, 6.82], [99.7, 7.1], [99.55, 7.38], [99.3, 7.55], [99.05, 7.85], [98.8, 8.15], [98.55, 8.35], [98.3, 8.7],
+  [98.25, 9.15], [98.35, 9.6], [98.5, 9.95], [98.68, 10.35], [98.95, 10.72], [99.18, 11.1], [99.35, 11.5], [99.25, 12.0], [99.12, 12.45], [99.05, 12.9],
+  [99.15, 13.3], [98.85, 13.8], [98.55, 14.25], [98.25, 14.85], [98.45, 15.3], [98.6, 15.75], [98.6, 16.2], [98.52, 16.75], [98.2, 17.2], [97.8, 17.75],
+  [97.65, 18.2], [97.55, 18.6], [97.38, 18.95], [97.55, 19.4], [97.8, 19.65], [98.1, 19.75], [98.5, 19.72], [98.95, 19.82], [99.3, 20.08], [99.55, 20.2]
+];
+const OW_ISLANDS = [   // name, lon, lat, half-width (°lon), half-height (°lat)
+  ['Phuket', 98.34, 7.95, .1, .22], ['Ko Samui', 100.0, 9.5, .1, .09], ['Ko Pha Ngan', 100.03, 9.75, .06, .06], ['Ko Tao', 99.84, 10.09, .025, .03],
+  ['Ko Chang', 102.35, 12.05, .05, .13], ['Ko Kut', 102.57, 11.65, .04, .08], ['Ko Mak', 102.47, 11.82, .025, .025], ['Ko Samet', 101.45, 12.57, .02, .05],
+  ['Ko Si Chang', 100.8, 13.15, .015, .025], ['Ko Lanta', 99.07, 7.6, .04, .12], ['Ko Phi Phi', 98.77, 7.74, .025, .03], ['Ko Yao Noi', 98.6, 8.12, .035, .06],
+  ['Ko Yao Yai', 98.58, 7.97, .035, .08], ['Ko Libong', 99.39, 7.25, .035, .03], ['Ko Muk', 99.3, 7.37, .015, .015], ['Ko Tarutao', 99.65, 6.62, .05, .08],
+  ['Ko Lipe', 99.3, 6.49, .015, .015], ['Ko Adang', 99.25, 6.54, .025, .025], ['Similan Islands', 97.64, 8.65, .02, .05], ['Surin Islands', 97.87, 9.42, .03, .03],
+  ['Ko Phayam', 98.4, 9.72, .025, .03], ['Ko Chang (Ranong)', 98.45, 9.83, .02, .03], ['Ko Kood Mai', 102.3, 11.95, .01, .01], ['Ko Larn', 100.78, 12.92, .015, .015]
+];
+const owLL2T = (lon, lat) => [(lon - OW_LON0) / (OW_LON1 - OW_LON0) * MW, (OW_LAT0 - lat) / (OW_LAT0 - OW_LAT1) * MH];   // lon/lat → tile
+const owT2LL = (tx, ty) => [OW_LON0 + tx / MW * (OW_LON1 - OW_LON0), OW_LAT0 - ty / MH * (OW_LAT0 - OW_LAT1)];
+/* land mask → signed distance to the coast in tiles (+ inside land, − out at sea) */
+function owGeoBuild() {
+  const W = MW, H = MH, N = W * H, inside = new Uint8Array(N);
+  const P = OW_TH.map(([lo, la]) => owLL2T(lo, la));
+  for (let y = 0; y < H; y++) {                                        // scanline fill of the mainland polygon
+    const yy = y + .5, xs = [];
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a[1] > yy) !== (b[1] > yy)) xs.push(a[0] + (yy - a[1]) / (b[1] - a[1]) * (b[0] - a[0])); }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) { const x0 = Math.max(0, Math.ceil(xs[k] - .5)), x1 = Math.min(W - 1, Math.floor(xs[k + 1] - .5)); for (let x = x0; x <= x1; x++) inside[y * W + x] = 1; }
+  }
+  const S = (typeof WSEED !== 'undefined' ? WSEED : 1) * 7.3;
+  for (const [, lo, la, rlo, rla] of OW_ISLANDS) {                    // the islands: ragged ellipses
+    const [cx, cy] = owLL2T(lo, la), rx = Math.max(15, rlo / (OW_LON1 - OW_LON0) * W * 1.7), ry = Math.max(15, rla / (OW_LAT0 - OW_LAT1) * H * 1.7);   // islands drawn a little larger than life so each has room for a fight
+    for (let y = Math.max(0, (cy - ry * 1.4) | 0); y <= Math.min(H - 1, (cy + ry * 1.4) | 0); y++) for (let x = Math.max(0, (cx - rx * 1.4) | 0); x <= Math.min(W - 1, (cx + rx * 1.4) | 0); x++) {
+      const dx = (x + .5 - cx) / rx, dy = (y + .5 - cy) / ry, r = .82 + vnoise(x / 6 + S, y / 6 + S) * .36; if (dx * dx + dy * dy <= r * r) inside[y * W + x] = 1; }
+  }
+  // coastline roughness: nibble / grow the shore by a little noise so it isn't a ruler-straight polygon edge
+  const d = new Float32Array(N), BIG = 1e6;
+  for (let i = 0; i < N; i++) d[i] = inside[i] ? BIG : 0;                // distance (inside) to the nearest sea tile
+  const chamfer = arr => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!arr[i]) continue; let v = arr[i]; if (x > 0) v = Math.min(v, arr[i - 1] + 1); if (y > 0) { v = Math.min(v, arr[i - W] + 1); if (x > 0) v = Math.min(v, arr[i - W - 1] + 1.414); if (x < W - 1) v = Math.min(v, arr[i - W + 1] + 1.414); } arr[i] = v; }
+    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) { const i = y * W + x; if (!arr[i]) continue; let v = arr[i]; if (x < W - 1) v = Math.min(v, arr[i + 1] + 1); if (y < H - 1) { v = Math.min(v, arr[i + W] + 1); if (x < W - 1) v = Math.min(v, arr[i + W + 1] + 1.414); if (x > 0) v = Math.min(v, arr[i + W - 1] + 1.414); } arr[i] = v; } };
+  chamfer(d);
+  const o = new Float32Array(N); for (let i = 0; i < N; i++) o[i] = inside[i] ? 0 : BIG; chamfer(o);
+  for (let i = 0; i < N; i++) { const x = i % W, y = (i / W) | 0, n = (vnoise(x / 14 + S + 3, y / 14 + S) - .5) * 5 + (vnoise(x / 4 + S, y / 4 + S + 9) - .5) * 1.6; d[i] = (inside[i] ? d[i] : -o[i]) + n; }
+  const geo = { d, W, H }; owProvBuild(geo); return geo;
+}
+const owSm = v => { v = v < 0 ? 0 : v > 1 ? 1 : v; return v * v * (3 - 2 * v); };
+/* the elevation of a region tile (0..1 in genWorld's units: SEA ≈ .32, SHORE ≈ .347, rock above .66) */
+function owGeoElev(x, y, e) {
+  const D = OW.geo.d[y * MW + x];
+  if (D <= 0) return Math.max(.03, .314 + D * .006);                   // the sea shelves off from the coast
+  const [lon, lat] = owT2LL(x, y);
+  const isan = owSm((lon - 101.5) / .6) * owSm((18.3 - lat) / .3) * owSm((lat - 14.3) / .3);   // the Khorat plateau: a broad, low tableland
+  let bias = .085 * owSm((lat - 16.9) / 1.7) * (1 - owSm((lon - 101.5) / .7));   // the northern highlands (Isan's north stays plateau)
+  if (lat > 10.4) bias += .1 * owSm((99.35 - lon) / .55) * owSm((lat - 10.4) / .6);   // the Tenasserim / Tanen ranges along the western border
+  if (lat < 10.6 && lat > 6.6) bias += .085 * Math.max(0, 1 - Math.abs(lon - (99.0 + (10.6 - lat) * .18)) / .55);   // the peninsula's spine
+  bias += .04 * isan;                                                  // the plateau stands a little above the plain
+  bias += (OW.geo.lift ? owGeoLerp(OW.geo.lift, x, y) : owRangeLift(lon, lat)) * (.6 + e * .5);                       // the named ranges: Phetchabun, Khao Yai, Phanom Dongrak, Dawna, Tenasserim…
+  const [bk, bd] = OW.geo.bk ? [owGeoLerp(OW.geo.bk, x, y), owGeoLerp(OW.geo.bd, x, y)] : owBasin(lon, lat); bias -= bk * bd;                 // …and the valley basins Chiang Mai, Chiang Rai, Lampang, Nan sit in
+  const ar = OW.geo.arid ? Math.max(0, OW.geo.arid[y * MW + x]) : 0;
+  const plain = (lat > 13.3 && lat < 16.4 && lon > 99.55 && lon < 101.05) ? .45 : 1;   // the Chao Phraya basin: low and flat
+  let el = .352 + Math.max(0, e - .27) * .55 * plain * (1 - isan * .45) * (1 - Math.min(1, ar) * .6) * (1 - bk * .6) + Math.max(-.02, bias);
+  el = Math.min(el, .715);                                             // no snow in Thailand — the highest ground is bare rock
+  return .337 + (el - .337) * owSm(D / 10);                            // beaches, then the land rises inland
+}
+/* ======================================== PROVINCES, REGIONS, MOUNTAINS AND DESERT ========================================
+   The region's zones are Thailand's 77 provinces (each zone is the land nearest its capital, with a slightly wavy border),
+   grouped into the six geographic regions. The ground follows the region it lies in: forested mountain ranges in the
+   North and West, the flat rice plain of the Chao Phraya in the Centre, the dry Khorat plateau of the Northeast with its
+   desert at Thung Kula Ronghai, the forest and mangrove coast of the East, and the rainforest and limestone karst of the South. */
+const OW_REG = [   // name, short, colour on the map legend, base danger
+  ['Northern', 'North', '#8fd18a', 3], ['Northeastern (Isan)', 'Isan', '#e0c37a', 3], ['Central', 'Central', '#9fd0ff', 5],
+  ['Eastern', 'East', '#8fe0c8', 4], ['Western', 'West', '#c9b0ff', 2], ['Southern', 'South', '#6fd6a0', 3]
+];
+const OW_PROV = [  // name, lon, lat, region (0 N · 1 NE · 2 C · 3 E · 4 W · 5 S), city bonus, extra seed points for big provinces
+  ['Chiang Mai', 98.98, 18.79, 0, 2, [[98.55, 18.2], [98.9, 19.5]]], ['Chiang Rai', 99.83, 19.91, 0, 1], ['Lampang', 99.49, 18.29, 0, 0, [[99.6, 17.7]]], ['Lamphun', 99.01, 18.58, 0, 0],
+  ['Mae Hong Son', 97.97, 19.3, 0, 0, [[98.0, 18.4], [97.9, 17.9]]], ['Nan', 100.77, 18.78, 0, 0, [[100.9, 19.3]]], ['Phayao', 99.9, 19.17, 0, 0], ['Phrae', 100.14, 18.14, 0, 0], ['Uttaradit', 100.1, 17.62, 0, 0, [[100.6, 17.7]]],
+  ['Amnat Charoen', 104.63, 15.86, 1, 0], ['Bueng Kan', 103.65, 18.36, 1, 0], ['Buriram', 103.1, 14.99, 1, 0], ['Chaiyaphum', 102.03, 15.81, 1, 0, [[101.8, 16.2]]], ['Kalasin', 103.51, 16.43, 1, 0],
+  ['Khon Kaen', 102.83, 16.44, 1, 2], ['Loei', 101.72, 17.49, 1, 0, [[101.4, 17.3]]], ['Maha Sarakham', 103.3, 16.18, 1, 0], ['Mukdahan', 104.72, 16.54, 1, 0], ['Nakhon Phanom', 104.78, 17.39, 1, 0],
+  ['Nakhon Ratchasima', 102.1, 14.97, 1, 2, [[101.7, 14.7], [102.5, 15.4]]], ['Nong Bua Lamphu', 102.44, 17.2, 1, 0], ['Nong Khai', 102.74, 17.88, 1, 0], ['Roi Et', 103.65, 16.05, 1, 0], ['Sakon Nakhon', 104.15, 17.16, 1, 0],
+  ['Sisaket', 104.33, 15.12, 1, 0], ['Surin', 103.49, 14.88, 1, 0], ['Ubon Ratchathani', 104.86, 15.24, 1, 1, [[105.2, 15.0]]], ['Udon Thani', 102.79, 17.41, 1, 1], ['Yasothon', 104.15, 15.79, 1, 0],
+  ['Bangkok', 100.5, 13.75, 2, 5], ['Ang Thong', 100.45, 14.59, 2, 0], ['Chai Nat', 100.13, 15.19, 2, 0], ['Kamphaeng Phet', 99.52, 16.48, 2, 0], ['Lopburi', 100.65, 14.8, 2, 1, [[101.0, 15.1]]], ['Nakhon Nayok', 101.21, 14.2, 2, 0],
+  ['Nakhon Pathom', 100.06, 13.82, 2, 1], ['Nakhon Sawan', 100.12, 15.7, 2, 1], ['Nonthaburi', 100.52, 13.86, 2, 2], ['Pathum Thani', 100.53, 14.02, 2, 2], ['Phetchabun', 101.16, 16.42, 2, 0, [[101.2, 15.8]]], ['Phichit', 100.35, 16.44, 2, 0],
+  ['Phitsanulok', 100.26, 16.82, 2, 1, [[100.7, 16.9]]], ['Phra Nakhon Si Ayutthaya', 100.57, 14.35, 2, 2], ['Samut Prakan', 100.6, 13.6, 2, 2], ['Samut Sakhon', 100.27, 13.55, 2, 1], ['Samut Songkhram', 100.0, 13.41, 2, 0],
+  ['Saraburi', 100.91, 14.53, 2, 1], ['Sing Buri', 100.4, 14.89, 2, 0], ['Sukhothai', 99.82, 17.01, 2, 0], ['Suphan Buri', 100.12, 14.47, 2, 0], ['Uthai Thani', 100.02, 15.38, 2, 0, [[99.5, 15.3]]],
+  ['Chachoengsao', 101.07, 13.69, 3, 1], ['Chanthaburi', 102.1, 12.61, 3, 0], ['Chonburi', 100.98, 13.36, 3, 3], ['Prachinburi', 101.37, 14.05, 3, 0], ['Rayong', 101.28, 12.68, 3, 2], ['Sa Kaeo', 102.07, 13.82, 3, 0], ['Trat', 102.51, 12.24, 3, 0],
+  ['Kanchanaburi', 99.53, 14.02, 4, 0, [[98.9, 14.6], [98.7, 15.1]]], ['Phetchaburi', 99.95, 13.11, 4, 0], ['Prachuap Khiri Khan', 99.8, 11.81, 4, 0, [[99.55, 12.4]]], ['Ratchaburi', 99.81, 13.54, 4, 0], ['Tak', 99.13, 16.88, 4, 0, [[98.75, 16.5], [98.55, 17.3], [98.9, 15.9]]],
+  ['Chumphon', 99.18, 10.49, 5, 0], ['Krabi', 98.91, 8.09, 5, 1], ['Nakhon Si Thammarat', 99.96, 8.43, 5, 1], ['Narathiwat', 101.82, 6.43, 5, 0], ['Pattani', 101.25, 6.87, 5, 0], ['Phang Nga', 98.53, 8.45, 5, 0],
+  ['Phatthalung', 100.08, 7.62, 5, 0], ['Phuket', 98.39, 7.88, 5, 3], ['Ranong', 98.64, 9.96, 5, 0], ['Satun', 100.07, 6.62, 5, 0], ['Songkhla', 100.6, 7.19, 5, 2], ['Surat Thani', 99.33, 9.14, 5, 1, [[99.0, 8.8]]], ['Trang', 99.61, 7.56, 5, 0], ['Yala', 101.28, 6.54, 5, 0]
+];
+const OW_RANGES = [   // named mountain ranges: polyline (lon, lat), half-width (°), lift
+  ['Thanon Thong Chai Range', [[98.2, 19.6], [98.5, 18.6], [98.6, 17.8]], .35, .07], ['Doi Inthanon', [[98.49, 18.59], [98.5, 18.55]], .22, .1],
+  ['Phi Pan Nam Range', [[99.6, 19.6], [100.2, 18.6], [100.3, 17.8]], .3, .05], ['Luang Prabang Range', [[101.0, 19.4], [101.1, 18.3]], .22, .06],
+  ['Phetchabun Mountains', [[101.45, 17.6], [101.25, 16.6], [101.15, 15.4]], .24, .16], ['Dong Phaya Yen · Khao Yai', [[101.1, 15.2], [101.6, 14.45], [102.6, 14.3]], .2, .1],
+  ['Phanom Dongrak Range', [[102.8, 14.32], [104.0, 14.3], [105.3, 14.35]], .14, .08], ['Phu Phan Range', [[103.2, 17.3], [104.0, 16.9], [104.5, 16.6]], .16, .05],
+  ['Dawna Range', [[98.3, 17.3], [98.7, 16.3], [98.6, 15.4]], .3, .06], ['Tenasserim Hills', [[98.6, 15.2], [99.1, 13.8], [99.3, 12.6], [99.1, 11.2]], .28, .08],
+  ['Chanthaburi Mountains', [[101.8, 12.95], [102.2, 12.85]], .28, .09], ['Nakhon Si Thammarat Range', [[99.2, 9.6], [99.8, 8.8], [100.0, 7.6], [100.1, 6.9]], .2, .09],
+  ['Phuket Range', [[98.6, 9.9], [98.7, 9.0], [98.9, 8.3]], .16, .07], ['Sankala Khiri Range', [[100.9, 6.2], [101.4, 5.95], [101.8, 5.95]], .2, .08]
+];
+const OW_BASINS = [   // the valley basins the northern cities stand in: lon, lat, radius (°), depth
+  [98.98, 18.72, .38, .12], [99.85, 19.88, .32, .1], [99.5, 18.3, .26, .1], [100.77, 18.8, .22, .1], [100.14, 18.14, .22, .09], [99.9, 19.17, .18, .08],
+  [97.97, 19.3, .12, .07], [98.57, 16.71, .15, .06], [101.72, 17.49, .2, .07], [100.1, 17.62, .28, .1], [99.2, 17.0, .3, .08], [101.16, 16.42, .2, .08]
+];
+const OW_DESERTS = [   // name, lon, lat, half-width (°lon), half-height (°lat)
+  ['Thung Kula Ronghai Desert', 103.72, 15.47, 1.0, .42], ['Khorat Salt Flats', 102.45, 15.3, .45, .26], ['Sakon Salt Basin', 103.35, 17.02, .32, .2]
+];
+const owSegD = (px, py, ax, ay, bx, by) => { const vx = bx - ax, vy = by - ay, l = vx * vx + vy * vy, t = l ? Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l)) : 0; return Math.hypot(px - ax - vx * t, py - ay - vy * t); };
+/* the ranges' lift at a point (lon, lat) */
+function owRangeLift(lon, lat) {
+  let lift = 0;
+  for (const [, pts, w, a] of OW_RANGES) { let d = 1e9; for (let k = 0; k + 1 < pts.length; k++) d = Math.min(d, owSegD(lon, lat, pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1])); if (d < w) lift = Math.max(lift, a * owSm(1 - d / w)); }
+  return lift;
+}
+function owBasin(lon, lat) {   // 0 (hills) … 1 (the floor of a valley basin), and how deep it sinks
+  let k = 0, dep = 0; for (const [lo, la, r, d] of OW_BASINS) { const f = owSm(1 - Math.hypot(lon - lo, lat - la) / r); if (f > k) { k = f; dep = d; } }
+  return [k, dep];
+}
+/* province (weighted, wavy Voronoi on the capitals) per region cell + dryness per tile — called from owGeoBuild */
+function owProvBuild(geo) {
+  const CW = (MW / OW_CELL) | 0, CH = (MH / OW_CELL) | 0, prov = new Uint8Array(CW * CH), S = (typeof WSEED !== 'undefined' ? WSEED : 1) * 3.1;
+  const seeds = []; OW_PROV.forEach((p, id) => { const add = (lo, la) => { const t = owLL2T(lo, la); seeds.push([t[0] / OW_CELL, t[1] / OW_CELL, id]); }; add(p[1], p[2]); (p[5] || []).forEach(q => add(q[0], q[1])); });
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    const wx = x + (vnoise(x / 9 + S, y / 9 + 40) - .5) * 9, wy = y + (vnoise(x / 9 + 70, y / 9 + S) - .5) * 9;   // wavy borders, not ruler-straight
+    let best = 0, bd = 1e18; for (const s of seeds) { const d = (s[0] - wx) ** 2 + (s[1] - wy) ** 2; if (d < bd) { bd = d; best = s[2]; } }
+    prov[y * CW + x] = best;
+  }
+  const arid = new Float32Array(MW * MH), DS = OW_DESERTS.map(([, lo, la, rlo, rla]) => { const t = owLL2T(lo, la); return [t[0], t[1], rlo / (OW_LON1 - OW_LON0) * MW, rla / (OW_LAT0 - OW_LAT1) * MH]; });
+  for (const [cx, cy, rx, ry] of DS) for (let y = Math.max(0, (cy - ry * 1.5) | 0); y < Math.min(MH, cy + ry * 1.5); y++) for (let x = Math.max(0, (cx - rx * 1.5) | 0); x < Math.min(MW, cx + rx * 1.5); x++) {
+    const e = Math.hypot((x - cx) / rx, (y - cy) / ry), n = (vnoise(x / 17 + S, y / 17 + 5) - .5) * .7 + (vnoise(x / 5 + 9, y / 5 + S) - .5) * .18, a = 1 - e + n;
+    if (a > arid[y * MW + x]) arid[y * MW + x] = a;
+  }
+  // the ranges and basins are smooth: sample them once per 4 tiles and interpolate (per tile they were a quarter of the build time)
+  const LW = CW + 1, LH = CH + 1, lift = new Float32Array(LW * LH), bk = new Float32Array(LW * LH), bd = new Float32Array(LW * LH);
+  for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) { const [lo, la] = owT2LL(x * OW_CELL, y * OW_CELL), i = y * LW + x; lift[i] = owRangeLift(lo, la); const q = owBasin(lo, la); bk[i] = q[0]; bd[i] = q[1]; }
+  geo.prov = prov; geo.CW = CW; geo.arid = arid; geo.LW = LW; geo.LH = LH; geo.lift = lift; geo.bk = bk; geo.bd = bd;
+}
+/* smooth the region's ground: two passes of a 7-tile box blur, blended in from the beach inland so the coastline stays where it is */
+function owGeoSmooth() {
+  const W = MW, H = MH, N = W * H, A = new Float32Array(N), T = new Float32Array(N), D = OW.geo.d, R = 3, k = 1 / (2 * R + 1);
+  for (let i = 0; i < N; i++) A[i] = MAP.h[i];
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < H; y++) { const o = y * W; let acc = 0; for (let x = -R; x <= R; x++) acc += A[o + Math.min(W - 1, Math.max(0, x))];
+      for (let x = 0; x < W; x++) { T[o + x] = acc * k; acc += A[o + Math.min(W - 1, x + R + 1)] - A[o + Math.max(0, x - R)]; } }
+    for (let x = 0; x < W; x++) { let acc = 0; for (let y = -R; y <= R; y++) acc += T[Math.min(H - 1, Math.max(0, y)) * W + x];
+      for (let y = 0; y < H; y++) { A[y * W + x] = acc * k; acc += T[Math.min(H - 1, y + R + 1) * W + x] - T[Math.max(0, y - R) * W + x]; } }
+  }
+  for (let i = 0; i < N; i++) { const d = D[i]; if (d <= 1) continue; const w = owSm((d - 1) / 6); MAP.h[i] = Math.round(MAP.h[i] * (1 - w) + A[i] * w); }
+}
+const owGeoLerp = (A, x, y) => { const g = OW.geo, fx = Math.min(g.LW - 1.001, x / OW_CELL), fy = Math.min(g.LH - 1.001, y / OW_CELL), ix = fx | 0, iy = fy | 0, u = fx - ix, v = fy - iy, i = iy * g.LW + ix;
+  return (A[i] * (1 - u) + A[i + 1] * u) * (1 - v) + (A[i + g.LW] * (1 - u) + A[i + g.LW + 1] * u) * v; };
+const owRegOfTile = (x, y) => { const g = OW.geo; if (!g || !g.prov) return 2; const c = Math.min(g.CW - 1, (x / OW_CELL) | 0) + Math.min(((MH / OW_CELL) | 0) - 1, (y / OW_CELL) | 0) * g.CW; return OW_PROV[g.prov[c]][3]; };
+/* the ground of a region tile: the default classification re-read for its geographic region */
+function owGeoTile(x, y, h, m, t) {
+  if (t === T_DEEP || t === T_SEA || t === T_SAND) return t;
+  const i = y * MW + x, g = OW.geo, reg = owRegOfTile(x, y), D = g.d[i], ar = g.arid[i];
+  const hill = reg === 0 || reg === 4 || reg === 5;                    // the north, west and south carry bare limestone and granite tops
+  if (h > MOUNT - (hill ? 3 : 0)) return T_ROCK;
+  if (h > MOUNT - 34 && m > .22 && owGeoLerp(g.lift, x, y) > .03) return T_FOREST;   // the ranges' slopes are forested
+  switch (reg) {
+    case 0: return m > .38 ? T_FOREST : m > .2 ? T_GRASS : T_DIRT;                                            // teak and pine hills
+    case 4: return m > .42 ? T_FOREST : m > .2 ? T_GRASS : T_DIRT;                                            // the western jungle ranges
+    case 2: return (m > .62 && h < SEA + 45) ? T_SWAMP : m > .74 ? T_FOREST : m > .16 ? T_GRASS : T_DIRT;    // the rice plain and its wetlands
+    case 3: return (D < 8 && m > .5) ? T_SWAMP : m > .5 ? T_FOREST : m > .22 ? T_GRASS : T_DIRT;              // orchards, forest and mangrove coast
+    case 1: if (ar > .36) return T_SAND; if (ar > .12) return T_DIRT;                                          // the desert and its scrub
+      return m > .7 ? T_FOREST : m > .5 ? T_GRASS : T_DIRT;                                                  // the dry plateau
+    default: return (D < 9 && m > .46) ? T_SWAMP : m > .32 ? T_FOREST : m > .16 ? T_GRASS : T_DIRT;          // rainforest and mangroves
+  }
+}
+/* which tiles may be turned into open meadow by the field pass (not the desert, not the northern / western / southern forests) */
+const owGeoFieldOk = (i, t) => { const g = OW.geo; if (!g || !g.arid) return true; if (g.arid[i] > .05) return false; const r = owRegOfTile(i % MW, (i / MW) | 0); if (t === T_FOREST && (r === 0 || r === 4 || r === 5)) return false; if (t === T_DIRT && r === 1) return false; return true; };
+const OW_BNAME_REG = {   // what each kind of ground is called in each region
+  2: ['Valley', 'Dry Plateau', 'Rice Plain', 'Lowland', 'Grassland', 'Lowland'], 3: ['Hill Forest', 'Dry Forest', 'Woodland', 'Forest', 'Jungle', 'Rainforest'],
+  6: ['Marsh', 'Salt Marsh', 'Wetland', 'Mangrove', 'Marsh', 'Mangrove'], 4: ['Mountains', 'Hills', 'Hills', 'Hills', 'Mountains', 'Karst Hills'], 7: ['Peaks', 'Peaks', 'Peaks', 'Peaks', 'Peaks', 'Karst Peaks']
+};
+const owBName = (R, x, y) => { const b = owBiomeAt(R, x, y), z = R.zones[R.zone[owCell(R, x, y)]]; return (b && z && OW_BNAME_REG[b]) ? OW_BNAME_REG[b][z.reg] : OW_BNAME[b]; };
+const owProvAt = (R, x, y) => { const z = R && R.zones[R.zone[owCell(R, x, y)]]; return z || null; };
+const owProvTxt = (R, x, y) => { const z = owProvAt(R, x, y); return z ? z.name + ' · ' + OW_REG[z.reg][1] : ''; };
+const owPlaceAt = (x, y) => {                                            // a named range or desert at a region cell, if any
+  const tx = x * OW_CELL, ty = y * OW_CELL, [lon, lat] = owT2LL(tx, ty);
+  for (const [nm, lo, la, rlo, rla] of OW_DESERTS) if (((lon - lo) / rlo) ** 2 + ((lat - la) / rla) ** 2 < 1) return nm;
+  for (const [nm, pts, w] of OW_RANGES) for (let k = 0; k + 1 < pts.length; k++) if (owSegD(lon, lat, pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]) < w * .6) return nm;
+  return '';
+};
+
+/* ======================================== THE REGION MAP PANEL ========================================
+   The overview map with a sector grid: the longer side of the region is cut into 10 sectors (the shorter side into as many
+   as fit at the same size), numbered along a ruler on top (X) and down the left (Y). Each sector is cut again 10 × 10 into
+   sub-sectors (xs / ys, numbered across the whole map); zoom the camera in and the sub-grid of the sector you are looking at
+   appears, with its sub-sector numbers on the rulers. A filter picks which kinds of place to show; LEAD TO flies the camera to
+   one of them at random, reads out its sector, and pulses it on the map. */
+const OW_FILT = [['settle', 'Your settlements', '#2f8fff'], ['town', 'Towns', '#e8d8b0'], ['oil', 'Oil Fields', '#6a6a6a'], ['scrap', 'Scrap Factories', '#b87a4a'], ['supply', 'Supply Factories', '#8fd46a'],
+  ['ore', 'Ore Mines', '#c9a47a'], ['uranium', 'Uranium Mines', '#c9e84a'], ['power', 'Power Plants', '#ffd84a'], ['nuclear', 'Nuclear Power Plants', '#7ae8ff'], ['station', 'Train Stations', '#c96a4a'],
+  ['enrich', 'Uranium Enrichment', '#b07aff'], ['silo', 'ICBM Launch Silos', '#ff5a5a'], ['island', 'Islands', '#5ad6c8']];
+const OW_FCOL = Object.fromEntries(OW_FILT.map(f => [f[0], f[2]]));
+function owSec() { const R = OW.R, S = Math.max(R.W, R.H) / 10; return { S, nx: Math.ceil(R.W / S - 1e-6), ny: Math.ceil(R.H / S - 1e-6), s: S / 10 }; }
+function owSecOf(x, y) { const Q = owSec(); return { X: Math.floor(x / Q.S) + 1, Y: Math.floor(y / Q.S) + 1, xs: Math.floor(x / Q.s) + 1, ys: Math.floor(y / Q.s) + 1 }; }
+const owSecTxt = (x, y) => { const c = owSecOf(x, y); return 'Sector X' + c.X + '·Y' + c.Y + '  ·  xs' + c.xs + ' ys' + c.ys; };
+function owMapDom(v) {
+  const w = document.createElement('div'); w.className = 'owpan'; w.id = 'owminiw';
+  w.innerHTML = '<div class="owmhd"><span class="owttl" id="owclock">REGION</span><button class="owfbtn" id="owFiltBtn">▾ FILTER</button><button class="owfbtn go" id="owLead" style="display:none">⌖ LEAD TO</button></div>' +
+    '<div class="owflist" id="owFilt" style="display:none">' + OW_FILT.map(f => '<label><input type="checkbox" data-f="' + f[0] + '"><i style="background:' + f[2] + '"></i>' + f[1] + ' <b data-c="' + f[0] + '"></b></label>').join('') + '<div class="owfrow"><button class="owfbtn" data-all="1">ALL</button><button class="owfbtn" data-all="0">NONE</button></div></div>' +
+    '<div class="owmgrid"><span></span><canvas id="owrx" height="30"></canvas><canvas id="owry" width="30"></canvas><canvas id="owmini"></canvas></div><div class="owcoord" id="owcoord"></div>';
+  v.appendChild(w);
+  OW.filter = OW.filter || new Set();
+  const fl = w.querySelector('#owFilt');
+  w.querySelector('#owFiltBtn').onclick = () => { fl.style.display = fl.style.display === 'none' ? '' : 'none'; owFiltCounts(); };
+  fl.addEventListener('change', e => { const c = e.target.closest('[data-f]'); if (!c) return; if (c.checked) OW.filter.add(c.dataset.f); else OW.filter.delete(c.dataset.f); owFiltSync(); });
+  fl.addEventListener('click', e => { const b = e.target.closest('[data-all]'); if (!b) return; OW.filter = new Set(b.dataset.all === '1' ? OW_FILT.map(f => f[0]) : []); fl.querySelectorAll('[data-f]').forEach(c => c.checked = OW.filter.has(c.dataset.f)); owFiltSync(); });
+  w.querySelector('#owLead').onclick = () => owLeadTo();
+  const mini = w.querySelector('#owmini');
+  const miniGo = ev => { if (!OW.R) return; const r = mini.getBoundingClientRect(); owLook((ev.clientX - r.left) / r.width * OW.R.W, (ev.clientY - r.top) / r.height * OW.R.H, true); };
+  mini.addEventListener('mousedown', ev => { miniGo(ev); mini._drag = true; }); window.addEventListener('mouseup', () => mini._drag = false); mini.addEventListener('mousemove', ev => { if (mini._drag) miniGo(ev); });
+}
+function owFiltItems() {                                   // the places the filter currently selects
+  const out = [], F = OW.filter, st = OW.st, R = OW.R; if (!F || !F.size || !R) return out;
+  if (F.has('settle')) for (const s of st.settles) out.push({ kind: 'settle', x: s.x, y: s.y, name: s.name });
+  for (const s of R.sites) if (F.has(s.type)) out.push({ kind: s.type, x: s.x, y: s.y, name: s.label, own: !!(st.ss && st.ss[s.id] && st.ss[s.id].own) });
+  if (F.has('island') && R.islands) for (const i of R.islands) out.push({ kind: 'island', x: i.x, y: i.y, name: i.name });
+  return out;
+}
+function owFiltCounts() { const R = OW.R; if (!R) return; const c = {}; for (const s of R.sites) c[s.type] = (c[s.type] || 0) + 1; c.settle = OW.st.settles.length; c.island = (R.islands || []).length; document.querySelectorAll('#owFilt [data-c]').forEach(b => b.textContent = c[b.dataset.c] || 0); }
+function owFiltSync() { const n = OW.filter.size; document.getElementById('owFiltBtn').textContent = n ? '▾ FILTER (' + n + ')' : '▾ FILTER'; document.getElementById('owLead').style.display = n ? '' : 'none'; owMiniDraw(false); }
+async function owLeadTo() {
+  const L = owFiltItems(); if (!L.length) { owToast('Nothing of that kind on the map'); return; }
+  let it = L[(Math.random() * L.length) | 0]; if (L.length > 1 && OW.lastLead && it.x === OW.lastLead.x && it.y === OW.lastLead.y) it = L[(L.indexOf(it) + 1) % L.length];
+  OW.lastLead = it; OW.pulse = { x: it.x, y: it.y, t0: performance.now(), col: OW_FCOL[it.kind] || '#fff' };
+  owToast('⌖ ' + it.name + (it.own ? ' (yours)' : '') + ' — ' + owSecTxt(it.x, it.y));
+  await owCamTo(it.x, it.y, 1.15, 1100);
+}
+function owMiniDraw(full) {
+  const R = OW.R, c = document.getElementById('owmini'); if (!R || !c) return;
+  const CW = 260, CH = Math.round(CW * R.H / R.W); if (c.width !== CW || c.height !== CH) { c.width = CW; c.height = CH; }
+  const g = c.getContext('2d'), kx = CW / R.W, ky = CH / R.H;
+  if (!R.mini || full) { const off = document.createElement('canvas'); off.width = R.W; off.height = R.H; const og = off.getContext('2d'), id = og.createImageData(R.W, R.H);
+    const BC = [[30, 66, 92], [206, 190, 142], [104, 140, 66], [52, 92, 46], [128, 122, 108], [214, 180, 110], [82, 92, 58], [170, 160, 146]], DRY = [150, 150, 84];
+    for (let i = 0; i < R.W * R.H; i++) { const b = R.b[i], cc = b === 2 && R.zones[R.zone[i]] && R.zones[R.zone[i]].reg === 1 ? DRY : BC[b], sh = b ? .72 + R.h[i] * .55 : 1; id.data[i * 4] = cc[0] * sh; id.data[i * 4 + 1] = cc[1] * sh; id.data[i * 4 + 2] = cc[2] * sh; id.data[i * 4 + 3] = 255; }
+    for (let y = 0; y < R.H - 1; y++) for (let x = 0; x < R.W - 1; x++) { const i = y * R.W + x; if (!R.b[i]) continue; if ((R.b[i + 1] && R.zone[i + 1] !== R.zone[i]) || (R.b[i + R.W] && R.zone[i + R.W] !== R.zone[i])) { const k = i * 4; id.data[k] = id.data[k] * .55 + 110; id.data[k + 1] = id.data[k + 1] * .55 + 104; id.data[k + 2] = id.data[k + 2] * .55 + 90; } }   // province borders
+    og.putImageData(id, 0, 0); R.mini = off; }
+  g.imageSmoothingEnabled = true; g.drawImage(R.mini, 0, 0, CW, CH);
+  const st = OW.st, Q = owSec(), F = OW.filter && OW.filter.size ? OW.filter : null;
+  // the sector grid
+  g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1; g.beginPath();
+  for (let i = 1; i < Q.nx; i++) { const x = Math.round(i * Q.S * kx) + .5; g.moveTo(x, 0); g.lineTo(x, CH); }
+  for (let j = 1; j < Q.ny; j++) { const y = Math.round(j * Q.S * ky) + .5; g.moveTo(0, y); g.lineTo(CW, y); } g.stroke();
+  const vwC = CAM.vw / TS / OW_CELL, cxC = (CAM.x + CAM.vw / 2) / TS / OW_CELL, cyC = (CAM.y + CAM.vh / 2) / TS / OW_CELL, zoomed = vwC < Q.S * 1.6, cur = owSecOf(cxC, cyC);
+  if (zoomed) {                                                         // zoomed in: the sub-grid of the sector under the camera
+    const x0 = (cur.X - 1) * Q.S, y0 = (cur.Y - 1) * Q.S; g.strokeStyle = 'rgba(255,230,120,.35)'; g.beginPath();
+    for (let i = 1; i < 10; i++) { const x = (x0 + i * Q.s) * kx; g.moveTo(x, y0 * ky); g.lineTo(x, (y0 + Q.S) * ky); const y = (y0 + i * Q.s) * ky; g.moveTo(x0 * kx, y); g.lineTo((x0 + Q.S) * kx, y); } g.stroke();
+    g.strokeStyle = 'rgba(255,230,120,.8)'; g.strokeRect(x0 * kx + .5, y0 * ky + .5, Q.S * kx, Q.S * ky);
+  }
+  // places
+  for (const s of R.sites) { const own = st.ss && st.ss[s.id] && st.ss[s.id].own, hit = F && F.has(s.type); if (F && !hit && !own) { g.fillStyle = 'rgba(230,230,230,.35)'; g.fillRect(s.x * kx - 1, s.y * ky - 1, 2, 2); continue; }
+    g.fillStyle = own ? '#4aa8ff' : (hit ? OW_FCOL[s.type] : '#e8e8e8'); const r = hit ? 3.2 : 2; g.fillRect(s.x * kx - r, s.y * ky - r, r * 2, r * 2); if (hit) { g.strokeStyle = 'rgba(0,0,0,.6)'; g.strokeRect(s.x * kx - r, s.y * ky - r, r * 2, r * 2); } }
+  if (F && F.has('island') && R.islands) for (const i of R.islands) { g.strokeStyle = OW_FCOL.island; g.lineWidth = 1.4; g.beginPath(); g.arc(i.x * kx, i.y * ky, 4, 0, 7); g.stroke(); }
+  for (const s of st.settles) { g.fillStyle = '#2f8fff'; g.beginPath(); g.arc(s.x * kx, s.y * ky, 4.5, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); }
+  for (const p of st.packs) if (p.vis) { g.fillStyle = '#ff5a4a'; g.beginPath(); g.arc(p.x * kx, p.y * ky, 2.6, 0, 7); g.fill(); }
+  if (st.army && st.army.units.length) { g.fillStyle = '#7fd4ff'; g.beginPath(); g.arc(st.army.x * kx, st.army.y * ky, 3.6, 0, 7); g.fill(); g.strokeStyle = '#0b1014'; g.stroke(); }
+  // the lead-to pulse: rings expanding out of the place, three times
+  const P = OW.pulse; if (P) { const el = (performance.now() - P.t0) / 1000; if (el > 3.6) OW.pulse = null; else { for (let k = 0; k < 3; k++) { const u = ((el * .9 + k / 3) % 1); g.strokeStyle = P.col; g.globalAlpha = (1 - u) * (el < 3 ? 1 : (3.6 - el) / .6); g.lineWidth = 2; g.beginPath(); g.arc(P.x * kx, P.y * ky, 3 + u * 18, 0, 7); g.stroke(); } g.globalAlpha = 1; g.fillStyle = '#fff'; g.beginPath(); g.arc(P.x * kx, P.y * ky, 2.5 + Math.sin(el * 12) * 1, 0, 7); g.fill(); } }
+  // camera footprint
+  g.save(); g.translate(cxC * kx, cyC * ky); g.rotate(-(CAM.rot || 0)); g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 1.2; g.strokeRect(-vwC * kx / 2, -CAM.vh / TS / OW_CELL * ky / 2, vwC * kx, CAM.vh / TS / OW_CELL * ky); g.restore();
+  // rulers
+  const rx = document.getElementById('owrx'), ry = document.getElementById('owry');
+  if (rx && ry) {
+    if (rx.width !== CW) rx.width = CW; if (ry.height !== CH) ry.height = CH;
+    const a = rx.getContext('2d'), b = ry.getContext('2d'); a.clearRect(0, 0, rx.width, rx.height); b.clearRect(0, 0, ry.width, ry.height);
+    a.font = '700 11px ui-monospace,Consolas,monospace'; b.font = '700 11px ui-monospace,Consolas,monospace'; a.textAlign = 'center'; b.textAlign = 'center'; a.textBaseline = 'middle'; b.textBaseline = 'middle';
+    for (let i = 0; i < Q.nx; i++) { const x0 = i * Q.S * kx, w = Math.min(Q.S, R.W - i * Q.S) * kx, on = cur.X === i + 1; a.fillStyle = on ? 'rgba(255,215,106,.9)' : 'rgba(234,246,255,.75)'; a.fillText(String(i + 1), x0 + w / 2, 9); a.fillStyle = 'rgba(255,255,255,.35)'; a.fillRect(Math.round(x0), 0, 1, 16); }
+    for (let j = 0; j < Q.ny; j++) { const y0 = j * Q.S * ky, h = Math.min(Q.S, R.H - j * Q.S) * ky, on = cur.Y === j + 1; b.fillStyle = on ? 'rgba(255,215,106,.9)' : 'rgba(234,246,255,.75)'; b.fillText(String(j + 1), 9, y0 + h / 2); b.fillStyle = 'rgba(255,255,255,.35)'; b.fillRect(0, Math.round(y0), 16, 1); }
+    if (zoomed) {                                                       // the sub-sector scale of the sector in view
+      a.font = '600 8px ui-monospace,Consolas,monospace'; b.font = '600 8px ui-monospace,Consolas,monospace';
+      for (let i = 0; i < 10; i++) { const n = (cur.X - 1) * 10 + i + 1, x = ((cur.X - 1) * Q.S + (i + .5) * Q.s) * kx; if (x > CW) break; a.fillStyle = n === cur.xs ? '#ffd76a' : 'rgba(255,230,120,.7)'; a.fillText(String(n), x, 23); }
+      for (let j = 0; j < 10; j++) { const n = (cur.Y - 1) * 10 + j + 1, y = ((cur.Y - 1) * Q.S + (j + .5) * Q.s) * ky; if (y > CH) break; b.fillStyle = n === cur.ys ? '#ffd76a' : 'rgba(255,230,120,.7)'; b.fillText(String(n), 23, y); }
+    }
+  }
+  const co = document.getElementById('owcoord'); if (co) { const pz = R.b[owCell(R, cxC, cyC)] ? owProvAt(R, cxC, cyC) : null; co.textContent = 'X' + cur.X + ' · Y' + cur.Y + (zoomed ? '   xs' + cur.xs + ' · ys' + cur.ys : '') + (pz ? '   ' + pz.name + ' · ' + OW_REG[pz.reg][1] : zoomed ? '' : '   (zoom in for sub-sectors)'); }
 }
 
 /* ======================================== HOOKS INTO THE GAME ======================================== */
