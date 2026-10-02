@@ -6675,7 +6675,13 @@ function partCull(kind, x, y, r, opt) {
   const M = 260 + (opt && opt.grow ? opt.grow * 3 : 0);
   if (x < V.x0 - M || x > V.x1 + M || y < V.y0 - M || y > V.y1 + M) return true;
   if (P_TINY[kind] && !(opt && opt.grow) && r * 2 * V.ppp < 1) return true;
-  const n = G.parts.length; if (P_THIN[kind] && n > PMAX * .35 && Math.random() < Math.min(.85, (n - PMAX * .35) / (PMAX * .5))) return true;
+  const n = G.parts.length;
+  // AAA Balanced: progressively thin cosmetic particles under load, then stop admitting
+  // additional thin-only effects at the cap. This avoids repeatedly growing the particle
+  // array and triggering front-splice cleanup during sustained volleys. Core gameplay,
+  // simulation, damage, and non-thin effects are untouched.
+  if (P_THIN[kind] && n >= PMAX) return true;
+  if (P_THIN[kind] && n > PMAX * .35 && Math.random() < Math.min(.85, (n - PMAX * .35) / (PMAX * .5))) return true;
   return false;
 }
 function part(kind, x, y, vx, vy, life, r, col, opt) {
@@ -11079,9 +11085,10 @@ function spgUpdate(u, dt) {
 function updateUnits(dtF) {
   G._dmgSrc = null;
   if (typeof tacTick === 'function') tacTick(dtF);
-  /* SIM LOD: with a big army in the field (600+), units well away from the camera are stepped every OTHER frame with a doubled
-     dt — the same ground covered, the same fire rate, half the work. Everything in and around the view is stepped every frame. */
-  const lodOn = G.units.length > 600 && !netPlay(), lcx = CAM.x + CAM.vw / 2, lcy = CAM.y + CAM.vh / 2, lodR2 = Math.pow(Math.max(CAM.vw, CAM.vh) * .8 + 400, 2);
+  /* SIM LOD (massive-battle balanced): activate at 250+ units. Units outside the camera's relevance radius
+     are updated every other simulation frame and receive accumulated dt on their next update. This reduces
+     off-screen AI/simulation pressure while keeping visible, controlled, carried, and network-driven units full-rate. */
+  const lodOn = G.units.length > 250 && !netPlay(), lcx = CAM.x + CAM.vw / 2, lcy = CAM.y + CAM.vh / 2, lodR2 = Math.pow(Math.max(CAM.vw, CAM.vh) * .8 + 400, 2);
   /* --- auto scrap vacuum: each drop looks for a unit within reach (once per drop, not once per unit per drop) --- */
   for (let k = G.pickups.length - 1; k >= 0; k--) { const p = G.pickups[k]; if (p.to && !p.to.dead) continue; const l = G.hUnits.near(p.x, p.y, 108, _q7); let best = null, bd = 108 * 108; for (let i = 0; i < l.length; i++) { const u = l[i]; if (u.dead || u.remote) continue; const d = dist2(p.x, p.y, u.x, u.y); if (d < bd) { bd = d; best = u; } } if (best) p.to = best; }
   for (let i = G.units.length - 1; i >= 0; i--) {
@@ -15440,9 +15447,13 @@ function updateParticles(dt) {
   const wx = G.wind.x, wy = G.wind.y;
   // things that stir the smoke this frame: moving units/vehicles (their wake) and bullets in flight (their draft).
   // built once so the per-particle loop below only walks these short lists.
-  let SMOV = null, SBUL = null, SDOWN = null;
+  // Reuse scratch arrays across frames: allocating mover/downwash arrays every frame
+  // creates avoidable garbage-collection pressure during particle-heavy battles.
+  const SMOV = updateParticles._smov || (updateParticles._smov = []);
+  const SDOWN = updateParticles._sdown || (updateParticles._sdown = []);
+  SMOV.length = 0; SDOWN.length = 0;
+  let SBUL = null;
   if (G.parts.length) {
-    SMOV = []; SDOWN = [];
     for (const u of G.units) { if (u.dead || u.inside) continue;
       if (u.def.fly && u.def.rotor && (u.landed || u.rope || (u.altK !== undefined && u.altK < .32))) SDOWN.push(u);   // low / landing / roping helicopter: rotor downwash
       const sv = (u.vx || 0) * (u.vx || 0) + (u.vy || 0) * (u.vy || 0); if (sv > 400 && !u.def.fly) SMOV.push(u); }   // aircraft don't 'wake' the ground dust (that used to wipe the brown-out right under a landing helicopter — the part you see zoomed in); their rotor acts through SDOWN        // moving faster than 20 px/s
@@ -22324,10 +22335,10 @@ function ctrlHudTick(dt) {
     skyDome.position.copy(camPos);
   }
   G.pixLock = true;                        // the 2D adaptive-resolution swap is meaningless here
-  /* the 3D view renders at most a 1920×1080 pixel budget (1080p-class, by pixel COUNT so an ultrawide keeps its full aspect) at max
-     graphics: on a 1080p screen nothing changes; a high-DPI / scaled or larger display no longer pays 2–4× the pixels. The dynamic
+  /* the 3D view uses a balanced 1600×900 internal pixel budget (by pixel COUNT so an ultrawide keeps its full aspect) at max
+     graphics: the output canvas keeps its display size while the internal render resolution is capped to reduce pixel shading cost. The dynamic
      resolution (SR) still steps in below that if a frame runs long. */
-  const RENDER_BUDGET = 1920 * 1080; let PR_WANT = Math.min(2, window.devicePixelRatio || 1);   // PR_WANT: the Graphics preset's pixel ratio
+  const RENDER_BUDGET = 1600 * 900; let PR_WANT = Math.min(2, window.devicePixelRatio || 1);   // PR_WANT: the Graphics preset's pixel ratio
   function size3() { const portrait = innerHeight > innerWidth, w = Math.max(portrait ? 300 : 640, innerWidth), h = Math.max(portrait ? 480 : 400, innerHeight);
     { const want = PR_WANT, pr = Math.max(.5, Math.min(want, Math.sqrt(RENDER_BUDGET / (w * h)))); if (Math.abs(renderer.getPixelRatio() - pr) > 1e-3) renderer.setPixelRatio(pr); }
     renderer.setSize(w, h, false); cam3.aspect = w / h; cam3.updateProjectionMatrix(); if (FX.on) fxResize(); }
@@ -34298,8 +34309,24 @@ function loop(ts) {
       G.gpuIGPU = /Radeon\(TM\)|Radeon Graphics|Intel|UHD|Iris|680M|780M|890M|Vega/i.test(G.gpuName) && !/NVIDIA|GeForce|RTX|GTX|Radeon RX/i.test(G.gpuName);
     }
     fpsPanel(fps, srTxt);
-    // adaptive resolution is disabled: the graphics never auto-change mid-game (avoids the resolution-swap glitch).
-    // Quality stays exactly where the player set it; F1 still toggles HD/performance manually.
+    // Adaptive render resolution (CPU/GPU load relief). Simulation timestep and gameplay rules are untouched.
+    // PIX is a render-resolution divisor: larger values render fewer pixels, then upscale to the same canvas.
+    // Hysteresis + cooldown avoids oscillation; manual F1 quality selection locks automation.
+    if (G.started && !G.paused && !G.over && !G.pixLock) {
+      const now = ts;
+      if (!G._autoPix) G._autoPix = { last: now, low: 0, high: 0 };
+      const A = G._autoPix;
+      if (now - A.last >= 2500) {
+        if (fps < 45) { A.low++; A.high = 0; }
+        else if (fps > 58) { A.high++; A.low = 0; }
+        else { A.low = 0; A.high = 0; }
+        const levels = [1, 1.25, 1.5, 1.75, 2];
+        let idx = 0; for (let j = 0; j < levels.length; j++) if (Math.abs(PIX - levels[j]) < .01) idx = j;
+        if (A.low >= 2 && idx < levels.length - 1) { setPIX(levels[idx + 1]); A.last = now; A.low = 0; }
+        else if (A.high >= 4 && idx > 0) { setPIX(levels[idx - 1]); A.last = now; A.high = 0; }
+        else A.last = now;
+      }
+    }
   }
 
   if (typeof owHook === 'function' && owHook(dt)) return;   // OpenWorld: the region map owns the frame
